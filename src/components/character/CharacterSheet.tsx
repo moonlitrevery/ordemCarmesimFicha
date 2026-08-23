@@ -8,9 +8,10 @@ import {
   getAttributePointsAvailable,
   getCarryLimit,
   getInventoryWeight,
-  getNextSpecialization,
-  getSkillPointsAvailable,
+  getSkillUpgradesAvailable,
+  getUpgradeKeyForNext,
   getTotalLevel,
+  normalizeSkillUpgradeSpent,
 } from '@/lib/calculations';
 import {
   DEFAULT_SKILLS,
@@ -55,6 +56,7 @@ import {
   DEFAULT_ATTRIBUTES,
   DEFAULT_RESOURCE_MODS,
   type ResourceMods,
+  type SkillUpgradeSpent,
 } from '@/types/database';
 
 type SheetState = {
@@ -84,7 +86,7 @@ type SheetState = {
   order_rank: string;
   resource_mods: ResourceMods;
   attribute_points_spent: number;
-  skill_points_spent: number;
+  skill_points_spent: SkillUpgradeSpent;
 };
 
 function toState(c: Character): SheetState {
@@ -115,7 +117,7 @@ function toState(c: Character): SheetState {
     order_rank: c.order_rank ?? 'Agente Principiante',
     resource_mods: { ...DEFAULT_RESOURCE_MODS, ...(c.resource_mods || {}) },
     attribute_points_spent: c.attribute_points_spent ?? 0,
-    skill_points_spent: c.skill_points_spent ?? 0,
+    skill_points_spent: normalizeSkillUpgradeSpent(c.skill_points_spent),
   };
 }
 
@@ -205,7 +207,7 @@ export function CharacterSheet({
         is_order_agent: next.is_order_agent,
         order_rank: next.order_rank || null,
         attribute_points_spent: next.attribute_points_spent ?? 0,
-        skill_points_spent: next.skill_points_spent ?? 0,
+        skill_points_spent: normalizeSkillUpgradeSpent(next.skill_points_spent),
       };
 
       const { error } = await supabase
@@ -302,8 +304,9 @@ export function CharacterSheet({
     totalLevel,
     sheet.attribute_points_spent
   );
-  const skillPointsAvailable = getSkillPointsAvailable(
+  const skillUpgradesAvailable = getSkillUpgradesAvailable(
     totalLevel,
+    sheet.attributes.INT,
     sheet.skill_points_spent
   );
   const imageValid =
@@ -535,17 +538,22 @@ export function CharacterSheet({
       <SkillsList
         skills={sheet.skills}
         attributes={sheet.attributes}
-        skillPointsAvailable={skillPointsAvailable}
+        skillUpgradesAvailable={skillUpgradesAvailable}
         onChange={(skills) => patch({ skills })}
         onSpendSkillPoint={(i) => {
           const skill = sheet.skills[i];
-          const nextSpec = getNextSpecialization(skill.specialization);
-          if (!nextSpec || skillPointsAvailable <= 0) return;
+          const upgradeKey = getUpgradeKeyForNext(skill.specialization);
+          if (!upgradeKey || skillUpgradesAvailable[upgradeKey] <= 0) return;
+          const nextSpec = upgradeKey;
           const skills = [...sheet.skills];
           skills[i] = { ...skill, specialization: nextSpec };
+          const spent = normalizeSkillUpgradeSpent(sheet.skill_points_spent);
           patch({
             skills,
-            skill_points_spent: sheet.skill_points_spent + 1,
+            skill_points_spent: {
+              ...spent,
+              [upgradeKey]: spent[upgradeKey] + 1,
+            },
           });
         }}
       />

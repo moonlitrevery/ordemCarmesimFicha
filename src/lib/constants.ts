@@ -51,13 +51,33 @@ export const ELEMENT_LABELS: Record<ElementType, string> = {
   sombra: 'Sombra',
 };
 
-/** Ajustável — curva ainda não definitiva do sistema */
-/** Pontos ganhos por nível total (soma dos elementos). Ajustáveis. */
-export const ATTRIBUTE_POINTS_PER_LEVEL = 1;
-export const SKILL_POINTS_PER_LEVEL = 1;
+/** Pontos de atributo concedidos ao atingir cada nível total (1–20). */
+export const ATTRIBUTE_POINTS_BY_LEVEL: readonly number[] = [
+  0, // índice 0 não usado
+  1, 1, 1, 1, 2, // 1–5
+  1, 1, 1, 1, 2, // 6–10
+  1, 1, 2, 1, 3, // 11–15
+  2, 2, 3, 2, 4, // 16–20
+];
+
+/**
+ * Marcos de treinamento de perícia.
+ * - basico: none → basico (nível 1/3/5, escala com INT)
+ * - medio: basico → medio (níveis 8,10,12,14: +2 cada)
+ * - alto: medio → alto (16,17,18: +1 cada)
+ * - expert: alto → expert (19,20: +1 cada)
+ */
+export const SKILL_BASIC_GRANT_LEVELS = [1, 3, 5] as const;
+export const SKILL_MEDIO_GRANT_LEVELS: ReadonlyArray<{ level: number; amount: number }> = [
+  { level: 8, amount: 2 },
+  { level: 10, amount: 2 },
+  { level: 12, amount: 2 },
+  { level: 14, amount: 2 },
+];
+export const SKILL_ALTO_GRANT_LEVELS = [16, 17, 18] as const;
+export const SKILL_EXPERT_GRANT_LEVELS = [19, 20] as const;
 
 export const PER_LEVEL_GROWTH = {
-  attributePoints: ATTRIBUTE_POINTS_PER_LEVEL,
   hpPerLevel: 2,
   manaPerLevel: 2,
 };
@@ -70,6 +90,20 @@ export const SPECIALIZATION_ORDER = [
   'alto',
   'expert',
 ] as const;
+
+/** Cores de frame das perícias por atributo (borda + shading leve). */
+export const ATTRIBUTE_FRAME_COLORS: Record<
+  'FOR' | 'CON' | 'DES' | 'INT' | 'EDU' | 'CAR' | 'POD',
+  string
+> = {
+  FOR: '#C23B3B',
+  CON: '#D9782C',
+  DES: '#7EB8D4',
+  INT: '#2F5A8A',
+  EDU: '#3D8B5A',
+  CAR: '#D4B84A',
+  POD: '#A78BDB',
+};
 
 export const ORDER_RANKS = [
   'Agente Principiante',

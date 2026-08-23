@@ -1,12 +1,15 @@
 import {
-  ATTRIBUTE_POINTS_PER_LEVEL,
+  ATTRIBUTE_POINTS_BY_LEVEL,
   ELEMENT_COLORS,
   FRAGMENT_COST,
   LEVEL_MILESTONES,
   MAX_CHARACTER_LEVEL,
   MAX_ELEMENT_LEVEL,
   PER_LEVEL_GROWTH,
-  SKILL_POINTS_PER_LEVEL,
+  SKILL_ALTO_GRANT_LEVELS,
+  SKILL_BASIC_GRANT_LEVELS,
+  SKILL_EXPERT_GRANT_LEVELS,
+  SKILL_MEDIO_GRANT_LEVELS,
   SPECIALIZATION_BONUS,
   SPECIALIZATION_ORDER,
 } from '@/lib/constants';
@@ -17,7 +20,10 @@ import type {
   ElementType,
   Skill,
   SkillSpecialization,
+  SkillUpgradeKey,
+  SkillUpgradeSpent,
 } from '@/types/database';
+import { DEFAULT_SKILL_UPGRADE_SPENT } from '@/types/database';
 
 export function getAttributeModifier(value: number): number {
   return Math.floor((value - 10) / 2);
@@ -27,20 +33,95 @@ export function getTotalLevel(elements: CharacterElementRow[]): number {
   return elements.reduce((sum, el) => sum + (el.level || 0), 0);
 }
 
+export function getAttributePointsEarned(totalLevel: number): number {
+  const cap = Math.min(Math.max(0, totalLevel), MAX_CHARACTER_LEVEL);
+  let sum = 0;
+  for (let lvl = 1; lvl <= cap; lvl++) {
+    sum += ATTRIBUTE_POINTS_BY_LEVEL[lvl] ?? 0;
+  }
+  return sum;
+}
+
 export function getAttributePointsAvailable(
   totalLevel: number,
   attributePointsSpent: number
 ): number {
-  const earned = totalLevel * ATTRIBUTE_POINTS_PER_LEVEL;
-  return Math.max(0, earned - (attributePointsSpent || 0));
+  return Math.max(0, getAttributePointsEarned(totalLevel) - (attributePointsSpent || 0));
 }
 
-export function getSkillPointsAvailable(
+export function normalizeSkillUpgradeSpent(
+  raw: unknown
+): SkillUpgradeSpent {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    return {
+      basico: Math.max(0, Number(o.basico) || 0),
+      medio: Math.max(0, Number(o.medio) || 0),
+      alto: Math.max(0, Number(o.alto) || 0),
+      expert: Math.max(0, Number(o.expert) || 0),
+    };
+  }
+  // legado: int único contava como treinamentos básicos
+  if (typeof raw === 'number') {
+    return { ...DEFAULT_SKILL_UPGRADE_SPENT, basico: Math.max(0, raw) };
+  }
+  return { ...DEFAULT_SKILL_UPGRADE_SPENT };
+}
+
+/** Treinamentos/upgrades ganhos por marco de nível (ainda não descontando gastos). */
+export function getSkillUpgradesEarned(
   totalLevel: number,
-  skillPointsSpent: number
-): number {
-  const earned = totalLevel * SKILL_POINTS_PER_LEVEL;
-  return Math.max(0, earned - (skillPointsSpent || 0));
+  intelligence: number
+): SkillUpgradeSpent {
+  const intMod = getAttributeModifier(intelligence);
+  const half = Math.floor(intMod / 2);
+
+  let basico = 0;
+  for (const lvl of SKILL_BASIC_GRANT_LEVELS) {
+    if (totalLevel < lvl) continue;
+    if (lvl === 1) {
+      basico += Math.max(0, 1 + intMod);
+    } else {
+      // níveis 3 e 5: 1 + (mod INT / 2)
+      basico += Math.max(0, 1 + half);
+    }
+  }
+
+  let medio = 0;
+  for (const grant of SKILL_MEDIO_GRANT_LEVELS) {
+    if (totalLevel >= grant.level) medio += grant.amount;
+  }
+
+  let alto = 0;
+  for (const lvl of SKILL_ALTO_GRANT_LEVELS) {
+    if (totalLevel >= lvl) alto += 1;
+  }
+
+  let expert = 0;
+  for (const lvl of SKILL_EXPERT_GRANT_LEVELS) {
+    if (totalLevel >= lvl) expert += 1;
+  }
+
+  return { basico, medio, alto, expert };
+}
+
+export function getSkillUpgradesAvailable(
+  totalLevel: number,
+  intelligence: number,
+  spentRaw: unknown
+): SkillUpgradeSpent {
+  const earned = getSkillUpgradesEarned(totalLevel, intelligence);
+  const spent = normalizeSkillUpgradeSpent(spentRaw);
+  return {
+    basico: Math.max(0, earned.basico - spent.basico),
+    medio: Math.max(0, earned.medio - spent.medio),
+    alto: Math.max(0, earned.alto - spent.alto),
+    expert: Math.max(0, earned.expert - spent.expert),
+  };
+}
+
+export function getTotalSkillUpgradesAvailable(pools: SkillUpgradeSpent): number {
+  return pools.basico + pools.medio + pools.alto + pools.expert;
 }
 
 export function getNextSpecialization(
@@ -49,6 +130,15 @@ export function getNextSpecialization(
   const i = SPECIALIZATION_ORDER.indexOf(current);
   if (i < 0 || i >= SPECIALIZATION_ORDER.length - 1) return null;
   return SPECIALIZATION_ORDER[i + 1];
+}
+
+/** Pool gasto ao promover para o próximo degrau. */
+export function getUpgradeKeyForNext(
+  current: SkillSpecialization
+): SkillUpgradeKey | null {
+  const next = getNextSpecialization(current);
+  if (!next || next === 'none') return null;
+  return next;
 }
 
 export function getFragmentCostForLevel(level: number): number {

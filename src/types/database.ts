@@ -30,6 +30,22 @@ export type SkillSpecialization =
   | 'alto'
   | 'expert';
 
+export type SkillUpgradeKey = 'basico' | 'medio' | 'alto' | 'expert';
+
+export interface SkillUpgradeSpent {
+  basico: number;
+  medio: number;
+  alto: number;
+  expert: number;
+}
+
+export const DEFAULT_SKILL_UPGRADE_SPENT: SkillUpgradeSpent = {
+  basico: 0,
+  medio: 0,
+  alto: 0,
+  expert: 0,
+};
+
 export interface Skill {
   name: string;
   attribute: keyof Attributes;
@@ -133,7 +149,7 @@ export interface Character {
   is_order_agent: boolean;
   order_rank: string | null;
   attribute_points_spent: number;
-  skill_points_spent: number;
+  skill_points_spent: SkillUpgradeSpent;
   created_at: string;
   updated_at: string;
 }
