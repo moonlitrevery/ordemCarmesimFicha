@@ -190,3 +190,15 @@ export const RULES_PAGES = [
   { slug: 'armas-e-runas', title: 'Armas e Runas' },
   { slug: 'itens-amaldicoados', title: 'Itens Amaldiçoados' },
 ] as const;
+
+export const WEAPON_TYPES = [
+  'Corpo a Corpo',
+  'A distância',
+  'Explosivo',
+  'Mágica',
+] as const;
+
+export function isDefaultSkillName(name: string): boolean {
+  const n = name.trim().toLocaleLowerCase('pt-BR');
+  return DEFAULT_SKILLS.some((s) => s.name.toLocaleLowerCase('pt-BR') === n);
+}

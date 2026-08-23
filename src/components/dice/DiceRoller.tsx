@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COMMON_DICE, parseDiceNotation, rollDice, type DiceRollResult } from '@/lib/dice';
 import { formatModifier } from '@/lib/calculations';
+import { useDiceToast } from '@/components/dice/DiceToast';
 
 export function DiceIcon({ className = 'h-5 w-5' }: { className?: string }) {
   return (
@@ -14,7 +15,7 @@ export function DiceIcon({ className = 'h-5 w-5' }: { className?: string }) {
   );
 }
 
-/** Clique = rola na hora 1d20+bonus (sem abrir editor). */
+/** Clique = rola na hora 1d20+bonus (toast no canto inferior direito). */
 export function QuickRollButton({
   bonus,
   label,
@@ -22,59 +23,18 @@ export function QuickRollButton({
   bonus: number;
   label: string;
 }) {
-  const [flash, setFlash] = useState<{ total: number; breakdown: string } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  function roll() {
-    const die = Math.floor(Math.random() * 20) + 1;
-    const total = die + bonus;
-    const breakdown = die + ' ' + formatModifier(bonus) + ' = ' + total;
-    setFlash({ total, breakdown });
-    if (btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setPos({
-        top: Math.max(8, rect.top - 88),
-        left: Math.min(rect.left - 40, window.innerWidth - 160),
-      });
-    }
-  }
-
-  useEffect(() => {
-    if (!flash) return;
-    const t = setTimeout(() => setFlash(null), 2200);
-    return () => clearTimeout(t);
-  }, [flash]);
+  const { pushRoll } = useDiceToast();
 
   return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        className="btn-ghost inline-flex h-10 w-10 items-center justify-center p-0"
-        onClick={roll}
-        title={'Rolar 1d20' + formatModifier(bonus) + ' — ' + label}
-        aria-label={'Rolar ' + label}
-      >
-        <DiceIcon className="h-5 w-5" />
-      </button>
-      {flash &&
-        pos &&
-        createPortal(
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="pointer-events-none fixed z-[9999] min-w-[7rem] rounded-lg border border-crimson/40 bg-ink-panel px-4 py-3 text-center shadow-panel"
-            style={{ top: pos.top, left: pos.left }}
-          >
-            <p className="label mb-0.5">{label}</p>
-            <p className="font-display text-4xl text-crimson-soft">{flash.total}</p>
-            <p className="text-sm text-ink-muted">1d20 {formatModifier(bonus)}</p>
-            <p className="text-xs text-ink-muted">{flash.breakdown}</p>
-          </motion.div>,
-          document.body
-        )}
-    </>
+    <button
+      type="button"
+      className="btn-ghost inline-flex h-9 w-9 items-center justify-center p-0"
+      onClick={() => pushRoll(label, bonus)}
+      title={'Rolar 1d20' + formatModifier(bonus) + ' — ' + label}
+      aria-label={'Rolar ' + label}
+    >
+      <DiceIcon className="h-5 w-5" />
+    </button>
   );
 }
 

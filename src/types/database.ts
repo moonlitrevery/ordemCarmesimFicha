@@ -51,6 +51,7 @@ export interface Weapon {
   damage: string;
   ammo: string;
   hitsPerTurn: number;
+  weight: number;
   range: string;
   flaw: string;
   area: string;
@@ -85,6 +86,14 @@ export interface CharacterElementRow {
 
 export type MilestoneNotes = Record<string, string>;
 
+export interface ResourceMods {
+  hp: number;
+  mana: number;
+  sanity: number;
+}
+
+export const DEFAULT_RESOURCE_MODS: ResourceMods = { hp: 0, mana: 0, sanity: 0 };
+
 export interface Profile {
   id: string;
   display_name: string;
@@ -118,6 +127,7 @@ export interface Character {
   curses: Curse[];
   historical_feats: HistoricalFeat[];
   milestone_notes: MilestoneNotes;
+  resource_mods?: ResourceMods;
   notes: string | null;
   backstory: string | null;
   is_order_agent: boolean;

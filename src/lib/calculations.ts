@@ -62,9 +62,9 @@ export function getSkillTotal(skill: Skill, attributes: Attributes): number {
   return 10 + attrMod + training;
 }
 
-/** Modificador de rolagem = floor((valor - 5) / 2) */
+/** Modificador de rolagem = ceil((valor - 10) / 2) */
 export function getSkillRollModifier(skillTotal: number): number {
-  return Math.floor((skillTotal - 5) / 2);
+  return Math.ceil((skillTotal - 10) / 2);
 }
 
 export function formatModifier(mod: number): string {

@@ -14,9 +14,11 @@ import {
 } from '@/lib/calculations';
 import {
   DEFAULT_SKILLS,
+  isDefaultSkillName,
   ORDER_RANKS,
   SPECIALIZATION_LABELS,
   VALID_IMAGE_URL,
+  WEAPON_TYPES,
 } from '@/lib/constants';
 import { FloatingDiceButton } from '@/components/dice/FloatingDiceButton';
 import { InlineRollButton, QuickRollButton } from '@/components/dice/DiceRoller';
@@ -43,6 +45,8 @@ import {
   ATTRIBUTE_KEYS,
   ATTRIBUTE_LABELS,
   DEFAULT_ATTRIBUTES,
+  DEFAULT_RESOURCE_MODS,
+  type ResourceMods,
 } from '@/types/database';
 
 type SheetState = {
@@ -70,6 +74,7 @@ type SheetState = {
   backstory: string;
   is_order_agent: boolean;
   order_rank: string;
+  resource_mods: ResourceMods;
 };
 
 function toState(c: Character): SheetState {
@@ -98,6 +103,7 @@ function toState(c: Character): SheetState {
     backstory: c.backstory ?? '',
     is_order_agent: c.is_order_agent ?? true,
     order_rank: c.order_rank ?? 'Agente Principiante',
+    resource_mods: { ...DEFAULT_RESOURCE_MODS, ...(c.resource_mods || {}) },
   };
 }
 
@@ -123,13 +129,28 @@ export function CharacterSheet({
     [totalLevel, sheet.attributes]
   );
 
+  const effectiveMaxes = useMemo(
+    () => ({
+      hp: Math.max(1, derived.hpMax + (sheet.resource_mods.hp || 0)),
+      mana: Math.max(1, derived.manaMax + (sheet.resource_mods.mana || 0)),
+      sanity: Math.max(1, derived.sanityMax + (sheet.resource_mods.sanity || 0)),
+    }),
+    [derived, sheet.resource_mods]
+  );
+
   const persistCharacter = useCallback(
     async (next: SheetState, nextElements: CharacterElementRow[]) => {
       const supabase = createClient();
-      const maxes = computeDerivedMaxes(
+      const baseMaxes = computeDerivedMaxes(
         getTotalLevel(nextElements),
         next.attributes
       );
+      const mods = next.resource_mods || DEFAULT_RESOURCE_MODS;
+      const maxes = {
+        hpMax: Math.max(1, baseMaxes.hpMax + (mods.hp || 0)),
+        manaMax: Math.max(1, baseMaxes.manaMax + (mods.mana || 0)),
+        sanityMax: Math.max(1, baseMaxes.sanityMax + (mods.sanity || 0)),
+      };
       const payload = {
         name: next.name || 'Sem nome',
         occupation: next.occupation || null,
@@ -157,6 +178,7 @@ export function CharacterSheet({
         curses: next.curses,
         historical_feats: next.historical_feats,
         milestone_notes: next.milestone_notes,
+        resource_mods: next.resource_mods,
         notes: next.notes || null,
         backstory: next.backstory || null,
         is_order_agent: next.is_order_agent,
@@ -415,69 +437,37 @@ export function CharacterSheet({
         </div>
       </SectionCard>
 
-            {/* Recursos */}
+                  {/* Recursos */}
       <SectionCard title="Recursos">
         <div className="grid gap-4 md:grid-cols-3">
           {(
             [
-              ['HP', 'hp_current', derived.hpMax, '#8B1E2D'],
-              ['Mana', 'mana_current', derived.manaMax, '#3B6EA5'],
-              ['Sanidade', 'sanity_current', derived.sanityMax, '#7A6B9A'],
+              ['HP', 'hp_current', 'hp', effectiveMaxes.hp, '#8B1E2D'],
+              ['Mana', 'mana_current', 'mana', effectiveMaxes.mana, '#3B6EA5'],
+              ['Sanidade', 'sanity_current', 'sanity', effectiveMaxes.sanity, '#7A6B9A'],
             ] as const
-          ).map(([label, key, max, color]) => {
-            const current = sheet[key];
+          ).map(([label, currentKey, modKey, max, color]) => {
+            const current = sheet[currentKey];
             const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
-            function adjust(delta: number) {
-              const next = Math.max(0, Math.min(max, current + delta));
-              patch({ [key]: next } as Partial<SheetState>);
-            }
+            const modVal = sheet.resource_mods[modKey] || 0;
             return (
-              <div key={key} className="space-y-2">
-                <div className="flex items-end justify-between gap-2">
-                  <span className="label">{label}</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="btn-ghost h-9 w-9 p-0 text-lg"
-                      onClick={() => adjust(-1)}
-                      title={'Remover 1 de ' + label}
-                    >
-                      −
-                    </button>
-                    <input
-                      type="number"
-                      className="field w-16 py-1 text-center"
-                      value={current}
-                      onChange={(e) =>
-                        patch({ [key]: Number(e.target.value) || 0 } as Partial<SheetState>)
-                      }
-                    />
-                    <span className="text-ink-muted">/ {max}</span>
-                    <button
-                      type="button"
-                      className="btn-ghost h-9 w-9 p-0 text-lg"
-                      onClick={() => adjust(1)}
-                      title={'Curar 1 de ' + label}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" className="btn-ghost flex-1 py-1 text-sm" onClick={() => adjust(-5)}>
-                    −5
-                  </button>
-                  <button type="button" className="btn-ghost flex-1 py-1 text-sm" onClick={() => adjust(5)}>
-                    +5 curar
-                  </button>
-                </div>
-                <div className="h-3 overflow-hidden rounded-full bg-ink">
-                  <div
-                    className="h-full transition-all"
-                    style={{ width: pct + '%', backgroundColor: color }}
-                  />
-                </div>
-              </div>
+              <ResourceBlock
+                key={currentKey}
+                label={label}
+                current={current}
+                max={max}
+                color={color}
+                mod={modVal}
+                onModChange={(v) =>
+                  patch({
+                    resource_mods: { ...sheet.resource_mods, [modKey]: v },
+                  })
+                }
+                onApply={(delta) => {
+                  const next = Math.max(0, Math.min(max, current + delta));
+                  patch({ [currentKey]: next } as Partial<SheetState>);
+                }}
+              />
             );
           })}
         </div>
@@ -508,15 +498,21 @@ export function CharacterSheet({
               key={i}
               className="grid gap-2 rounded-md border border-ink-border bg-ink-raised/40 p-3 sm:grid-cols-[1fr_auto_auto_auto_auto_auto] sm:items-center"
             >
-              <input
-                className="field"
-                value={skill.name}
-                onChange={(e) => {
-                  const skills = [...sheet.skills];
-                  skills[i] = { ...skill, name: e.target.value };
-                  patch({ skills });
-                }}
-              />
+              {isDefaultSkillName(skill.name) ? (
+                <p className="field border-transparent bg-transparent px-1 font-medium text-parchment">
+                  {skill.name}
+                </p>
+              ) : (
+                <input
+                  className="field"
+                  value={skill.name}
+                  onChange={(e) => {
+                    const skills = [...sheet.skills];
+                    skills[i] = { ...skill, name: e.target.value };
+                    patch({ skills });
+                  }}
+                />
+              )}
               <select
                 className="field"
                 value={skill.attribute}
@@ -682,10 +678,11 @@ export function CharacterSheet({
               ...sheet.weapons,
               {
                 name: 'Nova arma',
-                type: '',
+                type: 'Corpo a Corpo',
                 damage: '1d6',
                 ammo: '',
                 hitsPerTurn: 1,
+                weight: 1,
                 range: '',
                 flaw: '',
                 area: '',
@@ -694,7 +691,7 @@ export function CharacterSheet({
           })
         }
       >
-        {sheet.weapons.map((w, i) => (
+                {sheet.weapons.map((w, i) => (
           <div key={i} className="space-y-2 rounded-md border border-ink-border bg-ink-raised/40 p-3">
             <div className="flex flex-wrap gap-2">
               <input
@@ -707,7 +704,7 @@ export function CharacterSheet({
                 }}
               />
               <input
-                className="field w-28"
+                className="field w-24"
                 placeholder="Dano"
                 value={w.damage}
                 onChange={(e) => {
@@ -728,9 +725,62 @@ export function CharacterSheet({
               </button>
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
+              <label className="space-y-1">
+                <span className="label">Tipo</span>
+                <select
+                  className="field"
+                  value={w.type || 'Corpo a Corpo'}
+                  onChange={(e) => {
+                    const weapons = [...sheet.weapons];
+                    weapons[i] = { ...w, type: e.target.value };
+                    patch({ weapons });
+                  }}
+                >
+                  {WEAPON_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="label">Hits/turno</span>
+                <input
+                  type="number"
+                  step={1}
+                  min={0}
+                  className="field"
+                  value={w.hitsPerTurn}
+                  onChange={(e) => {
+                    const weapons = [...sheet.weapons];
+                    weapons[i] = {
+                      ...w,
+                      hitsPerTurn: Math.trunc(Number(e.target.value) || 0),
+                    };
+                    patch({ weapons });
+                  }}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="label">Peso</span>
+                <input
+                  type="number"
+                  step={1}
+                  min={0}
+                  className="field"
+                  value={w.weight ?? 0}
+                  onChange={(e) => {
+                    const weapons = [...sheet.weapons];
+                    weapons[i] = {
+                      ...w,
+                      weight: Math.trunc(Number(e.target.value) || 0),
+                    };
+                    patch({ weapons });
+                  }}
+                />
+              </label>
               {(
                 [
-                  ['type', 'Tipo'],
                   ['ammo', 'Munição'],
                   ['range', 'Alcance'],
                   ['flaw', 'Falha'],
@@ -749,17 +799,6 @@ export function CharacterSheet({
                   }}
                 />
               ))}
-              <input
-                type="number"
-                className="field"
-                placeholder="Acertos/turno"
-                value={w.hitsPerTurn}
-                onChange={(e) => {
-                  const weapons = [...sheet.weapons];
-                  weapons[i] = { ...w, hitsPerTurn: Number(e.target.value) || 0 };
-                  patch({ weapons });
-                }}
-              />
             </div>
           </div>
         ))}
@@ -767,7 +806,7 @@ export function CharacterSheet({
 
       {/* Inventário */}
       <ListSection
-        title={`Inventário (${weight.toFixed(1)} / ${limit} peso)`}
+        title={`Inventário (${weight} / ${limit} peso)`}
         onAdd={() =>
           patch({
             inventory: [
@@ -803,12 +842,16 @@ export function CharacterSheet({
             />
             <input
               type="number"
-              step="0.1"
+              step={1}
+              min={0}
               className="field"
               value={item.weight}
               onChange={(e) => {
                 const inventory = [...sheet.inventory];
-                inventory[i] = { ...item, weight: Number(e.target.value) || 0 };
+                inventory[i] = {
+                  ...item,
+                  weight: Math.trunc(Number(e.target.value) || 0),
+                };
                 patch({ inventory });
               }}
             />
@@ -983,6 +1026,68 @@ export function CharacterSheet({
 
       <MosaicFrame characterName={sheet.name} elements={elements} />
       <FloatingDiceButton />
+    </div>
+  );
+}
+
+function ResourceBlock({
+  label,
+  current,
+  max,
+  color,
+  mod,
+  onModChange,
+  onApply,
+}: {
+  label: string;
+  current: number;
+  max: number;
+  color: string;
+  mod: number;
+  onModChange: (v: number) => void;
+  onApply: (delta: number) => void;
+}) {
+  const [amount, setAmount] = useState(1);
+  const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
+  return (
+    <div className="space-y-2 rounded-md border border-ink-border bg-ink-raised/30 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="label">{label}</span>
+        <label className="flex items-center gap-1 text-xs text-ink-muted">
+          mod
+          <input
+            type="number"
+            step={1}
+            className="field w-14 py-1 text-center text-sm"
+            value={mod}
+            onChange={(e) => onModChange(Math.trunc(Number(e.target.value) || 0))}
+            title="Ajuste no máximo"
+          />
+        </label>
+      </div>
+      <p className="font-display text-2xl text-parchment">
+        {current}
+        <span className="text-base text-ink-muted"> / {max}</span>
+      </p>
+      <div className="h-2.5 overflow-hidden rounded-full bg-ink">
+        <div className="h-full transition-all" style={{ width: pct + '%', backgroundColor: color }} />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={1}
+          step={1}
+          className="field w-14 py-1 text-center text-sm"
+          value={amount}
+          onChange={(e) => setAmount(Math.max(1, Math.trunc(Number(e.target.value) || 1)))}
+        />
+        <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => onApply(-amount)}>
+          Dano
+        </button>
+        <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => onApply(amount)}>
+          Cura
+        </button>
+      </div>
     </div>
   );
 }

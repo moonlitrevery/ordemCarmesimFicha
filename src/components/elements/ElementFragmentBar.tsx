@@ -49,6 +49,7 @@ export function ElementFragmentBar({
   const [amount, setAmount] = useState(1);
   const [pulse, setPulse] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const needsGlow = element === 'luz' || element === 'sombra';
 
   function flash(msg: string, withPulse = false) {
     setNotice(msg);
@@ -67,12 +68,7 @@ export function ElementFragmentBar({
       levelsGained: result.levelsGained,
     });
     if (result.leveledUp) {
-      flash(
-        result.levelsGained > 1
-          ? '+' + result.levelsGained + ' níveis!'
-          : 'Nível up!',
-        true
-      );
+      flash(result.levelsGained > 1 ? '+' + result.levelsGained + ' níveis!' : 'Nível up!', true);
     } else if (result.blockedByCap) {
       flash('Nível máximo do personagem atingido');
     }
@@ -85,11 +81,7 @@ export function ElementFragmentBar({
       levelsLost: result.levelsLost,
     });
     if (result.leveledDown) {
-      flash(
-        result.levelsLost > 1
-          ? '-' + result.levelsLost + ' níveis'
-          : 'Nível reduzido'
-      );
+      flash(result.levelsLost > 1 ? '-' + result.levelsLost + ' níveis' : 'Nível reduzido');
     }
   }
 
@@ -114,7 +106,15 @@ export function ElementFragmentBar({
 
       <div className="relative mb-3 flex items-end justify-between gap-2">
         <div>
-          <p className="label" style={{ color }}>
+          <p
+            className="label"
+            style={{
+              color,
+              textShadow: needsGlow
+                ? '0 0 8px rgba(255,255,255,0.55), 0 0 16px rgba(255,255,255,0.25)'
+                : undefined,
+            }}
+          >
             {ELEMENT_LABELS[element]}
           </p>
           <p className="font-display text-3xl leading-none text-parchment">
@@ -130,13 +130,7 @@ export function ElementFragmentBar({
             value={amount}
             onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 1))}
           />
-          <button
-            type="button"
-            className="btn-ghost py-1.5 px-2.5"
-            disabled={!canRemove}
-            onClick={() => remove(amount)}
-            title="Remover fragmentos"
-          >
+          <button type="button" className="btn-ghost py-1.5 px-2.5" disabled={!canRemove} onClick={() => remove(amount)} title="Remover fragmentos">
             −
           </button>
           <button
@@ -152,7 +146,7 @@ export function ElementFragmentBar({
 
       <div className="relative h-8 overflow-hidden rounded-full border border-white/5 bg-ink/90 shadow-inner">
         <motion.div
-          className="absolute inset-y-0 left-0"
+          className="absolute inset-y-0 left-0 overflow-hidden"
           style={{
             background: 'linear-gradient(90deg, ' + color + 'cc, ' + color + ', ' + color + 'ee)',
             boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px ' + color + '66',
@@ -160,13 +154,15 @@ export function ElementFragmentBar({
           initial={false}
           animate={{ width: progress + '%' }}
           transition={{ type: 'spring', stiffness: 140, damping: 22 }}
-        />
-        <motion.div
-          className="pointer-events-none absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/25 to-transparent"
-          animate={{ left: ['-20%', '120%'] }}
-          transition={{ duration: 2.8, repeat: Infinity, ease: 'linear' }}
-          style={{ opacity: progress > 2 ? 0.7 : 0 }}
-        />
+        >
+          {progress > 2 && (
+            <motion.div
+              className="absolute inset-y-0 w-10 bg-gradient-to-r from-transparent via-white/35 to-transparent"
+              animate={{ left: ['-30%', '120%'] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: 'linear' }}
+            />
+          )}
+        </motion.div>
         <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold tracking-wide text-parchment drop-shadow">
           {row.level >= 20
             ? 'Nível máximo do elemento'

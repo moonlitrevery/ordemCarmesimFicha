@@ -83,6 +83,7 @@ create table public.characters (
   curses jsonb not null default '[]'::jsonb,
   historical_feats jsonb not null default '[]'::jsonb,
   milestone_notes jsonb not null default '{}'::jsonb,
+  resource_mods jsonb not null default '{"hp":0,"mana":0,"sanity":0}'::jsonb,
 
   notes text,
   backstory text,

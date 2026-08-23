@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ALL_ELEMENTS, ELEMENT_LABELS } from '@/lib/constants';
+import { ALL_ELEMENTS, ELEMENT_COLORS, ELEMENT_LABELS } from '@/lib/constants';
 import { ElementFragmentBar } from '@/components/elements/ElementFragmentBar';
 import { SectionCard } from '@/components/ui/SectionCard';
 import type { CharacterElementRow, ElementType } from '@/types/database';
@@ -64,6 +64,13 @@ export function ElementsSection({
               type="button"
               className="btn-ghost text-sm"
               onClick={() => addElement(el)}
+              style={{
+                color: ELEMENT_COLORS[el],
+                textShadow:
+                  el === 'luz' || el === 'sombra'
+                    ? '0 0 8px rgba(255,255,255,0.55), 0 0 14px rgba(255,255,255,0.3)'
+                    : undefined,
+              }}
             >
               {ELEMENT_LABELS[el]}
             </button>
