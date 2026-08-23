@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { DEFAULT_ATTRIBUTES } from '@/types/database';
+import { DEFAULT_SKILLS } from '@/lib/constants';
 import { computeDerivedMaxes } from '@/lib/calculations';
 
 export default function NovaFichaPage() {
@@ -33,6 +34,7 @@ export default function NovaFichaPage() {
         owner_id: user.id,
         name: name.trim() || 'Novo personagem',
         attributes: DEFAULT_ATTRIBUTES,
+        skills: DEFAULT_SKILLS,
         hp_current: maxes.hpMax,
         hp_max: maxes.hpMax,
         mana_current: maxes.manaMax,
@@ -54,8 +56,8 @@ export default function NovaFichaPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6">
-      <h1 className="font-display text-4xl text-parchment">Nova Ficha</h1>
+    <div className="mx-auto max-w-lg space-y-6">
+      <h1 className="font-display text-5xl text-parchment">Nova Ficha</h1>
       <form onSubmit={onSubmit} className="panel space-y-4 p-6">
         <label className="block space-y-1.5">
           <span className="label">Nome do personagem</span>
@@ -68,9 +70,7 @@ export default function NovaFichaPage() {
             required
           />
         </label>
-        {error && (
-          <p className="text-sm text-crimson-soft">{error}</p>
-        )}
+        {error && <p className="text-base text-crimson-soft">{error}</p>}
         <button type="submit" className="btn-primary w-full" disabled={loading}>
           {loading ? 'Criando…' : 'Criar ficha'}
         </button>

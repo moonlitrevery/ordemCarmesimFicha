@@ -1,8 +1,22 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { COMMON_DICE, parseDiceNotation, rollDice, type DiceRollResult } from '@/lib/dice';
+
+export function DiceIcon({ className = 'h-5 w-5' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M5.5 3h13A2.5 2.5 0 0 1 21 5.5v13A2.5 2.5 0 0 1 18.5 21h-13A2.5 2.5 0 0 1 3 18.5v-13A2.5 2.5 0 0 1 5.5 3Zm1.25 3.25a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm5.25 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm5.25 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5ZM6.75 11a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm5.25 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm5.25 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5ZM6.75 16.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm5.25 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm5.25 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z" />
+    </svg>
+  );
+}
 
 export function DiceRoller({
   initialNotation = '1d20',
@@ -37,9 +51,9 @@ export function DiceRoller({
     <div className={`space-y-3 ${compact ? '' : 'panel p-4'}`}>
       {!compact && (
         <div className="flex items-center justify-between">
-          <h3 className="font-display text-lg text-parchment">Rolar Dados</h3>
+          <h3 className="font-display text-xl text-parchment">Rolar Dados</h3>
           {onClose && (
-            <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={onClose}>
+            <button type="button" className="btn-ghost px-2 py-1 text-sm" onClick={onClose}>
               Fechar
             </button>
           )}
@@ -50,7 +64,7 @@ export function DiceRoller({
           <button
             key={d}
             type="button"
-            className="btn-ghost px-2.5 py-1 text-xs"
+            className="btn-ghost px-2.5 py-1 text-sm"
             onClick={() => handleRoll(`1${d}`)}
           >
             {d}
@@ -71,7 +85,7 @@ export function DiceRoller({
           Rolar
         </button>
       </div>
-      {error && <p className="text-sm text-crimson-soft">{error}</p>}
+      {error && <p className="text-base text-crimson-soft">{error}</p>}
       <AnimatePresence mode="wait">
         {result && (
           <motion.div
@@ -87,8 +101,8 @@ export function DiceRoller({
             className="rounded-md border border-crimson/30 bg-ink-raised px-4 py-3 text-center"
           >
             <p className="label mb-1">{result.notation}</p>
-            <p className="font-display text-4xl text-crimson-soft">{result.total}</p>
-            <p className="mt-1 text-sm text-ink-muted">{result.breakdown}</p>
+            <p className="font-display text-5xl text-crimson-soft">{result.total}</p>
+            <p className="mt-1 text-base text-ink-muted">{result.breakdown}</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -96,27 +110,76 @@ export function DiceRoller({
   );
 }
 
-export function InlineRollButton({ notation }: { notation: string }) {
+export function InlineRollButton({
+  notation,
+  label,
+}: {
+  notation: string;
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const width = 300;
+    const left = Math.min(
+      Math.max(8, rect.right - width),
+      window.innerWidth - width - 8
+    );
+    const top = Math.min(rect.bottom + 8, window.innerHeight - 320);
+    setPos({ top, left });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <>
       <button
+        ref={btnRef}
         type="button"
-        className="btn-ghost px-2 py-1 text-xs"
+        className="btn-ghost inline-flex h-10 w-10 items-center justify-center p-0"
         onClick={() => setOpen((v) => !v)}
-        title={`Rolar ${notation}`}
+        title={label ? `Rolar ${label} (${notation})` : `Rolar ${notation}`}
+        aria-label={label ? `Rolar ${label}` : `Rolar ${notation}`}
       >
-        D
+        <DiceIcon className="h-5 w-5" />
       </button>
-      {open && (
-        <div className="absolute right-0 z-20 mt-2 w-72 rounded-lg border border-ink-border bg-ink-panel p-3 shadow-panel">
-          <DiceRoller
-            initialNotation={notation}
-            compact
-            onClose={() => setOpen(false)}
-          />
-        </div>
-      )}
-    </div>
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="fixed z-[9999] w-[300px] rounded-lg border border-ink-border bg-ink-panel p-3 shadow-panel"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            <DiceRoller
+              initialNotation={notation}
+              compact
+              onClose={() => setOpen(false)}
+            />
+          </div>,
+          document.body
+        )}
+    </>
   );
 }

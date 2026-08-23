@@ -16,16 +16,14 @@ export function ElementsSection({
     meta?: { leveledUp: boolean; blockedByCap: boolean; levelsGained: number }
   ) => void;
 }) {
-  const visible = useMemo(
+  // Qualquer elemento já na lista aparece (mesmo com nível 0 e 0 fragmentos)
+  const activeElements = useMemo(
     () =>
-      ALL_ELEMENTS.filter((el) => {
-        const row = elements.find((e) => e.element === el);
-        return row && (row.level > 0 || row.fragments_current > 0);
-      }),
+      ALL_ELEMENTS.filter((el) => elements.some((e) => e.element === el)),
     [elements]
   );
 
-  const hidden = ALL_ELEMENTS.filter((el) => !visible.includes(el));
+  const hidden = ALL_ELEMENTS.filter((el) => !activeElements.includes(el));
   const [picking, setPicking] = useState(false);
 
   function addElement(el: ElementType) {
@@ -42,7 +40,11 @@ export function ElementsSection({
       title="Elementos e Fragmentos"
       action={
         hidden.length > 0 ? (
-          <button type="button" className="btn-ghost text-xs" onClick={() => setPicking((v) => !v)}>
+          <button
+            type="button"
+            className="btn-ghost text-sm"
+            onClick={() => setPicking((v) => !v)}
+          >
             {picking ? 'Cancelar' : '+ Adicionar elemento'}
           </button>
         ) : null
@@ -54,7 +56,7 @@ export function ElementsSection({
             <button
               key={el}
               type="button"
-              className="btn-ghost text-xs"
+              className="btn-ghost text-sm"
               onClick={() => addElement(el)}
             >
               {ELEMENT_LABELS[el]}
@@ -63,14 +65,14 @@ export function ElementsSection({
         </div>
       )}
 
-      {visible.length === 0 && !picking && (
-        <p className="text-sm text-ink-muted">
+      {activeElements.length === 0 && !picking && (
+        <p className="text-base text-ink-muted">
           Nenhum elemento ativo. Adicione o primeiro elemento do personagem.
         </p>
       )}
 
       <div className="grid gap-3 md:grid-cols-2">
-        {visible.map((el) => (
+        {activeElements.map((el) => (
           <ElementFragmentBar
             key={el}
             elements={elements}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DiceRoller } from './DiceRoller';
+import { DiceIcon, DiceRoller } from './DiceRoller';
 
 export function FloatingDiceButton() {
   const [open, setOpen] = useState(false);
@@ -17,9 +17,8 @@ export function FloatingDiceButton() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="btn-primary ml-auto flex h-12 w-12 items-center justify-center rounded-full text-lg shadow-panel"
-        aria-label="Rolar dados"
-      >
-        D
+        aria-label="Rolar dados">
+        <DiceIcon className="h-6 w-6" />
       </button>
     </div>
   );

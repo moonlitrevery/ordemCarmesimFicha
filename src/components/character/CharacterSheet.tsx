@@ -11,6 +11,7 @@ import {
   getTotalLevel,
 } from '@/lib/calculations';
 import {
+  DEFAULT_SKILLS,
   ORDER_RANKS,
   SPECIALIZATION_LABELS,
   VALID_IMAGE_URL,
@@ -84,7 +85,7 @@ function toState(c: Character): SheetState {
     hp_current: c.hp_current ?? 0,
     mana_current: c.mana_current ?? 0,
     sanity_current: c.sanity_current ?? 0,
-    skills: c.skills ?? [],
+    skills: c.skills && c.skills.length > 0 ? c.skills : DEFAULT_SKILLS.map((sk) => ({ ...sk })),
     spells: c.spells ?? [],
     weapons: c.weapons ?? [],
     inventory: c.inventory ?? [],
@@ -370,12 +371,12 @@ export function CharacterSheet({
             const value = sheet.attributes[key];
             const mod = getAttributeModifier(value);
             return (
-              <label key={key} className="rounded-md border border-ink-border bg-ink-raised/50 p-2 text-center">
+              <div key={key} className="rounded-md border border-ink-border bg-ink-raised/50 p-3 text-center">
                 <span className="label block">{ATTRIBUTE_LABELS[key]}</span>
-                <span className="mt-0.5 block text-[10px] text-ink-muted">{key}</span>
+                <span className="mt-0.5 block text-xs text-ink-muted">{key}</span>
                 <input
                   type="number"
-                  className="field mt-2 text-center font-display text-xl"
+                  className="field mt-2 text-center font-display text-2xl"
                   value={value}
                   onChange={(e) =>
                     patch({
@@ -386,10 +387,16 @@ export function CharacterSheet({
                     })
                   }
                 />
-                <span className="mt-1 block text-sm text-crimson-soft">
-                  {mod >= 0 ? `+${mod}` : mod}
-                </span>
-              </label>
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <span className="text-base text-crimson-soft">
+                    {mod >= 0 ? '+' + mod : mod}
+                  </span>
+                  <InlineRollButton
+                    notation="1d100"
+                    label={ATTRIBUTE_LABELS[key] + ' (meta ' + value + ')'}
+                  />
+                </div>
+              </div>
             );
           })}
         </div>
@@ -508,7 +515,7 @@ export function CharacterSheet({
                 {total}
               </span>
               <div className="flex items-center gap-1">
-                <InlineRollButton notation={`1d100`} />
+                <InlineRollButton notation="1d100" label={skill.name + " (meta " + total + ")"} />
                 <button
                   type="button"
                   className="btn-ghost px-2 py-1 text-xs"

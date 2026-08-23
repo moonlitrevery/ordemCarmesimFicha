@@ -40,8 +40,8 @@ export function Nav() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-ink-border/80 bg-ink/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 md:px-6">
-        <Link href="/fichas" className="font-display text-xl tracking-wide text-parchment">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-6">
+        <Link href="/fichas" className="font-display text-2xl tracking-wide text-parchment">
           Ordem <span className="text-crimson-soft">Carmesim</span>
         </Link>
         <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
@@ -51,7 +51,7 @@ export function Nav() {
               <Link
                 key={l.href}
                 href={l.href}
-                className={`rounded-md px-3 py-1.5 text-sm transition ${
+                className={`rounded-md px-3 py-1.5 text-base transition ${
                   active
                     ? 'bg-crimson/25 text-parchment'
                     : 'text-ink-muted hover:bg-ink-raised hover:text-parchment'
@@ -65,7 +65,7 @@ export function Nav() {
             <button
               type="button"
               onClick={signOut}
-              className="ml-1 rounded-md px-3 py-1.5 text-sm text-ink-muted hover:bg-ink-raised hover:text-parchment"
+              className="ml-1 rounded-md px-3 py-1.5 text-base text-ink-muted hover:bg-ink-raised hover:text-parchment"
             >
               Sair
             </button>

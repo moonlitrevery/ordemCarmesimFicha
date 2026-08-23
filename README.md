@@ -37,3 +37,15 @@ Arquivos em `content/lore/*.mdx` e `content/regras/*.mdx` têm placeholders `{/*
 ## Nota Windows
 
 Neste ambiente, o build do Next.js pode falhar no `realpath` nativo. O script `scripts/patch-next-realpath.mjs` (rodado no `postinstall`/`dev`/`build`) corrige isso automaticamente.
+
+## Deploy na Vercel
+
+1. No projeto da Vercel: **Settings → Environment Variables**, adicione (Production e Preview):
+   - `NEXT_PUBLIC_SUPABASE_URL` = URL do projeto (Supabase → Settings → API)
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = chave `anon` / `public`
+
+2. **Redeploy** depois de salvar as variáveis (o deploy anterior não as recebe sozinho).
+
+3. No Supabase → **Authentication → URL Configuration**:
+   - Site URL: `https://seu-app.vercel.app`
+   - Redirect URLs: `https://seu-app.vercel.app/**`

@@ -76,6 +76,36 @@ export const SPECIALIZATION_BONUS: Record<string, number> = {
   expert: 40,
 };
 
+
+export const DEFAULT_SKILLS: {
+  name: string;
+  attribute: 'FOR' | 'CON' | 'DES' | 'INT' | 'EDU' | 'CAR' | 'POD';
+  specialization: 'none' | 'basico' | 'medio' | 'alto' | 'expert';
+}[] = [
+  { name: 'Combate', attribute: 'FOR', specialization: 'none' },
+  { name: 'Arremesso', attribute: 'DES', specialization: 'none' },
+  { name: 'Atletismo', attribute: 'FOR', specialization: 'none' },
+  { name: 'Escutar', attribute: 'INT', specialization: 'none' },
+  { name: 'Acrobacia', attribute: 'DES', specialization: 'none' },
+  { name: 'Furtividade', attribute: 'DES', specialization: 'none' },
+  { name: 'Condução', attribute: 'DES', specialization: 'none' },
+  { name: 'Tiro', attribute: 'DES', specialization: 'none' },
+  { name: 'Esquiva', attribute: 'DES', specialization: 'none' },
+  { name: 'Refletir', attribute: 'INT', specialization: 'none' },
+  { name: 'Computação', attribute: 'INT', specialization: 'none' },
+  { name: 'Percepção', attribute: 'INT', specialization: 'none' },
+  { name: 'Investigação', attribute: 'INT', specialization: 'none' },
+  { name: 'Medicina', attribute: 'EDU', specialization: 'none' },
+  { name: 'Psicoanalisar', attribute: 'CAR', specialization: 'none' },
+  { name: 'Natureza', attribute: 'EDU', specialization: 'none' },
+  { name: 'Profissão', attribute: 'EDU', specialization: 'none' },
+  { name: 'Charme', attribute: 'CAR', specialization: 'none' },
+  { name: 'Intimidação', attribute: 'CAR', specialization: 'none' },
+  { name: 'Lábia', attribute: 'CAR', specialization: 'none' },
+  { name: 'Arcano', attribute: 'POD', specialization: 'none' },
+  { name: 'Mitos', attribute: 'POD', specialization: 'none' },
+];
+
 export const SPECIALIZATION_LABELS: Record<string, string> = {
   none: 'Nenhuma',
   basico: 'Básico',
