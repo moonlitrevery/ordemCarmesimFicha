@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0c0a0d;
+  --foreground: #e8dfd0;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  color: var(--foreground);
+  background-color: var(--background);
+  min-height: 100dvh;
+}
+
+@layer base {
+  ::selection {
+    background: rgba(139, 30, 45, 0.45);
+    color: #fff;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-ink-border bg-ink-panel/80 shadow-panel backdrop-blur-sm;
+  }
+
+  .field {
+    @apply w-full rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-sm text-parchment outline-none transition focus:border-crimson/70 focus:ring-1 focus:ring-crimson/40;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-crimson text-parchment hover:bg-crimson-soft;
+  }
+
+  .btn-ghost {
+    @apply btn border border-ink-border bg-transparent text-parchment hover:border-crimson/50 hover:bg-ink-raised;
+  }
+
+  .section-title {
+    @apply font-display text-xl tracking-wide text-parchment md:text-2xl;
+  }
+
+  .label {
+    @apply text-xs uppercase tracking-[0.14em] text-ink-muted;
+  }
+}

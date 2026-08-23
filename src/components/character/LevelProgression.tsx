@@ -1,0 +1,104 @@
+'use client';
+
+import {
+  getNextMilestone,
+  getReachedMilestones,
+  getTotalLevel,
+} from '@/lib/calculations';
+import type { CharacterElementRow, MilestoneNotes } from '@/types/database';
+
+export function LevelProgression({
+  elements,
+  isOrderAgent,
+  arcana,
+  subarcana,
+  milestoneNotes,
+  onArcanaChange,
+  onSubarcanaChange,
+  onMilestoneNoteChange,
+}: {
+  elements: CharacterElementRow[];
+  isOrderAgent: boolean;
+  arcana: string;
+  subarcana: string;
+  milestoneNotes: MilestoneNotes;
+  onArcanaChange: (v: string) => void;
+  onSubarcanaChange: (v: string) => void;
+  onMilestoneNoteChange: (level: number, note: string) => void;
+}) {
+  const total = getTotalLevel(elements);
+  const next = getNextMilestone(total, isOrderAgent);
+  const reached = getReachedMilestones(total, isOrderAgent);
+
+  return (
+    <section className="panel space-y-4 p-4 md:p-5">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="label">Nível total</p>
+          <p className="font-display text-6xl leading-none text-crimson-soft">{total}</p>
+          <p className="mt-1 text-xs text-ink-muted">Soma dos níveis dos elementos · teto 20</p>
+        </div>
+        {next && (
+          <div className="max-w-sm rounded-md border border-crimson/30 bg-crimson/10 px-3 py-2">
+            <p className="label text-crimson-soft">Próximo marco · Nível {next.level}</p>
+            <p className="mt-1 font-display text-lg text-parchment">{next.title}</p>
+            <p className="mt-1 text-sm text-ink-muted">{next.description}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1.5">
+          <span className="label">Arcana {total >= 8 ? '' : '(desbloqueia no 8)'}</span>
+          <input
+            className="field"
+            value={arcana}
+            onChange={(e) => onArcanaChange(e.target.value)}
+            placeholder="Ex: O Julgamento"
+            disabled={total < 8}
+          />
+        </label>
+        <label className="space-y-1.5">
+          <span className="label">Subarcana {total >= 15 ? '' : '(desbloqueia no 15)'}</span>
+          <input
+            className="field"
+            value={subarcana}
+            onChange={(e) => onSubarcanaChange(e.target.value)}
+            placeholder="Subarcana"
+            disabled={total < 15}
+          />
+        </label>
+      </div>
+
+      <div className="space-y-2">
+        <p className="label">Marcos alcançados</p>
+        {reached.length === 0 && (
+          <p className="text-sm text-ink-muted">Nenhum marco ainda.</p>
+        )}
+        {reached.map((m) => (
+          <div
+            key={m.level}
+            className="rounded-md border border-ink-border bg-ink-raised/50 px-3 py-2"
+          >
+            <p className="font-display text-parchment">
+              <span className="text-crimson-soft">{m.level}</span> — {m.title}
+            </p>
+            <p className="mt-0.5 text-xs text-ink-muted">{m.description}</p>
+            <textarea
+              className="field mt-2 min-h-[60px]"
+              placeholder="Anotação do mestre sobre este marco…"
+              value={milestoneNotes[String(m.level)] ?? ''}
+              onChange={(e) => onMilestoneNoteChange(m.level, e.target.value)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {total >= 20 && (
+        <p className="rounded-md border border-crimson/40 bg-crimson/15 px-3 py-2 text-sm text-parchment">
+          Nível 20 atingido — evolução passa a vir de Feitos Históricos, não de fragmentos.
+        </p>
+      )}
+    </section>
+  );
+}

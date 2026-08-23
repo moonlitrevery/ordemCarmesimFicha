@@ -1,0 +1,34 @@
+{
+  "name": "ordem-carmesim",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/patch-next-realpath.mjs && next dev",
+    "build": "node scripts/patch-next-realpath.mjs && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "postinstall": "node scripts/patch-next-realpath.mjs"
+  },
+  "dependencies": {
+    "@mdx-js/loader": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
+    "@next/mdx": "^14.2.35",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.3",
+    "framer-motion": "^13.1.1",
+    "next": "14.2.35",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/mdx": "^2.0.14",
+    "@types/node": "20.19.43",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "^18",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "5.9.3"
+  }
+}
