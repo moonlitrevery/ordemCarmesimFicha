@@ -5,8 +5,11 @@ import { createClient } from '@/lib/supabase/client';
 import {
   computeDerivedMaxes,
   getAttributeModifier,
+  getAttributePointsAvailable,
   getCarryLimit,
   getInventoryWeight,
+  getNextSpecialization,
+  getSkillPointsAvailable,
   getTotalLevel,
 } from '@/lib/calculations';
 import {
@@ -80,6 +83,8 @@ type SheetState = {
   is_order_agent: boolean;
   order_rank: string;
   resource_mods: ResourceMods;
+  attribute_points_spent: number;
+  skill_points_spent: number;
 };
 
 function toState(c: Character): SheetState {
@@ -109,6 +114,8 @@ function toState(c: Character): SheetState {
     is_order_agent: c.is_order_agent ?? true,
     order_rank: c.order_rank ?? 'Agente Principiante',
     resource_mods: { ...DEFAULT_RESOURCE_MODS, ...(c.resource_mods || {}) },
+    attribute_points_spent: c.attribute_points_spent ?? 0,
+    skill_points_spent: c.skill_points_spent ?? 0,
   };
 }
 
@@ -197,6 +204,8 @@ export function CharacterSheet({
         backstory: next.backstory || null,
         is_order_agent: next.is_order_agent,
         order_rank: next.order_rank || null,
+        attribute_points_spent: next.attribute_points_spent ?? 0,
+        skill_points_spent: next.skill_points_spent ?? 0,
       };
 
       const { error } = await supabase
@@ -289,6 +298,14 @@ export function CharacterSheet({
 
   const weight = getInventoryWeight(sheet.inventory);
   const limit = getCarryLimit(sheet.attributes);
+  const attrPointsAvailable = getAttributePointsAvailable(
+    totalLevel,
+    sheet.attribute_points_spent
+  );
+  const skillPointsAvailable = getSkillPointsAvailable(
+    totalLevel,
+    sheet.skill_points_spent
+  );
   const imageValid =
     !sheet.image_url || VALID_IMAGE_URL.test(sheet.image_url.split('#')[0]);
 
@@ -417,7 +434,18 @@ export function CharacterSheet({
       />
 
       {/* Atributos */}
-      <SectionCard title="Atributos">
+      <SectionCard
+        title="Atributos"
+        badge={
+          attrPointsAvailable > 0 ? (
+            <span className="animate-pulse rounded-md border border-crimson/50 bg-crimson/20 px-2 py-0.5 text-xs font-medium text-crimson-soft">
+              {attrPointsAvailable === 1
+                ? '1 ponto de atributo disponível'
+                : attrPointsAvailable + ' pontos de atributo disponíveis'}
+            </span>
+          ) : null
+        }
+      >
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
           {ATTRIBUTE_KEYS.map((key) => {
             const value = sheet.attributes[key];
@@ -444,6 +472,24 @@ export function CharacterSheet({
                     {mod >= 0 ? '+' + mod : mod}
                   </span>
                   <QuickRollButton bonus={mod} label={ATTRIBUTE_LABELS[key]} />
+                  {attrPointsAvailable > 0 && (
+                    <button
+                      type="button"
+                      className="btn-ghost px-2 py-1 text-xs text-crimson-soft"
+                      onClick={() =>
+                        patch({
+                          attributes: {
+                            ...sheet.attributes,
+                            [key]: value + 1,
+                          },
+                          attribute_points_spent: sheet.attribute_points_spent + 1,
+                        })
+                      }
+                      title="Gastar 1 ponto de atributo"
+                    >
+                      +1
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -489,7 +535,19 @@ export function CharacterSheet({
       <SkillsList
         skills={sheet.skills}
         attributes={sheet.attributes}
+        skillPointsAvailable={skillPointsAvailable}
         onChange={(skills) => patch({ skills })}
+        onSpendSkillPoint={(i) => {
+          const skill = sheet.skills[i];
+          const nextSpec = getNextSpecialization(skill.specialization);
+          if (!nextSpec || skillPointsAvailable <= 0) return;
+          const skills = [...sheet.skills];
+          skills[i] = { ...skill, specialization: nextSpec };
+          patch({
+            skills,
+            skill_points_spent: sheet.skill_points_spent + 1,
+          });
+        }}
       />
 
       <section className="space-y-1">

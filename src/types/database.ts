@@ -132,6 +132,8 @@ export interface Character {
   backstory: string | null;
   is_order_agent: boolean;
   order_rank: string | null;
+  attribute_points_spent: number;
+  skill_points_spent: number;
   created_at: string;
   updated_at: string;
 }

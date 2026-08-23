@@ -52,11 +52,24 @@ export const ELEMENT_LABELS: Record<ElementType, string> = {
 };
 
 /** Ajustável — curva ainda não definitiva do sistema */
+/** Pontos ganhos por nível total (soma dos elementos). Ajustáveis. */
+export const ATTRIBUTE_POINTS_PER_LEVEL = 1;
+export const SKILL_POINTS_PER_LEVEL = 1;
+
 export const PER_LEVEL_GROWTH = {
-  attributePoints: 1,
+  attributePoints: ATTRIBUTE_POINTS_PER_LEVEL,
   hpPerLevel: 2,
   manaPerLevel: 2,
 };
+
+/** Escala de treinamento de perícia (um ponto sobe um degrau). */
+export const SPECIALIZATION_ORDER = [
+  'none',
+  'basico',
+  'medio',
+  'alto',
+  'expert',
+] as const;
 
 export const ORDER_RANKS = [
   'Agente Principiante',

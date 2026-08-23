@@ -85,6 +85,17 @@ export function ElementFragmentBar({
     }
   }
 
+  function removeElement() {
+    const levelsLost = row.level || 0;
+    onChange(
+      elements.filter((e) => e.element !== element),
+      {
+        leveledDown: levelsLost > 0,
+        levelsLost,
+      }
+    );
+  }
+
   const canRemove = row.level > 0 || row.fragments_current > 0;
 
   return (
@@ -140,6 +151,15 @@ export function ElementFragmentBar({
             onClick={() => add(amount)}
           >
             +
+          </button>
+          <button
+            type="button"
+            className="btn-ghost px-2 py-1.5 text-sm"
+            onClick={removeElement}
+            title={'Remover ' + ELEMENT_LABELS[element] + ' da ficha'}
+            aria-label={'Remover ' + ELEMENT_LABELS[element]}
+          >
+            ×
           </button>
         </div>
       </div>

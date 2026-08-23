@@ -91,6 +91,9 @@ create table public.characters (
   is_order_agent boolean not null default true,
   order_rank text default 'Agente Principiante',
 
+  attribute_points_spent int not null default 0,
+  skill_points_spent int not null default 0,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

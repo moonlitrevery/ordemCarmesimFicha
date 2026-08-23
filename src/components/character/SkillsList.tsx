@@ -1,7 +1,12 @@
 'use client';
 
 import { useMemo } from 'react';
-import { formatModifier, getSkillRollModifier, getSkillTotal } from '@/lib/calculations';
+import {
+  formatModifier,
+  getNextSpecialization,
+  getSkillRollModifier,
+  getSkillTotal,
+} from '@/lib/calculations';
 import { isDefaultSkillName, SPECIALIZATION_LABELS } from '@/lib/constants';
 import { QuickRollButton } from '@/components/dice/DiceRoller';
 import { SectionCard } from '@/components/ui/SectionCard';
@@ -11,11 +16,15 @@ import { ATTRIBUTE_KEYS } from '@/types/database';
 export function SkillsList({
   skills,
   attributes,
+  skillPointsAvailable,
   onChange,
+  onSpendSkillPoint,
 }: {
   skills: Skill[];
   attributes: Attributes;
+  skillPointsAvailable: number;
   onChange: (skills: Skill[]) => void;
+  onSpendSkillPoint: (skillIndex: number) => void;
 }) {
   const sorted = useMemo(
     () =>
@@ -35,9 +44,20 @@ export function SkillsList({
     onChange(next);
   }
 
+  const canSpend = skillPointsAvailable > 0;
+
   return (
     <SectionCard
       title="Perícias"
+      badge={
+        canSpend ? (
+          <span className="animate-pulse rounded-md border border-crimson/50 bg-crimson/20 px-2 py-0.5 text-xs font-medium text-crimson-soft">
+            {skillPointsAvailable === 1
+              ? '1 ponto de perícia disponível'
+              : skillPointsAvailable + ' pontos de perícia disponíveis'}
+          </span>
+        ) : null
+      }
       action={
         <button
           type="button"
@@ -58,10 +78,18 @@ export function SkillsList({
           const total = getSkillTotal(skill, attributes);
           const rollMod = getSkillRollModifier(total);
           const isDefault = isDefaultSkillName(skill.name);
+          const nextSpec = getNextSpecialization(skill.specialization);
+          let spendLabel: string | null = null;
+          if (nextSpec === 'basico') {
+            spendLabel = 'Treinar (Básico)';
+          } else if (nextSpec) {
+            spendLabel = 'Promover → ' + SPECIALIZATION_LABELS[nextSpec];
+          }
+
           return (
             <div
               key={i}
-              className="flex items-center gap-2 rounded-md border border-ink-border/70 bg-ink-raised/30 px-2 py-1.5"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-ink-border/70 bg-ink-raised/30 px-2 py-1.5"
             >
               <select
                 className="field w-14 shrink-0 px-1 py-1 text-center text-xs"
@@ -116,7 +144,22 @@ export function SkillsList({
                 </span>
               </div>
 
-              <div className="flex shrink-0 items-center">
+              <div className="flex shrink-0 items-center gap-1">
+                {spendLabel && (
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-[0.7rem] disabled:opacity-40"
+                    disabled={!canSpend}
+                    onClick={() => onSpendSkillPoint(i)}
+                    title={
+                      canSpend
+                        ? spendLabel
+                        : 'Sem pontos de perícia disponíveis'
+                    }
+                  >
+                    {spendLabel}
+                  </button>
+                )}
                 <QuickRollButton bonus={rollMod} label={skill.name} />
                 <button
                   type="button"

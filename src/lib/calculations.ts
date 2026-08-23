@@ -1,11 +1,14 @@
 import {
+  ATTRIBUTE_POINTS_PER_LEVEL,
+  ELEMENT_COLORS,
   FRAGMENT_COST,
   LEVEL_MILESTONES,
   MAX_CHARACTER_LEVEL,
   MAX_ELEMENT_LEVEL,
   PER_LEVEL_GROWTH,
+  SKILL_POINTS_PER_LEVEL,
   SPECIALIZATION_BONUS,
-  ELEMENT_COLORS,
+  SPECIALIZATION_ORDER,
 } from '@/lib/constants';
 import type { LevelMilestone } from '@/lib/constants';
 import type {
@@ -13,6 +16,7 @@ import type {
   CharacterElementRow,
   ElementType,
   Skill,
+  SkillSpecialization,
 } from '@/types/database';
 
 export function getAttributeModifier(value: number): number {
@@ -21,6 +25,30 @@ export function getAttributeModifier(value: number): number {
 
 export function getTotalLevel(elements: CharacterElementRow[]): number {
   return elements.reduce((sum, el) => sum + (el.level || 0), 0);
+}
+
+export function getAttributePointsAvailable(
+  totalLevel: number,
+  attributePointsSpent: number
+): number {
+  const earned = totalLevel * ATTRIBUTE_POINTS_PER_LEVEL;
+  return Math.max(0, earned - (attributePointsSpent || 0));
+}
+
+export function getSkillPointsAvailable(
+  totalLevel: number,
+  skillPointsSpent: number
+): number {
+  const earned = totalLevel * SKILL_POINTS_PER_LEVEL;
+  return Math.max(0, earned - (skillPointsSpent || 0));
+}
+
+export function getNextSpecialization(
+  current: SkillSpecialization
+): SkillSpecialization | null {
+  const i = SPECIALIZATION_ORDER.indexOf(current);
+  if (i < 0 || i >= SPECIALIZATION_ORDER.length - 1) return null;
+  return SPECIALIZATION_ORDER[i + 1];
 }
 
 export function getFragmentCostForLevel(level: number): number {
