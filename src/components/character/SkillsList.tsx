@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { formatModifier, getSkillRollModifier, getSkillTotal } from '@/lib/calculations';
 import { isDefaultSkillName, SPECIALIZATION_LABELS } from '@/lib/constants';
 import { QuickRollButton } from '@/components/dice/DiceRoller';
@@ -16,6 +17,18 @@ export function SkillsList({
   attributes: Attributes;
   onChange: (skills: Skill[]) => void;
 }) {
+  const sorted = useMemo(
+    () =>
+      skills
+        .map((skill, index) => ({ skill, index }))
+        .sort((a, b) =>
+          a.skill.name.localeCompare(b.skill.name, 'pt-BR', {
+            sensitivity: 'base',
+          })
+        ),
+    [skills]
+  );
+
   function update(i: number, partial: Partial<Skill>) {
     const next = [...skills];
     next[i] = { ...skills[i], ...partial };
@@ -40,15 +53,15 @@ export function SkillsList({
         </button>
       }
     >
-      <div className="divide-y divide-ink-border rounded-md border border-ink-border">
-        {skills.map((skill, i) => {
+      <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+        {sorted.map(({ skill, index: i }) => {
           const total = getSkillTotal(skill, attributes);
           const rollMod = getSkillRollModifier(total);
           const isDefault = isDefaultSkillName(skill.name);
           return (
             <div
               key={i}
-              className="flex flex-wrap items-center gap-1.5 px-2 py-1.5"
+              className="flex items-center gap-2 rounded-md border border-ink-border/70 bg-ink-raised/30 px-2 py-1.5"
             >
               <select
                 className="field w-14 shrink-0 px-1 py-1 text-center text-xs"
@@ -66,19 +79,19 @@ export function SkillsList({
               </select>
 
               {isDefault ? (
-                <p className="min-w-0 flex-1 truncate text-sm font-medium text-parchment">
+                <p className="min-w-0 flex-1 text-sm font-medium text-parchment">
                   {skill.name}
                 </p>
               ) : (
                 <input
-                  className="field min-w-[7rem] flex-1 px-2 py-1 text-sm"
+                  className="field min-w-0 flex-1 px-2 py-1 text-sm"
                   value={skill.name}
                   onChange={(e) => update(i, { name: e.target.value })}
                 />
               )}
 
               <select
-                className="field w-[7.25rem] shrink-0 px-1 py-1 text-xs"
+                className="field w-[6.75rem] shrink-0 px-1 py-1 text-xs"
                 value={skill.specialization}
                 onChange={(e) =>
                   update(i, {
@@ -94,14 +107,16 @@ export function SkillsList({
                 ))}
               </select>
 
-              <div className="flex w-16 shrink-0 flex-col items-end leading-tight">
-                <span className="font-display text-lg text-crimson-soft">{total}</span>
+              <div className="flex w-14 shrink-0 flex-col items-end leading-tight">
+                <span className="font-display text-lg text-crimson-soft">
+                  {total}
+                </span>
                 <span className="text-[0.65rem] text-ink-muted">
                   d20 {formatModifier(rollMod)}
                 </span>
               </div>
 
-              <div className="flex shrink-0 items-center gap-0.5">
+              <div className="flex shrink-0 items-center">
                 <QuickRollButton bonus={rollMod} label={skill.name} />
                 <button
                   type="button"

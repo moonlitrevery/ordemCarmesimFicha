@@ -479,15 +479,13 @@ export function CharacterSheet({
         </div>
       </SectionCard>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(280px,360px)_1fr] lg:items-start">
-        <div className="lg:sticky lg:top-4">
-          <SkillsList
-            skills={sheet.skills}
-            attributes={sheet.attributes}
-            onChange={(skills) => patch({ skills })}
-          />
-        </div>
+      <SkillsList
+        skills={sheet.skills}
+        attributes={sheet.attributes}
+        onChange={(skills) => patch({ skills })}
+      />
 
+      <section className="space-y-1">
         <SheetTabs
           defaultTabId="elementos"
           tabs={[
@@ -994,7 +992,7 @@ export function CharacterSheet({
             },
           ]}
         />
-      </div>
+      </section>
 
       <FloatingDiceButton />
     </div>

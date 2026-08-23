@@ -40,7 +40,7 @@ export function SheetTabs({
                 id={`sheet-tab-${tab.id}`}
                 aria-controls={`sheet-panel-${tab.id}`}
                 className={
-                  'shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium transition ' +
+                  'shrink-0 whitespace-nowrap px-2.5 py-2 text-xs font-medium transition md:px-3 md:text-sm ' +
                   (selected
                     ? 'border-b-2 border-crimson text-parchment'
                     : 'border-b-2 border-transparent text-ink-muted hover:text-parchment')
