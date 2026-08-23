@@ -1,12 +1,29 @@
 import fs from 'fs';
 
-const target =
-  'node_modules/next/dist/lib/has-necessary-dependencies.js';
+// Windows-only workaround for Next.js realpath ENOENT; never fail Linux/Vercel builds.
+if (process.platform !== 'win32') {
+  process.exit(0);
+}
 
-let s = fs.readFileSync(target, 'utf8');
+const target = 'node_modules/next/dist/lib/has-necessary-dependencies.js';
+
+if (!fs.existsSync(target)) {
+  console.warn(
+    '[patch-next-realpath] target not found — skipping (Next.js layout may differ)'
+  );
+  process.exit(0);
+}
+
+let s;
+try {
+  s = fs.readFileSync(target, 'utf8');
+} catch (err) {
+  console.warn('[patch-next-realpath] could not read target — skipping:', err);
+  process.exit(0);
+}
 
 if (s.includes('/* ordem-carmesim-realpath-patch */')) {
-  console.log('patch already applied');
+  console.log('[patch-next-realpath] already applied');
   process.exit(0);
 }
 
@@ -17,9 +34,16 @@ const neu = `/* ordem-carmesim-realpath-patch */
             const pkgPath = (0, _resolvefrom.resolveFrom)(baseDir, \`\${p.pkg}/package.json\`);`;
 
 if (!s.includes(old)) {
-  console.error('Could not find patch target — Next.js version may differ');
-  process.exit(1);
+  console.warn(
+    '[patch-next-realpath] Could not find patch target — Next.js version may differ; continuing without patch'
+  );
+  process.exit(0);
 }
 
-fs.writeFileSync(target, s.replace(old, neu));
-console.log('patched has-necessary-dependencies.js');
+try {
+  fs.writeFileSync(target, s.replace(old, neu));
+  console.log('[patch-next-realpath] patched has-necessary-dependencies.js');
+} catch (err) {
+  console.warn('[patch-next-realpath] write failed — continuing:', err);
+  process.exit(0);
+}

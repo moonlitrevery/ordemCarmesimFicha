@@ -46,7 +46,7 @@ export default async function FichasPage() {
     elementsByChar.set(el.character_id!, arr);
   }
 
-  let owners = new Map<string, string>();
+  const owners = new Map<string, string>();
   if (isMestre && list.length) {
     const ownerIds = Array.from(new Set(list.map((c) => c.owner_id)));
     const { data: profiles } = await supabase

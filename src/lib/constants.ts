@@ -60,12 +60,12 @@ export const PER_LEVEL_GROWTH = {
 
 export const ORDER_RANKS = [
   'Agente Principiante',
-  'Agente',
-  'Agente Sênior',
-  'Especialista',
-  'Comandante',
-  'Conselheiro',
-  'Líder',
+  'Agente Novato',
+  'Agente Especialista',
+  'Agente Avançado',
+  'Agente Veterano',
+  'Agente Especial',
+  'Agente Secreto',
 ] as const;
 
 export const SPECIALIZATION_BONUS: Record<string, number> = {

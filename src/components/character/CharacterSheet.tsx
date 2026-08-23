@@ -13,10 +13,18 @@ import {
   DEFAULT_SKILLS,
   ORDER_RANKS,
   VALID_IMAGE_URL,
-  WEAPON_TYPES,
 } from '@/lib/constants';
 import { FloatingDiceButton } from '@/components/dice/FloatingDiceButton';
-import { InlineRollButton, QuickRollButton } from '@/components/dice/DiceRoller';
+import { QuickRollButton } from '@/components/dice/DiceRoller';
+import { CursesSection } from '@/components/character/CursesSection';
+import { HistoricalFeatsSection } from '@/components/character/HistoricalFeatsSection';
+import { InventorySection } from '@/components/character/InventorySection';
+import {
+  BackstorySection,
+  NotesSection,
+} from '@/components/character/NotesAndBackstorySection';
+import { SpellsSection } from '@/components/character/SpellsSection';
+import { WeaponsSection } from '@/components/character/WeaponsSection';
 import { useDiceToast } from '@/components/dice/DiceToast';
 import { ElementsSection } from '@/components/character/ElementsSection';
 import { LevelProgression } from '@/components/character/LevelProgression';
@@ -454,7 +462,6 @@ export function CharacterSheet({
             ] as const
           ).map(([label, currentKey, modKey, max, color]) => {
             const current = sheet[currentKey];
-            const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
             const modVal = sheet.resource_mods[modKey] || 0;
             return (
               <ResourceBlock
@@ -503,484 +510,73 @@ export function CharacterSheet({
               id: "magias",
               label: "Magias e Poderes Passivos",
               content: (
-                <ListSection
-                  title="Magias e Poderes Passivos"
-                  onAdd={() =>
-                    patch({
-                      spells: [
-                        ...sheet.spells,
-                        {
-                          name: "Nova magia",
-                          element: "fogo",
-                          description: "",
-                          effect: "",
-                          range: "",
-                          manaCost: "",
-                        },
-                      ],
-                    })
-                  }
-                >
-                  {sheet.spells.map((spell, i) => (
-                    <div key={i} className="space-y-2 rounded-md border border-ink-border bg-ink-raised/40 p-3">
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          className="field flex-1"
-                          placeholder="Nome"
-                          value={spell.name}
-                          onChange={(e) => {
-                            const spells = [...sheet.spells];
-                            spells[i] = { ...spell, name: e.target.value };
-                            patch({ spells });
-                          }}
-                        />
-                        <input
-                          className="field w-40"
-                          placeholder="Elemento"
-                          value={spell.element}
-                          onChange={(e) => {
-                            const spells = [...sheet.spells];
-                            spells[i] = { ...spell, element: e.target.value };
-                            patch({ spells });
-                          }}
-                        />
-                        <InlineRollButton notation="1d6" />
-                        <button
-                          type="button"
-                          className="btn-ghost px-2"
-                          onClick={() =>
-                            patch({ spells: sheet.spells.filter((_, j) => j !== i) })
-                          }
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <textarea
-                        className="field min-h-[60px]"
-                        placeholder="Descrição"
-                        value={spell.description}
-                        onChange={(e) => {
-                          const spells = [...sheet.spells];
-                          spells[i] = { ...spell, description: e.target.value };
-                          patch({ spells });
-                        }}
-                      />
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <input
-                          className="field"
-                          placeholder="Efeito"
-                          value={spell.effect}
-                          onChange={(e) => {
-                            const spells = [...sheet.spells];
-                            spells[i] = { ...spell, effect: e.target.value };
-                            patch({ spells });
-                          }}
-                        />
-                        <input
-                          className="field"
-                          placeholder="Alcance"
-                          value={spell.range}
-                          onChange={(e) => {
-                            const spells = [...sheet.spells];
-                            spells[i] = { ...spell, range: e.target.value };
-                            patch({ spells });
-                          }}
-                        />
-                        <input
-                          className="field"
-                          placeholder="Custo de mana"
-                          value={spell.manaCost}
-                          onChange={(e) => {
-                            const spells = [...sheet.spells];
-                            spells[i] = { ...spell, manaCost: e.target.value };
-                            patch({ spells });
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </ListSection>
+                <SpellsSection
+                  spells={sheet.spells}
+                  onChange={(spells) => patch({ spells })}
+                />
               ),
             },
             {
               id: "armas",
               label: "Armas",
               content: (
-                <ListSection
-                  title="Armas"
-                  onAdd={() =>
-                    patch({
-                      weapons: [
-                        ...sheet.weapons,
-                        {
-                          name: "Nova arma",
-                          type: "Corpo a Corpo",
-                          damage: "1d6",
-                          ammo: "",
-                          hitsPerTurn: 1,
-                          weight: 1,
-                          range: "",
-                          flaw: "",
-                          area: "",
-                        },
-                      ],
-                    })
-                  }
-                >
-                  {sheet.weapons.map((w, i) => (
-                    <div key={i} className="space-y-2 rounded-md border border-ink-border bg-ink-raised/40 p-3">
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          className="field flex-1"
-                          value={w.name}
-                          onChange={(e) => {
-                            const weapons = [...sheet.weapons];
-                            weapons[i] = { ...w, name: e.target.value };
-                            patch({ weapons });
-                          }}
-                        />
-                        <input
-                          className="field w-24"
-                          placeholder="Dano"
-                          value={w.damage}
-                          onChange={(e) => {
-                            const weapons = [...sheet.weapons];
-                            weapons[i] = { ...w, damage: e.target.value };
-                            patch({ weapons });
-                          }}
-                        />
-                        <InlineRollButton notation={w.damage || "1d6"} />
-                        <button
-                          type="button"
-                          className="btn-ghost px-2"
-                          onClick={() =>
-                            patch({ weapons: sheet.weapons.filter((_, j) => j !== i) })
-                          }
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <label className="space-y-1">
-                          <span className="label">Tipo</span>
-                          <select
-                            className="field"
-                            value={w.type || "Corpo a Corpo"}
-                            onChange={(e) => {
-                              const weapons = [...sheet.weapons];
-                              weapons[i] = { ...w, type: e.target.value };
-                              patch({ weapons });
-                            }}
-                          >
-                            {WEAPON_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="space-y-1">
-                          <span className="label">Hits/turno</span>
-                          <input
-                            type="number"
-                            step={1}
-                            min={0}
-                            className="field"
-                            value={w.hitsPerTurn}
-                            onChange={(e) => {
-                              const weapons = [...sheet.weapons];
-                              weapons[i] = {
-                                ...w,
-                                hitsPerTurn: Math.trunc(Number(e.target.value) || 0),
-                              };
-                              patch({ weapons });
-                            }}
-                          />
-                        </label>
-                        <label className="space-y-1">
-                          <span className="label">Peso</span>
-                          <input
-                            type="number"
-                            step={1}
-                            min={0}
-                            className="field"
-                            value={w.weight ?? 0}
-                            onChange={(e) => {
-                              const weapons = [...sheet.weapons];
-                              weapons[i] = {
-                                ...w,
-                                weight: Math.trunc(Number(e.target.value) || 0),
-                              };
-                              patch({ weapons });
-                            }}
-                          />
-                        </label>
-                        {(
-                          [
-                            ["ammo", "Munição"],
-                            ["range", "Alcance"],
-                            ["flaw", "Falha"],
-                            ["area", "Área"],
-                          ] as const
-                        ).map(([key, ph]) => (
-                          <input
-                            key={key}
-                            className="field"
-                            placeholder={ph}
-                            value={w[key]}
-                            onChange={(e) => {
-                              const weapons = [...sheet.weapons];
-                              weapons[i] = { ...w, [key]: e.target.value };
-                              patch({ weapons });
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </ListSection>
+                <WeaponsSection
+                  weapons={sheet.weapons}
+                  onChange={(weapons) => patch({ weapons })}
+                />
               ),
             },
             {
               id: "inventario",
               label: "Inventário",
               content: (
-                <ListSection
-                  title={`Inventário (${weight} / ${limit} peso)`}
-                  onAdd={() =>
-                    patch({
-                      inventory: [
-                        ...sheet.inventory,
-                        { name: "Item", description: "", weight: 0 },
-                      ],
-                    })
-                  }
-                >
-                  {weight > limit && (
-                    <p className="text-sm text-crimson-soft">Acima do limite de carga (FOR/2).</p>
-                  )}
-                  {sheet.inventory.map((item, i) => (
-                    <div key={i} className="grid gap-2 sm:grid-cols-[1fr_2fr_80px_auto]">
-                      <input
-                        className="field"
-                        value={item.name}
-                        onChange={(e) => {
-                          const inventory = [...sheet.inventory];
-                          inventory[i] = { ...item, name: e.target.value };
-                          patch({ inventory });
-                        }}
-                      />
-                      <input
-                        className="field"
-                        placeholder="Descrição"
-                        value={item.description}
-                        onChange={(e) => {
-                          const inventory = [...sheet.inventory];
-                          inventory[i] = { ...item, description: e.target.value };
-                          patch({ inventory });
-                        }}
-                      />
-                      <input
-                        type="number"
-                        step={1}
-                        min={0}
-                        className="field"
-                        value={item.weight}
-                        onChange={(e) => {
-                          const inventory = [...sheet.inventory];
-                          inventory[i] = {
-                            ...item,
-                            weight: Math.trunc(Number(e.target.value) || 0),
-                          };
-                          patch({ inventory });
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="btn-ghost px-2"
-                        onClick={() =>
-                          patch({ inventory: sheet.inventory.filter((_, j) => j !== i) })
-                        }
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </ListSection>
+                <InventorySection
+                  inventory={sheet.inventory}
+                  weight={weight}
+                  limit={limit}
+                  onChange={(inventory) => patch({ inventory })}
+                />
               ),
             },
             {
               id: "maldicoes",
               label: "Maldições",
               content: (
-                <ListSection
-                  title="Maldições"
-                  onAdd={() =>
-                    patch({
-                      curses: [...sheet.curses, { name: "Maldição", story: "", effect: "" }],
-                    })
-                  }
-                >
-                  {sheet.curses.map((c, i) => (
-                    <div key={i} className="space-y-2 rounded-md border border-ink-border p-3">
-                      <div className="flex gap-2">
-                        <input
-                          className="field flex-1"
-                          value={c.name}
-                          onChange={(e) => {
-                            const curses = [...sheet.curses];
-                            curses[i] = { ...c, name: e.target.value };
-                            patch({ curses });
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="btn-ghost px-2"
-                          onClick={() =>
-                            patch({ curses: sheet.curses.filter((_, j) => j !== i) })
-                          }
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <textarea
-                        className="field min-h-[50px]"
-                        placeholder="História"
-                        value={c.story}
-                        onChange={(e) => {
-                          const curses = [...sheet.curses];
-                          curses[i] = { ...c, story: e.target.value };
-                          patch({ curses });
-                        }}
-                      />
-                      <textarea
-                        className="field min-h-[50px]"
-                        placeholder="Efeito"
-                        value={c.effect}
-                        onChange={(e) => {
-                          const curses = [...sheet.curses];
-                          curses[i] = { ...c, effect: e.target.value };
-                          patch({ curses });
-                        }}
-                      />
-                    </div>
-                  ))}
-                </ListSection>
+                <CursesSection
+                  curses={sheet.curses}
+                  onChange={(curses) => patch({ curses })}
+                />
               ),
             },
             {
               id: "feitos",
               label: "Feitos Históricos",
               content: (
-                <ListSection
-                  title="Feitos Históricos"
-                  onAdd={() =>
-                    patch({
-                      historical_feats: [
-                        ...sheet.historical_feats,
-                        {
-                          title: "Feito",
-                          description: "",
-                          alignment: "positivo",
-                        },
-                      ],
-                    })
-                  }
-                >
-                  {totalLevel >= 20 && (
-                    <p className="text-sm text-crimson-soft">
-                      Após o nível 20, a evolução do personagem vem destes feitos.
-                    </p>
-                  )}
-                  {sheet.historical_feats.map((f, i) => (
-                    <div key={i} className="space-y-2 rounded-md border border-ink-border p-3">
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          className="field flex-1"
-                          value={f.title}
-                          onChange={(e) => {
-                            const historical_feats = [...sheet.historical_feats];
-                            historical_feats[i] = { ...f, title: e.target.value };
-                            patch({ historical_feats });
-                          }}
-                        />
-                        <select
-                          className="field w-36"
-                          value={f.alignment}
-                          onChange={(e) => {
-                            const historical_feats = [...sheet.historical_feats];
-                            historical_feats[i] = {
-                              ...f,
-                              alignment: e.target.value as "positivo" | "negativo",
-                            };
-                            patch({ historical_feats });
-                          }}
-                        >
-                          <option value="positivo">Positivo</option>
-                          <option value="negativo">Negativo</option>
-                        </select>
-                        <button
-                          type="button"
-                          className="btn-ghost px-2"
-                          onClick={() =>
-                            patch({
-                              historical_feats: sheet.historical_feats.filter((_, j) => j !== i),
-                            })
-                          }
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <textarea
-                        className="field min-h-[50px]"
-                        value={f.description}
-                        onChange={(e) => {
-                          const historical_feats = [...sheet.historical_feats];
-                          historical_feats[i] = { ...f, description: e.target.value };
-                          patch({ historical_feats });
-                        }}
-                      />
-                      <input
-                        className="field"
-                        placeholder="Sessão / data"
-                        value={f.dateOrSession ?? ""}
-                        onChange={(e) => {
-                          const historical_feats = [...sheet.historical_feats];
-                          historical_feats[i] = { ...f, dateOrSession: e.target.value };
-                          patch({ historical_feats });
-                        }}
-                      />
-                    </div>
-                  ))}
-                </ListSection>
+                <HistoricalFeatsSection
+                  feats={sheet.historical_feats}
+                  totalLevel={totalLevel}
+                  onChange={(historical_feats) => patch({ historical_feats })}
+                />
               ),
             },
             {
               id: "anotacoes",
               label: "Anotações",
               content: (
-                <SectionCard title="Anotações">
-                  <textarea
-                    className="field min-h-[120px]"
-                    value={sheet.notes}
-                    onChange={(e) => patch({ notes: e.target.value })}
-                    placeholder="Notas de sessão…"
-                  />
-                </SectionCard>
+                <NotesSection
+                  notes={sheet.notes}
+                  onChange={(notes) => patch({ notes })}
+                />
               ),
             },
             {
               id: "historia",
               label: "História do Personagem",
               content: (
-                <SectionCard title="História do Personagem">
-                  <textarea
-                    className="field min-h-[220px]"
-                    value={sheet.backstory}
-                    onChange={(e) => patch({ backstory: e.target.value })}
-                    placeholder="História de fundo…"
-                  />
-                </SectionCard>
+                <BackstorySection
+                  backstory={sheet.backstory}
+                  onChange={(backstory) => patch({ backstory })}
+                />
               ),
             },
             {
@@ -1061,25 +657,3 @@ function ResourceBlock({
   );
 }
 
-function ListSection({
-  title,
-  onAdd,
-  children,
-}: {
-  title: string;
-  onAdd: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <SectionCard
-      title={title}
-      action={
-        <button type="button" className="btn-ghost text-xs" onClick={onAdd}>
-          + Adicionar
-        </button>
-      }
-    >
-      <div className="space-y-3">{children}</div>
-    </SectionCard>
-  );
-}
