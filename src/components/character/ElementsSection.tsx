@@ -13,7 +13,13 @@ export function ElementsSection({
   elements: CharacterElementRow[];
   onChange: (
     next: CharacterElementRow[],
-    meta?: { leveledUp: boolean; blockedByCap: boolean; levelsGained: number }
+    meta?: {
+      leveledUp?: boolean;
+      leveledDown?: boolean;
+      blockedByCap?: boolean;
+      levelsGained?: number;
+      levelsLost?: number;
+    }
   ) => void;
 }) {
   // Qualquer elemento já na lista aparece (mesmo com nível 0 e 0 fragmentos)

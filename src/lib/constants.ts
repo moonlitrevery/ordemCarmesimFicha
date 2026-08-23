@@ -70,10 +70,10 @@ export const ORDER_RANKS = [
 
 export const SPECIALIZATION_BONUS: Record<string, number> = {
   none: 0,
-  basico: 10,
-  medio: 20,
-  alto: 30,
-  expert: 40,
+  basico: 2,
+  medio: 4,
+  alto: 6,
+  expert: 8,
 };
 
 

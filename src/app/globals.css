@@ -9,12 +9,12 @@
 
 html {
   color-scheme: dark;
-  font-size: 18px;
+  font-size: 16.5px;
 }
 
 @media (min-width: 768px) {
   html {
-    font-size: 19px;
+    font-size: 17px;
   }
 }
 
@@ -38,11 +38,11 @@ body {
   }
 
   .field {
-    @apply w-full rounded-md border border-ink-border bg-ink-raised px-3.5 py-2.5 text-base text-parchment outline-none transition focus:border-crimson/70 focus:ring-1 focus:ring-crimson/40;
+    @apply w-full rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-[0.95rem] text-parchment outline-none transition focus:border-crimson/70 focus:ring-1 focus:ring-crimson/40;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-base font-medium transition disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[0.95rem] font-medium transition disabled:opacity-50;
   }
 
   .btn-primary {
@@ -54,10 +54,10 @@ body {
   }
 
   .section-title {
-    @apply font-display text-2xl tracking-wide text-parchment md:text-3xl;
+    @apply font-display text-xl tracking-wide text-parchment md:text-2xl;
   }
 
   .label {
-    @apply text-sm font-medium uppercase tracking-[0.12em] text-ink-muted;
+    @apply text-xs font-medium uppercase tracking-[0.12em] text-ink-muted;
   }
 }

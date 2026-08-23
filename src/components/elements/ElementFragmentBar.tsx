@@ -11,6 +11,7 @@ import {
   addFragmentsToElement,
   getFragmentCostForLevel,
   getTotalLevel,
+  removeFragmentsFromElement,
 } from '@/lib/calculations';
 import type { CharacterElementRow, ElementType } from '@/types/database';
 
@@ -23,7 +24,13 @@ export function ElementFragmentBar({
   element: ElementType;
   onChange: (
     next: CharacterElementRow[],
-    meta: { leveledUp: boolean; blockedByCap: boolean; levelsGained: number }
+    meta: {
+      leveledUp?: boolean;
+      leveledDown?: boolean;
+      blockedByCap?: boolean;
+      levelsGained?: number;
+      levelsLost?: number;
+    }
   ) => void;
 }) {
   const row = elements.find((e) => e.element === element) ?? {
@@ -43,6 +50,15 @@ export function ElementFragmentBar({
   const [pulse, setPulse] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  function flash(msg: string, withPulse = false) {
+    setNotice(msg);
+    if (withPulse) {
+      setPulse(true);
+      setTimeout(() => setPulse(false), 700);
+    }
+    setTimeout(() => setNotice(null), 2200);
+  }
+
   function add(n: number) {
     const result = addFragmentsToElement(elements, element, n);
     onChange(result.elements, {
@@ -51,69 +67,110 @@ export function ElementFragmentBar({
       levelsGained: result.levelsGained,
     });
     if (result.leveledUp) {
-      setPulse(true);
-      setNotice(
+      flash(
         result.levelsGained > 1
-          ? `+${result.levelsGained} níveis!`
-          : 'Nível up!'
+          ? '+' + result.levelsGained + ' níveis!'
+          : 'Nível up!',
+        true
       );
-      setTimeout(() => setPulse(false), 700);
-    }
-    if (result.blockedByCap) {
-      setNotice('Nível máximo do personagem atingido');
-    }
-    if (result.leveledUp || result.blockedByCap) {
-      setTimeout(() => setNotice(null), 2500);
+    } else if (result.blockedByCap) {
+      flash('Nível máximo do personagem atingido');
     }
   }
 
+  function remove(n: number) {
+    const result = removeFragmentsFromElement(elements, element, n);
+    onChange(result.elements, {
+      leveledDown: result.leveledDown,
+      levelsLost: result.levelsLost,
+    });
+    if (result.leveledDown) {
+      flash(
+        result.levelsLost > 1
+          ? '-' + result.levelsLost + ' níveis'
+          : 'Nível reduzido'
+      );
+    }
+  }
+
+  const canRemove = row.level > 0 || row.fragments_current > 0;
+
   return (
     <div
-      className={`rounded-lg border border-ink-border bg-ink-raised/60 p-3 ${
-        pulse ? 'ring-2 ring-offset-0' : ''
-      }`}
-      style={pulse ? { boxShadow: `0 0 24px ${color}88` } : undefined}
+      className={
+        'relative overflow-hidden rounded-xl border border-ink-border bg-gradient-to-br from-ink-raised/90 to-ink/60 p-3 ' +
+        (pulse ? 'ring-2' : '')
+      }
+      style={
+        pulse
+          ? { boxShadow: '0 0 28px ' + color + '99', borderColor: color }
+          : { borderColor: color + '44' }
+      }
     >
-      <div className="mb-2 flex items-end justify-between gap-2">
+      <div
+        className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-20 blur-2xl"
+        style={{ backgroundColor: color }}
+      />
+
+      <div className="relative mb-3 flex items-end justify-between gap-2">
         <div>
           <p className="label" style={{ color }}>
             {ELEMENT_LABELS[element]}
           </p>
           <p className="font-display text-3xl leading-none text-parchment">
             {row.level}
+            <span className="ml-1 text-sm text-ink-muted">nível</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           <input
             type="number"
             min={1}
-            className="field w-16 py-1.5 text-center"
+            className="field w-14 py-1.5 text-center"
             value={amount}
             onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 1))}
           />
+          <button
+            type="button"
+            className="btn-ghost py-1.5 px-2.5"
+            disabled={!canRemove}
+            onClick={() => remove(amount)}
+            title="Remover fragmentos"
+          >
+            −
+          </button>
           <button
             type="button"
             className="btn-primary py-1.5"
             disabled={capped && row.fragments_current >= cost}
             onClick={() => add(amount)}
           >
-            +Fragmentos
+            +
           </button>
         </div>
       </div>
 
-      <div className="relative h-7 overflow-hidden rounded-md bg-ink/80">
+      <div className="relative h-8 overflow-hidden rounded-full border border-white/5 bg-ink/90 shadow-inner">
         <motion.div
           className="absolute inset-y-0 left-0"
-          style={{ backgroundColor: color }}
+          style={{
+            background: 'linear-gradient(90deg, ' + color + 'cc, ' + color + ', ' + color + 'ee)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px ' + color + '66',
+          }}
           initial={false}
-          animate={{ width: `${progress}%` }}
-          transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+          animate={{ width: progress + '%' }}
+          transition={{ type: 'spring', stiffness: 140, damping: 22 }}
         />
-        <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-parchment mix-blend-difference">
+        <motion.div
+          className="pointer-events-none absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/25 to-transparent"
+          animate={{ left: ['-20%', '120%'] }}
+          transition={{ duration: 2.8, repeat: Infinity, ease: 'linear' }}
+          style={{ opacity: progress > 2 ? 0.7 : 0 }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold tracking-wide text-parchment drop-shadow">
           {row.level >= 20
             ? 'Nível máximo do elemento'
-            : `${row.fragments_current} / ${cost === Infinity ? '—' : cost} fragmentos`}
+            : row.fragments_current + ' / ' + (cost === Infinity ? '—' : cost) + ' fragmentos'}
         </div>
       </div>
 

@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
   computeDerivedMaxes,
+  formatModifier,
   getAttributeModifier,
   getCarryLimit,
   getInventoryWeight,
+  getSkillRollModifier,
   getSkillTotal,
   getTotalLevel,
 } from '@/lib/calculations';
@@ -17,7 +19,7 @@ import {
   VALID_IMAGE_URL,
 } from '@/lib/constants';
 import { FloatingDiceButton } from '@/components/dice/FloatingDiceButton';
-import { InlineRollButton } from '@/components/dice/DiceRoller';
+import { InlineRollButton, QuickRollButton } from '@/components/dice/DiceRoller';
 import { ElementsSection } from '@/components/character/ElementsSection';
 import { LevelProgression } from '@/components/character/LevelProgression';
 import { MosaicFrame } from '@/components/mosaic/MosaicFrame';
@@ -204,19 +206,33 @@ export function CharacterSheet({
     [character.id, initialElements]
   );
 
+  const sheetRef = useRef(sheet);
+  const elementsRef = useRef(elements);
+  sheetRef.current = sheet;
+  elementsRef.current = elements;
+
   useEffect(() => {
     if (!ready) return;
     setStatus('saving');
     const t = setTimeout(async () => {
+      const snapSheet = sheetRef.current;
+      const snapElements = elementsRef.current;
       try {
-        await persistCharacter(sheet, elements);
-        // refresh element ids
+        await persistCharacter(snapSheet, snapElements);
         const supabase = createClient();
         const { data } = await supabase
           .from('character_elements')
-          .select('*')
+          .select('id, element')
           .eq('character_id', character.id);
-        if (data) setElements(data as CharacterElementRow[]);
+        if (data) {
+          // Só mescla IDs — não sobrescreve níveis/fragmentos locais (evita rollback)
+          setElements((prev) =>
+            prev.map((row) => {
+              const found = data.find((d) => d.element === row.element);
+              return found ? { ...row, id: found.id } : row;
+            })
+          );
+        }
         setStatus('saved');
       } catch {
         setStatus('error');
@@ -391,10 +407,7 @@ export function CharacterSheet({
                   <span className="text-base text-crimson-soft">
                     {mod >= 0 ? '+' + mod : mod}
                   </span>
-                  <InlineRollButton
-                    notation="1d20"
-                    label={ATTRIBUTE_LABELS[key] + ' (meta ' + value + ')'}
-                  />
+                  <QuickRollButton bonus={mod} label={ATTRIBUTE_LABELS[key]} />
                 </div>
               </div>
             );
@@ -402,7 +415,7 @@ export function CharacterSheet({
         </div>
       </SectionCard>
 
-      {/* Recursos */}
+            {/* Recursos */}
       <SectionCard title="Recursos">
         <div className="grid gap-4 md:grid-cols-3">
           {(
@@ -414,11 +427,23 @@ export function CharacterSheet({
           ).map(([label, key, max, color]) => {
             const current = sheet[key];
             const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
+            function adjust(delta: number) {
+              const next = Math.max(0, Math.min(max, current + delta));
+              patch({ [key]: next } as Partial<SheetState>);
+            }
             return (
               <div key={key} className="space-y-2">
-                <div className="flex items-end justify-between">
+                <div className="flex items-end justify-between gap-2">
                   <span className="label">{label}</span>
-                  <div className="flex items-center gap-1 text-sm">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="btn-ghost h-9 w-9 p-0 text-lg"
+                      onClick={() => adjust(-1)}
+                      title={'Remover 1 de ' + label}
+                    >
+                      −
+                    </button>
                     <input
                       type="number"
                       className="field w-16 py-1 text-center"
@@ -428,12 +453,28 @@ export function CharacterSheet({
                       }
                     />
                     <span className="text-ink-muted">/ {max}</span>
+                    <button
+                      type="button"
+                      className="btn-ghost h-9 w-9 p-0 text-lg"
+                      onClick={() => adjust(1)}
+                      title={'Curar 1 de ' + label}
+                    >
+                      +
+                    </button>
                   </div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" className="btn-ghost flex-1 py-1 text-sm" onClick={() => adjust(-5)}>
+                    −5
+                  </button>
+                  <button type="button" className="btn-ghost flex-1 py-1 text-sm" onClick={() => adjust(5)}>
+                    +5 curar
+                  </button>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-ink">
                   <div
                     className="h-full transition-all"
-                    style={{ width: `${pct}%`, backgroundColor: color }}
+                    style={{ width: pct + '%', backgroundColor: color }}
                   />
                 </div>
               </div>
@@ -461,10 +502,11 @@ export function CharacterSheet({
       >
         {sheet.skills.map((skill, i) => {
           const total = getSkillTotal(skill, sheet.attributes);
+          const rollMod = getSkillRollModifier(total);
           return (
             <div
               key={i}
-              className="grid gap-2 rounded-md border border-ink-border bg-ink-raised/40 p-3 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center"
+              className="grid gap-2 rounded-md border border-ink-border bg-ink-raised/40 p-3 sm:grid-cols-[1fr_auto_auto_auto_auto_auto] sm:items-center"
             >
               <input
                 className="field"
@@ -511,11 +553,12 @@ export function CharacterSheet({
                   </option>
                 ))}
               </select>
-              <span className="text-center font-display text-xl text-crimson-soft">
-                {total}
-              </span>
+              <div className="text-center">
+                <p className="font-display text-xl text-crimson-soft">{total}</p>
+                <p className="text-xs text-ink-muted">d20 {formatModifier(rollMod)}</p>
+              </div>
               <div className="flex items-center gap-1">
-                <InlineRollButton notation="1d20" label={skill.name + " (meta " + total + ")"} />
+                <QuickRollButton bonus={rollMod} label={skill.name} />
                 <button
                   type="button"
                   className="btn-ghost px-2 py-1 text-xs"

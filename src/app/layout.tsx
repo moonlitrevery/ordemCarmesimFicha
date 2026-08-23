@@ -32,7 +32,7 @@ export default function RootLayout({
       >
         <div className="min-h-dvh bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(139,30,45,0.22),transparent),radial-gradient(ellipse_60%_40%_at_100%_100%,rgba(92,15,26,0.15),transparent)]">
           <Nav />
-          <main className="mx-auto w-full max-w-7xl px-4 pb-20 pt-6 md:px-8">
+          <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-6 md:px-8">
             {children}
           </main>
         </div>
