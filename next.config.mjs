@@ -1,4 +1,5 @@
 import createMDX from '@next/mdx';
+import remarkGfm from 'remark-gfm';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,6 +25,9 @@ const nextConfig = {
 
 const withMDX = createMDX({
   extension: /\.mdx?$/,
+  options: {
+    remarkPlugins: [remarkGfm],
+  },
 });
 
 export default withMDX(nextConfig);

@@ -21,7 +21,9 @@ export default async function LoreSlugPage({
     <div className="grid gap-6 md:grid-cols-[220px_1fr]">
       <ContentNav base="/lore" pages={LORE_PAGES} current={params.slug} />
       <article className="panel max-w-none p-5 md:p-8">
-        <Content />
+        <div className="prose prose-invert prose-lg max-w-none">
+          <Content />
+        </div>
       </article>
     </div>
   );
