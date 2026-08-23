@@ -22,6 +22,7 @@ import {
 } from '@/lib/constants';
 import { FloatingDiceButton } from '@/components/dice/FloatingDiceButton';
 import { InlineRollButton, QuickRollButton } from '@/components/dice/DiceRoller';
+import { useDiceToast } from '@/components/dice/DiceToast';
 import { ElementsSection } from '@/components/character/ElementsSection';
 import { LevelProgression } from '@/components/character/LevelProgression';
 import { MosaicFrame } from '@/components/mosaic/MosaicFrame';
@@ -118,10 +119,19 @@ export function CharacterSheet({
   const [elements, setElements] = useState<CharacterElementRow[]>(initialElements);
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [ready, setReady] = useState(false);
+  const { setRollContext } = useDiceToast();
 
   useEffect(() => {
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    setRollContext({
+      characterId: character.id,
+      characterName: sheet.name || 'Personagem',
+    });
+    return () => setRollContext(null);
+  }, [character.id, sheet.name, setRollContext]);
 
   const totalLevel = getTotalLevel(elements);
   const derived = useMemo(

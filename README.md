@@ -49,3 +49,9 @@ Neste ambiente, o build do Next.js pode falhar no `realpath` nativo. O script `s
 3. No Supabase → **Authentication → URL Configuration**:
    - Site URL: `https://seu-app.vercel.app`
    - Redirect URLs: `https://seu-app.vercel.app/**`
+
+## Rolagens ao vivo (mestra)
+
+1. Rode `supabase/migrations/003_dice_rolls.sql` no SQL Editor.
+2. No Supabase → Database → Replication, confirme que `dice_rolls` está no Realtime (o SQL já tenta adicionar).
+3. Conta com `role = mestre` vê o link **Rolagens** no menu (`/rolagens`).

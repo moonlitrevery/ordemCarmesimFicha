@@ -5,31 +5,51 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
 
-const links = [
-  { href: '/fichas', label: 'Fichas' },
-  { href: '/lore', label: 'Lore' },
-  { href: '/regras', label: 'Regras' },
-];
-
 export function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
+  const [isMestre, setIsMestre] = useState(false);
   const hideOnAuth =
     pathname === '/' || pathname === '/login' || pathname === '/cadastro';
 
   useEffect(() => {
     const supabase = createClient();
+
+    async function load(userId: string | undefined) {
+      if (!userId) {
+        setEmail(null);
+        setIsMestre(false);
+        return;
+      }
+      const { data: userData } = await supabase.auth.getUser();
+      setEmail(userData.user?.email ?? null);
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+      setIsMestre(profile?.role === 'mestre');
+    }
+
     supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? null);
+      void load(data.user?.id);
     });
+
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setEmail(session?.user?.email ?? null);
+      void load(session?.user?.id);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
   if (hideOnAuth) return null;
+
+  const links = [
+    { href: '/fichas', label: 'Fichas' },
+    ...(isMestre ? [{ href: '/rolagens', label: 'Rolagens' }] : []),
+    { href: '/lore', label: 'Lore' },
+    { href: '/regras', label: 'Regras' },
+  ];
 
   async function signOut() {
     const supabase = createClient();
@@ -41,7 +61,10 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-ink-border/80 bg-ink/85 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-6">
-        <Link href="/fichas" className="font-display text-2xl tracking-wide text-parchment">
+        <Link
+          href="/fichas"
+          className="font-display text-2xl tracking-wide text-parchment"
+        >
           Ordem <span className="text-crimson-soft">Carmesim</span>
         </Link>
         <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
@@ -51,11 +74,12 @@ export function Nav() {
               <Link
                 key={l.href}
                 href={l.href}
-                className={`rounded-md px-3 py-1.5 text-base transition ${
-                  active
+                className={
+                  'rounded-md px-3 py-1.5 text-base transition ' +
+                  (active
                     ? 'bg-crimson/25 text-parchment'
-                    : 'text-ink-muted hover:bg-ink-raised hover:text-parchment'
-                }`}
+                    : 'text-ink-muted hover:bg-ink-raised hover:text-parchment')
+                }
               >
                 {l.label}
               </Link>

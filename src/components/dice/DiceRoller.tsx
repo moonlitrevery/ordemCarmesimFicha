@@ -42,15 +42,18 @@ export function DiceRoller({
   initialNotation = '1d20',
   compact = false,
   onClose,
+  rollLabel,
 }: {
   initialNotation?: string;
   compact?: boolean;
   onClose?: () => void;
+  rollLabel?: string;
 }) {
   const [notation, setNotation] = useState(initialNotation);
   const [result, setResult] = useState<DiceRollResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rolling, setRolling] = useState(false);
+  const { logExternalRoll } = useDiceToast();
 
   async function handleRoll(override?: string) {
     const n = (override ?? notation).trim();
@@ -62,8 +65,19 @@ export function DiceRoller({
     setRolling(true);
     setNotation(n);
     await new Promise((r) => setTimeout(r, 350));
-    setResult(rollDice(n));
+    const rolled = rollDice(n);
+    setResult(rolled);
     setRolling(false);
+    if (rolled) {
+      logExternalRoll({
+        label: rollLabel || n,
+        notation: rolled.notation,
+        dieResult: rolled.dice[0],
+        bonus: rolled.modifier,
+        total: rolled.total,
+        breakdown: rolled.breakdown,
+      });
+    }
   }
 
   return (

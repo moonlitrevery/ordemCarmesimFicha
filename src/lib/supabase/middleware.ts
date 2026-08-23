@@ -47,7 +47,8 @@ export async function updateSession(request: NextRequest) {
   const isProtected =
     path.startsWith('/fichas') ||
     path.startsWith('/lore') ||
-    path.startsWith('/regras');
+    path.startsWith('/regras') ||
+    path.startsWith('/rolagens');
 
   if (!user && isProtected) {
     const redirectUrl = request.nextUrl.clone();

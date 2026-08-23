@@ -5,12 +5,14 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { formatModifier } from '@/lib/calculations';
+import { logDiceRoll } from '@/lib/dice-log';
 
 export type DiceToastItem = {
   id: string;
@@ -21,8 +23,22 @@ export type DiceToastItem = {
   breakdown: string;
 };
 
+export type RollContext = {
+  characterId: string;
+  characterName: string;
+} | null;
+
 type DiceToastContextValue = {
   pushRoll: (label: string, bonus: number) => void;
+  setRollContext: (ctx: RollContext) => void;
+  logExternalRoll: (payload: {
+    label: string;
+    notation: string;
+    dieResult?: number;
+    bonus?: number;
+    total: number;
+    breakdown: string;
+  }) => void;
 };
 
 const DiceToastContext = createContext<DiceToastContextValue | null>(null);
@@ -35,28 +51,88 @@ export function useDiceToast() {
 
 export function DiceToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<DiceToastItem[]>([]);
+  const rollContextRef = useRef<RollContext>(null);
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const pushRoll = useCallback((label: string, bonus: number) => {
-    const die = Math.floor(Math.random() * 20) + 1;
-    const total = die + bonus;
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const item: DiceToastItem = {
-      id,
-      label,
-      total,
-      die,
-      bonus,
-      breakdown: `${die} ${formatModifier(bonus)} = ${total}`,
-    };
-    setToasts((prev) => [...prev, item].slice(-6));
-    window.setTimeout(() => dismiss(id), 10000);
-  }, [dismiss]);
+  const setRollContext = useCallback((ctx: RollContext) => {
+    rollContextRef.current = ctx;
+  }, []);
 
-  const value = useMemo(() => ({ pushRoll }), [pushRoll]);
+  const persist = useCallback(
+    (payload: {
+      label: string;
+      notation: string;
+      dieResult?: number;
+      bonus?: number;
+      total: number;
+      breakdown: string;
+    }) => {
+      const ctx = rollContextRef.current;
+      if (!ctx) return;
+      void logDiceRoll({
+        characterId: ctx.characterId,
+        characterName: ctx.characterName || 'Personagem',
+        label: payload.label,
+        notation: payload.notation,
+        dieResult: payload.dieResult ?? null,
+        bonus: payload.bonus ?? 0,
+        total: payload.total,
+        breakdown: payload.breakdown,
+      });
+    },
+    []
+  );
+
+  const pushRoll = useCallback(
+    (label: string, bonus: number) => {
+      const die = Math.floor(Math.random() * 20) + 1;
+      const total = die + bonus;
+      const id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      const breakdown = die + ' ' + formatModifier(bonus) + ' = ' + total;
+      const notation = '1d20' + formatModifier(bonus);
+      const item: DiceToastItem = {
+        id,
+        label,
+        total,
+        die,
+        bonus,
+        breakdown,
+      };
+      setToasts((prev) => [...prev, item].slice(-6));
+      window.setTimeout(() => dismiss(id), 10000);
+      persist({
+        label,
+        notation,
+        dieResult: die,
+        bonus,
+        total,
+        breakdown,
+      });
+    },
+    [dismiss, persist]
+  );
+
+  const logExternalRoll = useCallback(
+    (payload: {
+      label: string;
+      notation: string;
+      dieResult?: number;
+      bonus?: number;
+      total: number;
+      breakdown: string;
+    }) => {
+      persist(payload);
+    },
+    [persist]
+  );
+
+  const value = useMemo(
+    () => ({ pushRoll, setRollContext, logExternalRoll }),
+    [pushRoll, setRollContext, logExternalRoll]
+  );
 
   return (
     <DiceToastContext.Provider value={value}>
