@@ -115,18 +115,35 @@ export function getSkillUpgradesEarned(
   return { basico, medio, alto, expert };
 }
 
+/**
+ * Quantos upgrades de cada tipo as perícias já consomem
+ * (Básico→…→Expert conta todos os degraus até o atual).
+ * Fonte da verdade do gasto — evita o int legado zerar o pool Básico.
+ */
+export function getSkillUpgradesUsedBySkills(skills: Skill[]): SkillUpgradeSpent {
+  const used: SkillUpgradeSpent = { ...DEFAULT_SKILL_UPGRADE_SPENT };
+  for (const skill of skills) {
+    const idx = SPECIALIZATION_ORDER.indexOf(skill.specialization);
+    if (idx >= 1) used.basico += 1;
+    if (idx >= 2) used.medio += 1;
+    if (idx >= 3) used.alto += 1;
+    if (idx >= 4) used.expert += 1;
+  }
+  return used;
+}
+
 export function getSkillUpgradesAvailable(
   totalLevel: number,
   intelligence: number,
-  spentRaw: unknown
+  skills: Skill[]
 ): SkillUpgradeSpent {
   const earned = getSkillUpgradesEarned(totalLevel, intelligence);
-  const spent = normalizeSkillUpgradeSpent(spentRaw);
+  const used = getSkillUpgradesUsedBySkills(skills);
   return {
-    basico: Math.max(0, earned.basico - spent.basico),
-    medio: Math.max(0, earned.medio - spent.medio),
-    alto: Math.max(0, earned.alto - spent.alto),
-    expert: Math.max(0, earned.expert - spent.expert),
+    basico: Math.max(0, earned.basico - used.basico),
+    medio: Math.max(0, earned.medio - used.medio),
+    alto: Math.max(0, earned.alto - used.alto),
+    expert: Math.max(0, earned.expert - used.expert),
   };
 }
 

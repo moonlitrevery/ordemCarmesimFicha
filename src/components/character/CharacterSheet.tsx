@@ -307,7 +307,7 @@ export function CharacterSheet({
   const skillUpgradesAvailable = getSkillUpgradesAvailable(
     totalLevel,
     sheet.attributes.INT,
-    sheet.skill_points_spent
+    sheet.skills
   );
   const imageValid =
     !sheet.image_url || VALID_IMAGE_URL.test(sheet.image_url.split('#')[0]);
@@ -544,17 +544,10 @@ export function CharacterSheet({
           const skill = sheet.skills[i];
           const upgradeKey = getUpgradeKeyForNext(skill.specialization);
           if (!upgradeKey || skillUpgradesAvailable[upgradeKey] <= 0) return;
-          const nextSpec = upgradeKey;
           const skills = [...sheet.skills];
-          skills[i] = { ...skill, specialization: nextSpec };
-          const spent = normalizeSkillUpgradeSpent(sheet.skill_points_spent);
-          patch({
-            skills,
-            skill_points_spent: {
-              ...spent,
-              [upgradeKey]: spent[upgradeKey] + 1,
-            },
-          });
+          skills[i] = { ...skill, specialization: upgradeKey };
+          // Gasto = especializações atuais; não depende mais do jsonb legado.
+          patch({ skills });
         }}
       />
 
