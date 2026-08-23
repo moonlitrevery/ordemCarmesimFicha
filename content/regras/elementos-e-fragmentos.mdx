@@ -2,18 +2,38 @@ import { FragmentCostTable } from '@/components/content/FragmentCostTable';
 
 # Elementos e Fragmentos
 
-{/* COLAR AQUI: texto da seção — os 11 elementos e a curva de fragmentos */}
+Ninguém escolhe seu elemento — ele desperta. A origem exata da magia é um mistério, mesmo para os alquimistas mais experientes da Ordem: em algum momento canônico da história, um feitiço afetou toda a humanidade — pessoas, animais e objetos — e, desde então, ninguém sabe se tem potencial alquímico até que algo aconteça e revele isso. Não existe linhagem, sangue puro ou herança que garanta magia a alguém; é inteiramente imprevisível, e é assim de propósito.
 
 ## Visão geral
 
-{/* COLAR AQUI: introdução */}
+Um personagem começa como um "adormecido" — enfeitiçado, mas sem nenhum elemento desperto. Um evento canônico na história do personagem desperta seu primeiro elemento. A partir daí, as ações do personagem em jogo geram **fragmentos** para elementos específicos: um personagem que passa a sessão investigando e conversando acumula fragmentos de Encantamento; um personagem que luta bastante acumula fragmentos ligados aos elementos daquele combate, e assim por diante. Não existe fórmula fixa de "essa ação vale X fragmentos" — cabe ao mestre conceder fragmentos conforme o que o personagem faz na mesa.
 
-## Detalhes
+Cada elemento tem seu próprio nível, de 0 a 20, e sobe de forma independente dos outros — um personagem pode (e deve) ter fragmentos em vários elementos ao mesmo tempo. Subir de nível em um elemento libera uma magia nova daquele nível/elemento.
 
-{/* COLAR AQUI: conteúdo principal */}
+## Os 11 elementos
+
+| Elemento | Cor |
+|---|---|
+| Fogo | Vermelho alaranjado |
+| Água | Azul escuro |
+| Terra | Verde escuro |
+| Ar | Cinza claro |
+| Sangue | Vermelho forte escuro |
+| Encantamento | Azul clarinho |
+| Veneno | Verde claro |
+| Gelo | Azul-bebê-cinza |
+| Eletricidade | Amarelo |
+| Luz | Branco (não puro) |
+| Sombra | Preto (não puro) |
+
+## Nível do personagem
+
+O **nível total do personagem é a soma dos níveis de todos os seus elementos** — não existe uma barra de XP separada. Um personagem com Fogo 3, Sangue 2 e Encantamento 3 é, simplesmente, nível 8. Esse nível total tem um teto rígido em **20**: ao chegar lá, o personagem já não tem mais nada de "terrestre" para aprender, dominou tudo que a condição humana permite, e sua evolução a partir daí vem de Feitos Históricos, não mais de fragmentos.
+
+Vale notar: como o custo de fragmentos cresce muito rápido dentro de um único elemento (ver tabela abaixo), é sempre mais barato espalhar fragmentos entre vários elementos do que empilhar tudo em um só — o próprio custo empurra os personagens para um perfil multifacetado, um mosaico de habilidades, em vez de hiperespecialização.
 
 ## Curva de fragmentos
 
-A tabela abaixo é gerada a partir da constante `FRAGMENT_COST` do sistema.
+A tabela abaixo mostra quantos fragmentos são necessários para sair de um nível e chegar ao próximo, dentro de um mesmo elemento — a mesma curva vale para qualquer um dos 11 elementos.
 
 <FragmentCostTable />
