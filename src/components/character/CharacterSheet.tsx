@@ -392,7 +392,7 @@ export function CharacterSheet({
                     {mod >= 0 ? '+' + mod : mod}
                   </span>
                   <InlineRollButton
-                    notation="1d100"
+                    notation="1d20"
                     label={ATTRIBUTE_LABELS[key] + ' (meta ' + value + ')'}
                   />
                 </div>
@@ -515,7 +515,7 @@ export function CharacterSheet({
                 {total}
               </span>
               <div className="flex items-center gap-1">
-                <InlineRollButton notation="1d100" label={skill.name + " (meta " + total + ")"} />
+                <InlineRollButton notation="1d20" label={skill.name + " (meta " + total + ")"} />
                 <button
                   type="button"
                   className="btn-ghost px-2 py-1 text-xs"
