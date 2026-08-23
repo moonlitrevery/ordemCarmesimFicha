@@ -33,8 +33,16 @@ export function getTotalLevel(elements: CharacterElementRow[]): number {
   return elements.reduce((sum, el) => sum + (el.level || 0), 0);
 }
 
+/**
+ * Nível usado só para recompensas de atributo/perícia.
+ * A criação conta como nível 1 — a soma dos elementos pode ser 0 até o primeiro up.
+ */
+export function getProgressionLevel(totalLevel: number): number {
+  return Math.max(1, Math.min(Math.max(0, totalLevel), MAX_CHARACTER_LEVEL));
+}
+
 export function getAttributePointsEarned(totalLevel: number): number {
-  const cap = Math.min(Math.max(0, totalLevel), MAX_CHARACTER_LEVEL);
+  const cap = getProgressionLevel(totalLevel);
   let sum = 0;
   for (let lvl = 1; lvl <= cap; lvl++) {
     sum += ATTRIBUTE_POINTS_BY_LEVEL[lvl] ?? 0;
@@ -73,13 +81,15 @@ export function getSkillUpgradesEarned(
   totalLevel: number,
   intelligence: number
 ): SkillUpgradeSpent {
+  const level = getProgressionLevel(totalLevel);
   const intMod = getAttributeModifier(intelligence);
   const half = Math.floor(intMod / 2);
 
   let basico = 0;
   for (const lvl of SKILL_BASIC_GRANT_LEVELS) {
-    if (totalLevel < lvl) continue;
+    if (level < lvl) continue;
     if (lvl === 1) {
+      // Pacote de criação / nível 1: 1 + modificador de INT
       basico += Math.max(0, 1 + intMod);
     } else {
       // níveis 3 e 5: 1 + (mod INT / 2)
@@ -89,17 +99,17 @@ export function getSkillUpgradesEarned(
 
   let medio = 0;
   for (const grant of SKILL_MEDIO_GRANT_LEVELS) {
-    if (totalLevel >= grant.level) medio += grant.amount;
+    if (level >= grant.level) medio += grant.amount;
   }
 
   let alto = 0;
   for (const lvl of SKILL_ALTO_GRANT_LEVELS) {
-    if (totalLevel >= lvl) alto += 1;
+    if (level >= lvl) alto += 1;
   }
 
   let expert = 0;
   for (const lvl of SKILL_EXPERT_GRANT_LEVELS) {
-    if (totalLevel >= lvl) expert += 1;
+    if (level >= lvl) expert += 1;
   }
 
   return { basico, medio, alto, expert };
