@@ -2,7 +2,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getTotalLevel } from '@/lib/calculations';
-import { CharacterImage } from '@/components/ui/CharacterImage';
+import {
+  CharacterBrowser,
+  type CharacterGroup,
+} from '@/components/character/CharacterBrowser';
 import type { Character, CharacterElementRow, Profile } from '@/types/database';
 
 export default async function FichasPage() {
@@ -58,7 +61,21 @@ export default async function FichasPage() {
     }
   }
 
-  const groups: { ownerLabel: string; chars: Character[] }[] = [];
+  const userId = user.id;
+
+  function toCard(c: Character) {
+    return {
+      id: c.id,
+      name: c.name,
+      occupation: c.occupation,
+      arcana: c.arcana,
+      imageUrl: c.image_url,
+      level: getTotalLevel(elementsByChar.get(c.id) ?? []),
+      isOwner: c.owner_id === userId,
+    };
+  }
+
+  const groups: CharacterGroup[] = [];
   if (isMestre) {
     const byOwner = new Map<string, Character[]>();
     for (const c of list) {
@@ -69,12 +86,14 @@ export default async function FichasPage() {
     for (const [ownerId, chars] of Array.from(byOwner.entries())) {
       groups.push({
         ownerLabel: owners.get(ownerId) ?? 'Jogador',
-        chars,
+        cards: chars.map(toCard),
       });
     }
   } else {
-    groups.push({ ownerLabel: '', chars: list });
+    groups.push({ ownerLabel: '', cards: list.map(toCard) });
   }
+
+  const showSearch = isMestre || list.length > 6;
 
   return (
     <div className="space-y-6">
@@ -92,49 +111,16 @@ export default async function FichasPage() {
         </Link>
       </div>
 
-      {list.length === 0 && (
+      {list.length === 0 ? (
         <div className="panel p-8 text-center text-ink-muted">
           Nenhuma ficha ainda.{' '}
           <Link href="/fichas/nova" className="text-crimson-soft hover:underline">
             Criar a primeira
           </Link>
         </div>
+      ) : (
+        <CharacterBrowser groups={groups} showSearch={showSearch} />
       )}
-
-      {groups.map((group) => (
-        <div key={group.ownerLabel || 'own'} className="space-y-3">
-          {isMestre && group.ownerLabel && (
-            <h2 className="label text-crimson-soft">{group.ownerLabel}</h2>
-          )}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {group.chars.map((c) => {
-              const level = getTotalLevel(elementsByChar.get(c.id) ?? []);
-              return (
-                <Link
-                  key={c.id}
-                  href={`/fichas/${c.id}`}
-                  className="panel group overflow-hidden transition hover:border-crimson/50"
-                >
-                  <CharacterImage
-                    url={c.image_url}
-                    name={c.name}
-                    className="h-40 w-full"
-                  />
-                  <div className="space-y-1 p-4">
-                    <h3 className="font-display text-xl text-parchment group-hover:text-crimson-soft">
-                      {c.name}
-                    </h3>
-                    <p className="text-sm text-ink-muted">
-                      Nível {level}
-                      {c.occupation ? ` · ${c.occupation}` : ''}
-                    </p>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
