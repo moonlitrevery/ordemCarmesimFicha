@@ -78,9 +78,16 @@ export const SKILL_ALTO_GRANT_LEVELS = [16, 17, 18] as const;
 export const SKILL_EXPERT_GRANT_LEVELS = [19, 20] as const;
 
 export const PER_LEVEL_GROWTH = {
-  hpPerLevel: 2,
   manaPerLevel: 2,
 };
+
+/**
+ * HP máximo = round(HP_BASE + floor(CON/2) + nível × (HP_PER_LEVEL_BASE + HP_PER_LEVEL_PER_CON × CON))
+ * O ganho por nível escala com CON: 1 HP/nível com CON 1, 8,6 HP/nível com CON 20.
+ */
+export const HP_BASE = 10;
+export const HP_PER_LEVEL_BASE = 0.6;
+export const HP_PER_LEVEL_PER_CON = 0.4;
 
 /** Escala de treinamento de perícia (um ponto sobe um degrau). */
 export const SPECIALIZATION_ORDER = [

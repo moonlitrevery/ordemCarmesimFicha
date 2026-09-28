@@ -36,7 +36,6 @@ export default function NovaFichaPage() {
         attributes: DEFAULT_ATTRIBUTES,
         skills: DEFAULT_SKILLS,
         hp_current: maxes.hpMax,
-        hp_max: maxes.hpMax,
         mana_current: maxes.manaMax,
         mana_max: maxes.manaMax,
         sanity_current: maxes.sanityMax,

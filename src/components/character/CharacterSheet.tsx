@@ -188,8 +188,8 @@ export function CharacterSheet({
         arcana: next.arcana || null,
         subarcana: next.subarcana || null,
         attributes: next.attributes,
-        hp_current: next.hp_current,
-        hp_max: maxes.hpMax,
+        // hp_max não é persistido: sempre derivado de CON + nível (getMaxHp).
+        hp_current: Math.min(next.hp_current, maxes.hpMax),
         mana_current: next.mana_current,
         mana_max: maxes.manaMax,
         sanity_current: next.sanity_current,
@@ -510,7 +510,7 @@ export function CharacterSheet({
               ['Sanidade', 'sanity_current', 'sanity', effectiveMaxes.sanity, '#7A6B9A'],
             ] as const
           ).map(([label, currentKey, modKey, max, color]) => {
-            const current = sheet[currentKey];
+            const current = Math.min(sheet[currentKey], max);
             const modVal = sheet.resource_mods[modKey] || 0;
             return (
               <ResourceBlock

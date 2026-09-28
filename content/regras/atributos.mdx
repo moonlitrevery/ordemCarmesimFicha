@@ -5,12 +5,32 @@ Todo personagem da Ordem Carmesim tem sete atributos base. Eles alimentam o cál
 | Sigla | Nome | Papel |
 |---|---|---|
 | **FOR** | Força | Dano físico corpo a corpo, capacidade de carga (itens que o personagem consegue levar = FOR ÷ 2, arredondado para baixo) |
-| **CON** | Constituição | Resistência física, base do cálculo de HP máximo |
+| **CON** | Constituição | Resistência física, base do cálculo de HP máximo (ver abaixo) |
 | **DES** | Destreza | Agilidade, distância de movimento em combate (DES ÷ 4 metros por ação de movimento), perícias físicas de precisão |
 | **INT** | Inteligência | Raciocínio, quantidade de especialidades básicas que o personagem pode escolher ao evoluir, perícias investigativas |
 | **EDU** | Educação | Conhecimento formal e acadêmico, perícias de conhecimento técnico |
 | **CAR** | Carisma | Perícias sociais, influência e negociação |
 | **POD** | Poder | Força de vontade e potencial mágico, base do cálculo de Mana máxima |
+
+## HP máximo
+
+O HP máximo de um personagem depende de dois fatores: **Constituição** e **nível**. A CON entra duas vezes no cálculo — uma vez no valor base e outra no ganho por nível —, então um agente com CON alta não começa apenas com mais vida: ele ganha muito mais HP a cada nível que sobe.
+
+```
+HP = round(10 + floor(CON/2) + nível × (0.6 + 0.4 × CON))
+```
+
+O `nível` é o nível total do personagem, ou seja, a soma dos níveis de todos os seus elementos.
+
+| CON | Nível 1 | Nível 5 | Nível 10 | Nível 20 |
+|---|---|---|---|---|
+| 1 | 11 | 15 | 20 | 30 |
+| 5 | 15 | 25 | 38 | 64 |
+| 10 | 20 | 38 | 61 | 107 |
+| 15 | 24 | 50 | 83 | 149 |
+| 20 | 29 | 63 | 106 | 192 |
+
+O ganho de HP por nível vai de **1 HP** (com CON 1) até **8,6 HP** (com CON 20).
 
 ## Onde os atributos aparecem em outras regras
 

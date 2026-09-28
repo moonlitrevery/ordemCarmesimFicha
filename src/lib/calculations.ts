@@ -2,6 +2,9 @@ import {
   ATTRIBUTE_POINTS_BY_LEVEL,
   ELEMENT_COLORS,
   FRAGMENT_COST,
+  HP_BASE,
+  HP_PER_LEVEL_BASE,
+  HP_PER_LEVEL_PER_CON,
   LEVEL_MILESTONES,
   MAX_CHARACTER_LEVEL,
   MAX_ELEMENT_LEVEL,
@@ -173,21 +176,28 @@ export function getFragmentCostForLevel(level: number): number {
   return FRAGMENT_COST[level];
 }
 
+/**
+ * HP máximo derivado de CON + nível. Ponto único de verdade do HP.
+ * HP = round(10 + floor(CON/2) + nível × (0.6 + 0.4 × CON))
+ */
+export function getMaxHp(totalLevel: number, constitution: number): number {
+  const level = Math.min(totalLevel, MAX_CHARACTER_LEVEL);
+  const perLevel = HP_PER_LEVEL_BASE + HP_PER_LEVEL_PER_CON * constitution;
+  return Math.max(
+    1,
+    Math.round(HP_BASE + Math.floor(constitution / 2) + level * perLevel)
+  );
+}
+
 export function computeDerivedMaxes(
   totalLevel: number,
   attributes: Attributes
 ): { hpMax: number; manaMax: number; sanityMax: number } {
   const level = Math.min(totalLevel, MAX_CHARACTER_LEVEL);
-  const baseHp = 10 + Math.floor(attributes.CON / 2);
   const baseMana = 10 + Math.floor(attributes.POD / 2);
   const baseSanity = 10 + Math.floor(attributes.POD / 2);
 
-  const hpMax = Math.max(
-    1,
-    Math.round(
-      baseHp + PER_LEVEL_GROWTH.hpPerLevel * level * (attributes.CON / 10)
-    )
-  );
+  const hpMax = getMaxHp(totalLevel, attributes.CON);
   const manaMax = Math.max(
     1,
     Math.round(
