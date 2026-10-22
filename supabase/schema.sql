@@ -80,6 +80,8 @@ create table public.characters (
   spells jsonb not null default '[]'::jsonb,
   weapons jsonb not null default '[]'::jsonb,
   inventory jsonb not null default '[]'::jsonb,
+  money numeric(14,2) not null default 0,
+  armor jsonb not null default '[]'::jsonb,
   curses jsonb not null default '[]'::jsonb,
   historical_feats jsonb not null default '[]'::jsonb,
   milestone_notes jsonb not null default '{}'::jsonb,

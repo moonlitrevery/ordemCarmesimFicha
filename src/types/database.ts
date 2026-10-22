@@ -61,6 +61,11 @@ export interface Spell {
   manaCost: string;
 }
 
+export interface WeaponMod {
+  name: string;
+  description: string;
+}
+
 export interface Weapon {
   name: string;
   type: string;
@@ -71,6 +76,15 @@ export interface Weapon {
   range: string;
   flaw: string;
   area: string;
+  /** Ausente em fichas antigas: tratar como []. */
+  mods?: WeaponMod[];
+}
+
+export interface ArmorPiece {
+  name: string;
+  kind: 'fisica' | 'magica';
+  reduction: string;
+  notes: string;
 }
 
 export interface InventoryItem {
@@ -140,6 +154,8 @@ export interface Character {
   spells: Spell[];
   weapons: Weapon[];
   inventory: InventoryItem[];
+  money?: number | string;
+  armor?: ArmorPiece[];
   curses: Curse[];
   historical_feats: HistoricalFeat[];
   milestone_notes: MilestoneNotes;

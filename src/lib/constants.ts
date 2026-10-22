@@ -242,12 +242,14 @@ export const RULES_PAGES = [
   { slug: 'elementos-e-fragmentos', title: 'Elementos e Fragmentos' },
   { slug: 'arcanas', title: 'Arcanas' },
   { slug: 'armas-e-runas', title: 'Armas e Runas' },
+  { slug: 'tabela-de-armas', title: 'Tabela de Armas' },
   { slug: 'itens-amaldicoados', title: 'Itens Amaldiçoados' },
 ] as const;
 
 export const WEAPON_TYPES = [
   'Corpo a Corpo',
   'A distância',
+  'Arma de Fogo',
   'Explosivo',
   'Mágica',
 ] as const;

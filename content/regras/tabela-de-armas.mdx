@@ -1,0 +1,35 @@
+import { WeaponReferenceTables } from '@/components/content/WeaponReferenceTables';
+
+# Tabela de Armas
+
+Referência das armas, armaduras e modificadores vendidos (ou não) pela Loja de Armas da Ordem Carmesim. A tabela **não** preenche sua ficha: copie manualmente a arma para a aba **Armas** da sua ficha, com qualquer alteração que ela tenha.
+
+## Como ler a tabela
+
+- **Dano** — dano base da arma. Lembre da progressão de dano por nível (+1 a cada dois níveis), explicada em [Armas e Runas](/regras/armas-e-runas).
+- **Hits/turno** — quantos ataques a arma faz por ação de combate.
+- **Dano com X** (Xd4, Xd6+5, Xd4+2) — X é a quantidade de projéteis usados. Ex.: 2 shurikens = 2d4 de dano; 2 chakrams = 2d4+2.
+- **Alcance "até Arremesso × 5m"** — multiplique seu valor de Arremesso por 5. Ex.: Arremesso 2 → até 10m.
+- **Shotgun** — o dano depende da distância: 3d6 até 10m, 2d6 até 20m, 1d6 até 45m.
+- **Defeito** — se você tirar esse número ou menos no dado de acerto, a arma **trava**. Destravar leva **1d4 turnos**. Nas armas improvisadas, o defeito depende da qualidade: uma arma frágil (feita de gravetos, por exemplo) trava com 10; uma bem robusta, só com 1.
+- **Área** — raio de efeito dos explosivos.
+- **Dado** — a perícia (ou atributo) rolada para usar a arma.
+- **Grau p/ compra** — cargo mínimo de agente para comprar.
+
+## Efeitos especiais
+
+- **Taser** — o alvo faz um teste de Constituição com DT igual ao seu dado de acerto. Se falhar, perde o próximo turno.
+- **Bomba de fumaça** — só atrapalha a visão: quem está dentro da fumaça, ou ataca através dela, tem desvantagem.
+- **QUEIM. (Queimadura)** — 1d4 de dano por turno, durante Xd4 turnos.
+- **VEN. (Veneno)** — dano incremental por turno, durante Xd4 turnos: 1d4 → 2d4 → 3d4 → 4d4...
+- **Armas genéricas** — servem para montar uma arma própria a partir do dano base. **Passe pela mestra antes** para definir o dano final.
+
+## Compra
+
+- **Disponível** — à venda na base.
+- **Por encomenda** — chega em até **3 dias úteis**.
+- **Não disponível** — não se compra; só se consegue em missão.
+- **Cartucho de munição** custa **1/3 do preço da arma**.
+- **Agentes Principiantes e Novatos** são limitados a **3 pentes de munição por missão**.
+
+<WeaponReferenceTables />

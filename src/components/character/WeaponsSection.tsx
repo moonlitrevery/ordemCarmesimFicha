@@ -3,7 +3,8 @@
 import { InlineRollButton } from '@/components/dice/DiceRoller';
 import { ListSection } from '@/components/character/ListSection';
 import { WEAPON_TYPES } from '@/lib/constants';
-import type { Weapon } from '@/types/database';
+import { MAX_WEAPON_MODS } from '@/lib/weapons-reference';
+import type { Weapon, WeaponMod } from '@/types/database';
 
 export function WeaponsSection({
   weapons,
@@ -28,6 +29,7 @@ export function WeaponsSection({
             range: '',
             flaw: '',
             area: '',
+            mods: [],
           },
         ])
       }
@@ -125,7 +127,7 @@ export function WeaponsSection({
               [
                 ['ammo', 'Munição'],
                 ['range', 'Alcance'],
-                ['flaw', 'Falha'],
+                ['flaw', 'Defeito'],
                 ['area', 'Área'],
               ] as const
             ).map(([key, ph]) => (
@@ -142,8 +144,74 @@ export function WeaponsSection({
               />
             ))}
           </div>
+          <WeaponModsEditor
+            mods={w.mods ?? []}
+            onChange={(mods) => {
+              const next = [...weapons];
+              next[i] = { ...w, mods };
+              onChange(next);
+            }}
+          />
         </div>
       ))}
     </ListSection>
+  );
+}
+
+function WeaponModsEditor({
+  mods,
+  onChange,
+}: {
+  mods: WeaponMod[];
+  onChange: (mods: WeaponMod[]) => void;
+}) {
+  const full = mods.length >= MAX_WEAPON_MODS;
+  return (
+    <div className="space-y-2 border-t border-ink-border pt-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="label">
+          Modificadores ({mods.length}/{MAX_WEAPON_MODS})
+        </span>
+        <button
+          type="button"
+          className="btn-ghost px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={full}
+          onClick={() => onChange([...mods, { name: '', description: '' }])}
+        >
+          + Modificador
+        </button>
+      </div>
+      {mods.map((m, j) => (
+        <div key={j} className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
+          <input
+            className="field"
+            placeholder="Nome"
+            value={m.name}
+            onChange={(e) => {
+              const next = [...mods];
+              next[j] = { ...m, name: e.target.value };
+              onChange(next);
+            }}
+          />
+          <input
+            className="field"
+            placeholder="Descrição"
+            value={m.description}
+            onChange={(e) => {
+              const next = [...mods];
+              next[j] = { ...m, description: e.target.value };
+              onChange(next);
+            }}
+          />
+          <button
+            type="button"
+            className="btn-ghost px-2"
+            onClick={() => onChange(mods.filter((_, k) => k !== j))}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }

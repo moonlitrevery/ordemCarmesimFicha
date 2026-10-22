@@ -14,6 +14,7 @@ const rulesModules: Record<string, () => Promise<{ default: React.ComponentType 
   'elementos-e-fragmentos': () => import('@/content/regras/elementos-e-fragmentos.mdx'),
   arcanas: () => import('@/content/regras/arcanas.mdx'),
   'armas-e-runas': () => import('@/content/regras/armas-e-runas.mdx'),
+  'tabela-de-armas': () => import('@/content/regras/tabela-de-armas.mdx'),
   'itens-amaldicoados': () => import('@/content/regras/itens-amaldicoados.mdx'),
 };
 

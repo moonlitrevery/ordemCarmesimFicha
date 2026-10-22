@@ -29,6 +29,7 @@ import {
 } from '@/components/character/NotesAndBackstorySection';
 import { SpellsSection } from '@/components/character/SpellsSection';
 import { WeaponsSection } from '@/components/character/WeaponsSection';
+import { ArmorSection } from '@/components/character/ArmorSection';
 import { useDiceToast } from '@/components/dice/DiceToast';
 import { ElementsSection } from '@/components/character/ElementsSection';
 import { LevelProgression } from '@/components/character/LevelProgression';
@@ -39,6 +40,7 @@ import { SkillsList } from '@/components/character/SkillsList';
 import { SectionCard } from '@/components/ui/SectionCard';
 import { SheetTabs } from '@/components/ui/SheetTabs';
 import type {
+  ArmorPiece,
   Attributes,
   Character,
   CharacterElementRow,
@@ -77,6 +79,8 @@ type SheetState = {
   spells: Spell[];
   weapons: Weapon[];
   inventory: InventoryItem[];
+  money: number;
+  armor: ArmorPiece[];
   curses: Curse[];
   historical_feats: HistoricalFeat[];
   milestone_notes: MilestoneNotes;
@@ -108,6 +112,8 @@ function toState(c: Character): SheetState {
     spells: c.spells ?? [],
     weapons: c.weapons ?? [],
     inventory: c.inventory ?? [],
+    money: Number(c.money ?? 0) || 0,
+    armor: c.armor ?? [],
     curses: c.curses ?? [],
     historical_feats: c.historical_feats ?? [],
     milestone_notes: c.milestone_notes ?? {},
@@ -198,6 +204,8 @@ export function CharacterSheet({
         spells: next.spells,
         weapons: next.weapons,
         inventory: next.inventory,
+        money: next.money,
+        armor: next.armor,
         curses: next.curses,
         historical_feats: next.historical_feats,
         milestone_notes: next.milestone_notes,
@@ -378,9 +386,10 @@ export function CharacterSheet({
               />
             </label>
             <label className="space-y-1">
-              <span className="label">Nascimento</span>
+              <span className="label">Naturalidade</span>
               <input
                 className="field"
+                placeholder="Cidade, País"
                 value={sheet.birthplace}
                 onChange={(e) => patch({ birthplace: e.target.value })}
               />
@@ -579,10 +588,16 @@ export function CharacterSheet({
               id: "armas",
               label: "Armas",
               content: (
-                <WeaponsSection
-                  weapons={sheet.weapons}
-                  onChange={(weapons) => patch({ weapons })}
-                />
+                <div className="space-y-5">
+                  <WeaponsSection
+                    weapons={sheet.weapons}
+                    onChange={(weapons) => patch({ weapons })}
+                  />
+                  <ArmorSection
+                    armor={sheet.armor}
+                    onChange={(armor) => patch({ armor })}
+                  />
+                </div>
               ),
             },
             {
@@ -593,6 +608,8 @@ export function CharacterSheet({
                   inventory={sheet.inventory}
                   weight={weight}
                   limit={limit}
+                  money={sheet.money}
+                  onMoneyChange={(money) => patch({ money })}
                   onChange={(inventory) => patch({ inventory })}
                 />
               ),
