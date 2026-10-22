@@ -4,7 +4,7 @@ import { ContentNav } from '@/components/content/ContentNav';
 
 export default function RegrasIndexPage() {
   return (
-    <div className="grid gap-6 md:grid-cols-[220px_1fr]">
+    <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
       <ContentNav base="/regras" pages={RULES_PAGES} />
       <div className="space-y-4">
         <h1 className="font-display text-4xl text-parchment">Regras</h1>

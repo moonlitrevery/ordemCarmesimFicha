@@ -18,9 +18,9 @@ export default async function RegrasSlugPage({
   const Content = mod.default;
 
   return (
-    <div className="grid gap-6 md:grid-cols-[220px_1fr]">
+    <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
       <ContentNav base="/regras" pages={RULES_PAGES} current={params.slug} />
-      <article className="panel max-w-none p-5 md:p-8">
+      <article className="panel min-w-0 max-w-none p-5 md:p-8">
         <div className="prose prose-invert prose-lg max-w-none">
           <Content />
         </div>
