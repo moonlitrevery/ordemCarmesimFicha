@@ -50,6 +50,12 @@ Neste ambiente, o build do Next.js pode falhar no `realpath` nativo. O script `s
    - Site URL: `https://seu-app.vercel.app`
    - Redirect URLs: `https://seu-app.vercel.app/**`
 
+## Testes
+
+- Unitários: `npm test` (Vitest, ex.: fórmula de HP máximo em `src/lib/calculations.test.ts`).
+- E2E (Playwright/Python, autenticação): ver `tests/e2e/README.md`.
+- Plano de testes completo: `docs/qa/plano-de-testes-ordem-carmesim.docx`.
+
 ## Rolagens ao vivo (mestra)
 
 1. Rode `supabase/migrations/003_dice_rolls.sql` no SQL Editor.
