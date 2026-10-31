@@ -6,11 +6,14 @@ export interface SidePanelTab {
   id: string;
   label: string;
   content: ReactNode;
+  badge?: number;
 }
 
 /**
  * Retrátil ao lado do canvas com mouse; gaveta por cima dele no touch.
  * Fechado continua montado (hidden) para não perder o estado das abas.
+ * Aba só monta quando é vista pela primeira vez: a biblioteca não baixa nada
+ * enquanto ninguém a abre.
  */
 export function SidePanel({
   side,
@@ -24,6 +27,11 @@ export function SidePanel({
   tabs: SidePanelTab[];
 }) {
   const [activeId, setActiveId] = useState(tabs[0].id);
+  const [seenIds, setSeenIds] = useState<ReadonlySet<string>>(new Set());
+
+  if (open && !seenIds.has(activeId)) {
+    setSeenIds(new Set(seenIds).add(activeId));
+  }
 
   return (
     <aside
@@ -50,6 +58,11 @@ export function SidePanel({
             }
           >
             {tab.label}
+            {Boolean(tab.badge) && (
+              <span className="ml-1.5 rounded-full bg-crimson px-1.5 text-xs text-parchment">
+                {tab.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -57,10 +70,12 @@ export function SidePanel({
         <div
           key={tab.id}
           role="tabpanel"
-          hidden={tab.id !== activeId}
-          className="min-h-0 flex-1 overflow-y-auto p-3"
+          className={
+            'min-h-0 flex-1 flex-col overflow-y-auto p-3 ' +
+            (tab.id === activeId ? 'flex' : 'hidden')
+          }
         >
-          {tab.content}
+          {seenIds.has(tab.id) && tab.content}
         </div>
       ))}
     </aside>

@@ -8,9 +8,15 @@ import { unlockAudio } from '@/lib/vtt/audio/unlock';
 import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
 import { useVttStore } from '@/lib/vtt/store';
+import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
+import { ApprovalPanel } from './ApprovalPanel';
+import { LibraryPanel } from './LibraryPanel';
 import { MembersPanel } from './MembersPanel';
+import { PlayerUploadPanel } from './PlayerUploadPanel';
 import { SidePanel, type SidePanelTab } from './SidePanel';
+
+const TOAST_MS = 4000;
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -30,11 +36,6 @@ const PLAYER_TABS: SidePanelTab[] = [
 
 const GM_PLACEHOLDER_TABS: SidePanelTab[] = [
   { id: 'scenes', label: 'Cenas', content: <Placeholder title="As cenas" /> },
-  {
-    id: 'library',
-    label: 'Biblioteca',
-    content: <Placeholder title="A biblioteca" />,
-  },
   { id: 'sound', label: 'Som', content: <Placeholder title="O som" /> },
   { id: 'fx', label: 'Efeitos', content: <Placeholder title="Os efeitos" /> },
 ];
@@ -51,7 +52,10 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const audioUnlocked = useVttStore((s) => s.audioUnlocked);
   const setAudioUnlocked = useVttStore((s) => s.setAudioUnlocked);
   const setSessionOpen = useVttStore((s) => s.setSessionOpen);
+  const pendingCount = useVttStore((s) => s.pendingAssets.length);
+  const role = useVttStore((s) => s.me?.role) ?? initial.me.role;
 
+  const [toast, setToast] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
@@ -88,16 +92,42 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     }
     refreshRef.current = refresh;
 
+    let toastTimer: number | undefined;
+
+    async function refreshPending(notify: boolean) {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('*, profiles(display_name)')
+        .eq('status', 'pending')
+        .order('created_at');
+      if (disposed || error) return;
+      const next = (data ?? []) as unknown as PendingAsset[];
+      const known = new Set(
+        useVttStore.getState().pendingAssets.map((asset) => asset.id)
+      );
+      useVttStore.getState().setPendingAssets(next);
+      // Só avisa se o banco confirma item novo: o broadcast pode ser forjado.
+      if (notify && next.some((asset) => !known.has(asset.id))) {
+        setToast('Novo arquivo aguardando aprovação');
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => setToast(null), TOAST_MS);
+      }
+    }
+
     const channel = joinTableChannel(supabase, tableId, {
       userId,
       onOnline: (next) => useVttStore.getState().setOnline(next),
       onStatus: (next) => useVttStore.getState().setConnection(next),
-      onSubscribed: () => void refresh(),
+      onSubscribed: () => {
+        void refresh();
+        if (isGm) void refreshPending(false);
+      },
     });
     channelRef.current = channel;
 
     channel.on('session:state', () => void refresh());
     channel.on('member:changed', () => void refresh());
+    if (isGm) channel.on('asset:pending', () => void refreshPending(true));
 
     const presenceOf = () => {
       const current = useVttStore.getState().me;
@@ -127,11 +157,12 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
     return () => {
       disposed = true;
+      window.clearTimeout(toastTimer);
       unsubscribeMe();
       channel.leave();
       channelRef.current = null;
     };
-  }, [tableId, userId, router]);
+  }, [tableId, userId, isGm, router]);
 
   const notifyMemberChanged = useCallback(async (changedId: string) => {
     channelRef.current?.emit({ type: 'member:changed', userId: changedId });
@@ -168,8 +199,33 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         <MembersPanel tableId={tableId} onMemberChanged={notifyMemberChanged} />
       ),
     },
+    { id: 'library', label: 'Biblioteca', content: <LibraryPanel /> },
+    {
+      id: 'approval',
+      label: 'Aprovação',
+      badge: pendingCount,
+      content: <ApprovalPanel />,
+    },
     ...GM_PLACEHOLDER_TABS,
   ];
+
+  const rightTabs: SidePanelTab[] =
+    role === 'jogador'
+      ? [
+          ...PLAYER_TABS,
+          {
+            id: 'upload',
+            label: 'Enviar imagem',
+            content: (
+              <PlayerUploadPanel
+                onUploaded={() =>
+                  channelRef.current?.emit({ type: 'asset:pending' })
+                }
+              />
+            ),
+          },
+        ]
+      : PLAYER_TABS;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-ink text-parchment">
@@ -189,6 +245,11 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
             onClick={() => setLeftOpen((v) => !v)}
           >
             Mestre
+            {pendingCount > 0 && (
+              <span className="rounded-full bg-crimson px-1.5 text-parchment">
+                {pendingCount}
+              </span>
+            )}
           </button>
         )}
         <h1 className="min-w-0 truncate font-display text-lg leading-tight">
@@ -292,8 +353,17 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           side="right"
           label="Chat, documentos e relatórios"
           open={rightOpen}
-          tabs={PLAYER_TABS}
+          tabs={rightTabs}
         />
+
+        {toast && (
+          <p
+            role="status"
+            className="pointer-events-none absolute bottom-4 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-xs text-parchment"
+          >
+            {toast}
+          </p>
+        )}
       </div>
 
       {!audioUnlocked && (

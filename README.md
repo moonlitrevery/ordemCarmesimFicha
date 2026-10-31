@@ -61,3 +61,12 @@ Neste ambiente, o build do Next.js pode falhar no `realpath` nativo. O script `s
 1. Rode `supabase/migrations/003_dice_rolls.sql` no SQL Editor.
 2. No Supabase → Database → Replication, confirme que `dice_rolls` está no Realtime (o SQL já tenta adicionar).
 3. Conta com `role = mestre` vê o link **Rolagens** no menu (`/rolagens`).
+
+## LEIA-ME: ligar o Blob store (uploads da Mesa)
+
+1. Na Vercel, abra o projeto → **Storage** → **Create** → **Blob**, com acesso **público**, e conecte ao projeto. Isso cria `BLOB_READ_WRITE_TOKEN`.
+2. Faça um novo deploy para a variável valer em produção.
+3. Para testar local, rode `vercel env pull .env.local` ou copie o token para o `.env.local` e reinicie o `npm run dev`.
+4. Rode `supabase/migrations/008_vtt_assets.sql` no SQL Editor.
+
+Se a cota do plano Hobby (1 GB armazenado, 10 GB de transferência por mês) estourar, o Blob bloqueia até o mês virar, sem cobrança.
