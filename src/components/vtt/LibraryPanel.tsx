@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   ASSET_KINDS,
   ASSET_KIND_LABELS,
+  ASSET_DRAG_TYPE,
   isAudioKind,
   matchesSearch,
   parseTags,
@@ -12,6 +13,7 @@ import {
   type AssetKind,
 } from '@/lib/vtt/assets/rules';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
+import { isPlaceableKind } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import { visibleRange } from '@/lib/vtt/virtual-grid';
 import { AssetThumb } from './AssetThumb';
@@ -130,7 +132,7 @@ function AssetEditor({
   );
 }
 
-function AssetGrid({
+export function AssetGrid({
   assets,
   selectedId,
   playingId,
@@ -141,7 +143,7 @@ function AssetGrid({
   selectedId: string | null;
   playingId: string | null;
   onSelect: (id: string) => void;
-  onTogglePreview: (asset: Asset) => void;
+  onTogglePreview?: (asset: Asset) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -191,6 +193,10 @@ function AssetGrid({
               <button
                 type="button"
                 aria-pressed={asset.id === selectedId}
+                draggable={isPlaceableKind(asset.kind)}
+                onDragStart={(e) =>
+                  e.dataTransfer.setData(ASSET_DRAG_TYPE, JSON.stringify(asset))
+                }
                 onClick={() => onSelect(asset.id)}
                 className={
                   'block w-full overflow-hidden rounded-md border text-left transition ' +
@@ -207,7 +213,7 @@ function AssetGrid({
                   {asset.name}
                 </span>
               </button>
-              {isAudioKind(asset.kind) && (
+              {isAudioKind(asset.kind) && onTogglePreview && (
                 <button
                   type="button"
                   className="btn-ghost absolute right-1 top-1 bg-ink/80 px-2 py-0.5 text-xs"
@@ -374,6 +380,7 @@ export function LibraryPanel() {
             if (selected.id === playingId) stopPreview();
             setSelectedId(null);
             setAssets((prev) => prev.filter((a) => a.id !== selected.id));
+            useVttStore.getState().sync?.notifyAssetDeleted();
           }}
         />
       )}

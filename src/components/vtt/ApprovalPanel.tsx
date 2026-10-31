@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { ASSET_KIND_LABELS } from '@/lib/vtt/assets/rules';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
 import { useVttStore, type PendingAsset } from '@/lib/vtt/store';
@@ -20,16 +19,14 @@ function PendingRow({
   async function approve() {
     setBusy(true);
     setError(null);
-    const { error: err } = await createClient()
-      .from('assets')
-      .update({ status: 'approved' })
-      .eq('id', asset.id);
-    if (err) {
-      setError('Não foi possível aprovar. Tente de novo.');
+    try {
+      // A RPC também cria os objetos que o jogador soltou no mapa.
+      await useVttStore.getState().sync?.approveAsset(asset.id);
+      onResolved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao aprovar.');
       setBusy(false);
-      return;
     }
-    onResolved(true);
   }
 
   async function reject() {
@@ -37,6 +34,7 @@ function PendingRow({
     setError(null);
     try {
       await deleteAsset(asset.id);
+      useVttStore.getState().sync?.notifyAssetResolved();
       onResolved(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao recusar.');

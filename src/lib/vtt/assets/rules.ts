@@ -40,6 +40,9 @@ export const ASSET_KIND_LABELS: Record<AssetKind, string> = {
   cutscene: 'Cutscenes',
 };
 
+/** Asset arrastado da lista para o mapa, no dataTransfer. */
+export const ASSET_DRAG_TYPE = 'application/x-vtt-asset';
+
 export const IMAGE_KINDS: AssetKind[] = ['mapa', 'token', 'addon', 'adereco'];
 export const AUDIO_KINDS: AssetKind[] = ['audio_ambiente', 'audio_sfx'];
 

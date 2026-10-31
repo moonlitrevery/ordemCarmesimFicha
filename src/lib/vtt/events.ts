@@ -1,11 +1,36 @@
+import type { Drawing, SceneObject } from './types';
+
 /**
  * Eventos de broadcast do canal da mesa. Qualquer membro consegue enviar no
- * canal, então estes são só avisos: quem recebe relê o estado do banco.
+ * canal, então `session:state`, `member:changed`, `asset:*`, `scene:assign` e
+ * `scene:refresh` são só avisos: quem recebe relê o estado do banco. Os de
+ * objeto e desenho levam a linha já gravada, validada na chegada.
  */
 export type VttEvent =
   | { type: 'session:state'; open: boolean }
   | { type: 'member:changed'; userId: string }
-  | { type: 'asset:pending' };
+  | { type: 'asset:pending' }
+  /** A mestra aprovou ou recusou: quem tem colocação pendente relê. */
+  | { type: 'asset:resolved' }
+  /** Mudou cena padrão, quem está em qual cena, ou a lista de cenas. */
+  | { type: 'scene:assign' }
+  /** Mudou algo que não deve viajar pelo canal (oculto, cena em preparo). */
+  | { type: 'scene:refresh'; sceneId: string }
+  /** Durante o arraste: transformação própria do objeto, sem gravar. */
+  | { type: 'obj:drag'; sceneId: string; id: string; x: number; y: number }
+  | { type: 'obj:upsert'; object: SceneObject }
+  | { type: 'obj:delete'; sceneId: string; id: string }
+  | { type: 'draw:add'; drawing: Drawing }
+  /** `id` nulo: a mestra apagou todos os desenhos da cena. */
+  | { type: 'draw:delete'; sceneId: string; id: string | null }
+  | { type: 'ping'; sceneId: string; userId: string; x: number; y: number }
+  /** `line` nula: terminou de medir. */
+  | {
+      type: 'ruler';
+      sceneId: string;
+      userId: string;
+      line: [number, number, number, number] | null;
+    };
 
 export type VttEventType = VttEvent['type'];
 

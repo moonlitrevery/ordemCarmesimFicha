@@ -40,7 +40,10 @@ Todas as tabelas novas com RLS. "Membro" = linha em `table_members` com `banned 
 - **assets** (biblioteca **global**, compartilhada entre mesas): `id`, `kind` (`'mapa' | 'token' | 'addon' | 'adereco' | 'audio_ambiente' | 'audio_sfx' | 'cutscene'`), `name`, `storage_key`, `url`, `thumb_url` (só `mapa` e `adereco`), `mime`, `size_bytes`, `width`, `height`, `duration_s`, `tags text[]`, `status` (`'approved' | 'pending' | 'rejected'`), `uploaded_by`, `created_at`. Upload de jogador nasce `pending`; da mestra nasce `approved`. Jogadores leem só `approved` + os próprios `pending`. Pode enviar quem é mestre ou `jogador` não banido em alguma mesa (`can_upload_asset()`); jogador só envia imagem. `url` e `thumb_url` são únicas e presas ao host do Blob, e `thumb_url` fica em `thumbs/` (`url` nunca): apagar uma linha apaga essas URLs, então nenhuma linha pode apontar para o arquivo de outra.
 - **scenes**: `id`, `table_id`, `name`, `folder` (texto livre, pra agrupar), `sort`, `map_asset_id`, `meters_per_px` (calibração da régua), `ambient jsonb` (camadas de som salvas), `weather jsonb` (efeitos de tela salvos), `fog` (fase 11), `created_at`.
 - **scene_objects**: `id`, `scene_id`, `asset_id`, `kind` (`'token' | 'adereco' | 'addon'`), `x`, `y`, `rotation` (rad), `scale`, `flip_x bool`, `flip_y bool`, `z int`, `parent_id` (nullable, anexo), `local` jsonb (offset/rot relativos ao pai quando anexado), `caption jsonb` (`{text,color,stroke,strokeWidth,glow,glowColor,obfuscated}`), `effects jsonb` (lista de efeitos/magias ativos), `conditions text[]`, `character_id` (nullable, vínculo com ficha), `npc_id` (nullable), `hidden bool` (só mestre vê), `created_by`, `updated_at`.
-- **drawings**: `id`, `scene_id`, `author_id`, `points` (array achatado, simplificado), `color`, `width`, `created_at`.
+  Objeto anexado: `local` = `{x,y,rotation,scale,flipX,flipY}` e as colunas `x/y/...` ficam sem efeito até desanexar. `scene_id`, `asset_id`, `kind` e `created_by` não aceitam update (privilégio por coluna); `updated_at`, campos só da mestra (`hidden`, `character_id`, `npc_id`) e ciclos de anexo são conferidos pelo trigger `guard_scene_object`. Objeto nasce solto (`parent_id` e `local` não têm privilégio de insert).
+- **drawings**: `id`, `scene_id`, `author_id`, `points` (`double precision[]` achatado, simplificado, até 8000 coordenadas), `color`, `width`, `created_at`.
+- **pending_placements**: `id`, `asset_id`, `scene_id`, `x`, `y`, `scale`, `created_by`, `created_at`. Arquivo solto no mapa por jogador: só ele vê, semitransparente. A RPC `approve_asset(p_asset)` aprova o asset, vira cada colocação em `scene_objects` (mantendo o autor) e devolve as cenas afetadas; recusar apaga o asset e o cascade leva a colocação. Arquivo solto no mapa entra como `token`.
+- Quem vê o quê: `my_scene(table)` (sessão aberta; jogador = `scene_id` ou cena padrão; espectador = cena padrão), `can_view_scene`, `can_edit_scene` (espectador não edita), `is_scene_gm`. `scenes` só mostra ao jogador a cena em que ele está. Duplicar cena é a RPC `duplicate_scene` (copia objetos, anexos e desenhos). Ao criar a primeira cena, ela vira a padrão; apagar a padrão promove outra.
 - **npcs**: mini-fichas, só mestre lê/escreve. (fase 5)
 - **chat_messages**: (fase 4)
 - **table_documents** e **table_reports**: por mesa. (fase 8)
@@ -55,7 +58,7 @@ Toda migração nova vai em `supabase/migrations/0NN_*.sql` **e** é refletida e
 | Abrir/fechar sessão, mover jogadores entre cenas, expulsar/banir, trocar papel | ✅ | ❌ | ❌ |
 | Ver o canvas | ✅ (qualquer cena) | ✅ (só a cena dele, sessão aberta) | ✅ (cena padrão, sessão aberta) |
 | Mover/girar/redimensionar/espelhar/legenda/anexar **qualquer** token | ✅ | ✅ | ❌ |
-| Ocultar objeto, vincular NPC | ✅ | ❌ | ❌ |
+| Ocultar objeto (leva junto os anexados), vincular NPC | ✅ | ❌ | ❌ |
 | Apagar objeto | ✅ | só os que criou | ❌ |
 | Efeitos e magias no token, condições | ✅ | ✅ | ❌ |
 | Desenhar / apagar o próprio desenho / apagar tudo | ✅ / ✅ / ✅ | ✅ / ✅ / ❌ | ❌ |
@@ -71,9 +74,11 @@ Sessão **fechada**: canvas mostra "A sessão ainda não começou" pra jogadores
 
 - **Um canal por mesa**: `supabase.channel('mesa:'+tableId, { config: { private: true, presence: { key: userId } } })`. Use Realtime Authorization (policies em `realtime.messages`) pra só membros/mestre conseguirem entrar. Se o projeto não suportar, documente e use canal público com nome contendo o UUID da mesa.
 - **Presence**: `{ userId, name, role, sceneId, ready? }` — mostra quem está online e em qual cena.
-- **Broadcast** (tipado num único `type VttEvent` em `src/lib/vtt/events.ts`): `obj:drag` (transitório, throttle 50 ms, só posição), `obj:upsert`, `obj:delete`, `scene:assign`, `session:state`, `member:changed`, `ping`, `draw:add`, `draw:delete`, `audio:*`, `fx:*`, `doc:show`, `cutscene:*`, `asset:pending`.
+- **Broadcast** (tipado num único `type VttEvent` em `src/lib/vtt/events.ts`): `obj:drag` (transitório, throttle 50 ms, só posição), `obj:upsert`, `obj:delete`, `scene:assign`, `scene:refresh`, `session:state`, `member:changed`, `ping`, `ruler` (transitório, throttle 100 ms, some em 5 s sem atualização), `draw:add`, `draw:delete`, `audio:*`, `fx:*`, `doc:show`, `cutscene:*`, `asset:pending`, `asset:resolved`.
 - **Fonte da verdade é o banco.** Ao entrar: carrega snapshot (mesa, cena, objetos, desenhos). Ação persistente = escreve no banco **e** faz broadcast do resultado (com `updated_at`); quem recebe aplica se `updated_at` for mais novo (last-write-wins). Arrastar: broadcast `obj:drag` durante o movimento, persiste uma vez no `pointerup`.
-- Qualquer membro pode enviar no canal, então `session:state`, `member:changed` e `asset:pending` são só avisos: quem recebe relê o banco em vez de confiar no payload (o toast de pendente só aparece se o banco confirmar um item novo).
+- Qualquer membro pode enviar no canal, então `session:state`, `member:changed`, `scene:assign`, `scene:refresh` e `asset:*` são só avisos: quem recebe relê o banco em vez de confiar no payload (o toast de pendente só aparece se o banco confirmar um item novo). `obj:upsert` e `draw:add` levam a linha, validada na chegada (`isValidObject`, `isValidDrawing`); a URL da imagem nunca viaja: sai de `assets`, pelo RLS.
+- **Segredo não viaja no canal**, que todo membro recebe: objeto oculto e qualquer mudança em cena sem plateia (`isSceneLive`) saem como `scene:refresh {sceneId}`, e o RLS decide o que cada um relê. Sem `obj:drag` nesses casos.
+- Tudo o que muda a cena passa por `SceneSync` (`src/lib/vtt/scene-sync.ts`); o canvas e os painéis só chamam seus métodos e leem o store.
 - Reconexão: ao voltar o status `SUBSCRIBED`, recarrega o snapshot da cena.
 - Chat usa `postgres_changes` em `chat_messages` filtrado por `table_id` (RLS se aplica).
 
@@ -93,13 +98,13 @@ Sessão **fechada**: canvas mostra "A sessão ainda não começou" pra jogadores
 ## 7. Regras de desempenho (obrigatórias)
 
 1. A rota `/mesa/[id]` carrega Pixi, howler, pdf.js e mammoth **por import dinâmico**; nada disso entra no bundle do resto do site.
-2. **Render sob demanda**: o ticker do Pixi para quando nada está mudando. Liga só quando há arrasto, animação, partícula ou efeito ativo visível. Use um contador de "pedidos de animação".
+2. **Render sob demanda**: nenhum ticker do Pixi roda. `VttEngine.invalidate()` pede um quadro; animações entram com `addAnimation` e mantêm o rAF só enquanto existem. A entrada é própria (o `EventSystem` do Pixi fica sem elemento alvo) e `Ticker.system` fica parado, avançado só em `frame`, porque ele pediria um rAF por quadro para sempre. Parado = 0 quadros e 0 rAF (a legenda ofuscada usa `setInterval`, não rAF contínuo, e troca entre 6 quadros pré-renderizados).
 3. `resolution = min(devicePixelRatio, 2)`; em **modo leve**, `min(dpr, 1.25)` e ticker a 30 fps.
-4. **Modo leve**: liga sozinho se `navigator.hardwareConcurrency <= 4`, `navigator.deviceMemory <= 4`, ou se a média de FPS ficar < 40 por 5 s com efeito ativo (pergunta antes com um toast "Ativar modo leve?"). O usuário pode ligar/desligar no menu (salvo em `localStorage`, try/catch). Modo leve corta partículas em ~70%, usa 1 camada de chuva/neblina, legendas ofuscadas sem animação, sem glow animado.
+4. **Modo leve**: liga sozinho se `navigator.hardwareConcurrency <= 4`, `navigator.deviceMemory <= 4`, ou se a média de FPS ficar < 40 por 5 s com efeito ativo (pergunta antes com um toast "Ativar modo leve?"; só faz sentido com efeito contínuo, então entra na fase 6). O usuário pode ligar/desligar na barra de ferramentas (salvo em `localStorage`, try/catch). Modo leve corta partículas em ~70%, usa 1 camada de chuva/neblina, legendas ofuscadas trocando uma vez por segundo, sem glow animado.
 5. Partículas: **pool de sprites** reaproveitado, uma única textura-atlas gerada em runtime, `ParticleContainer` onde der. Teto global de partículas: 1200 (normal) / 300 (leve). Efeito fora da tela não emite.
 6. Chuva e neblina com **TilingSprite** rolando (barato), não com milhares de partículas.
 7. Nada de filtros caros do Pixi (Blur/Glow em tempo real). "Brilho" = sprite radial pré-renderizado com blend aditivo.
-8. Texturas: destruir ao trocar de cena (`texture.destroy(true)` do mapa antigo). Cache LRU de texturas de token.
+8. Texturas: destruir ao trocar de cena (mapa antigo via `Assets.unload`). Cache LRU de texturas de token (`TextureStore`, 40 sem uso).
 9. React só pros painéis (HUD). O canvas é atualizado pelo store (zustand `subscribe`), **sem re-render do React por frame**.
 10. Gestos no touch: 1 dedo arrasta token / desenha (conforme ferramenta), 2 dedos = pan + pinça de zoom, **pressionar e segurar 450 ms = menu de contexto** (igual botão direito).
 11. Toda fase termina medindo: abrir a mesa com 1 mapa 4096 px + 15 tokens + chuva + 2 magias ativas no Chrome DevTools com CPU 4× slowdown — mirar ≥ 45 fps e < 300 MB de memória da aba. Reportar os números.
@@ -111,7 +116,7 @@ src/app/mesa/page.tsx
 src/app/mesa/[id]/page.tsx            (server: checa membro, carrega snapshot)
 src/components/vtt/                   (HUD React: painéis, menus, modais)
 src/lib/vtt/                          (store, events, realtime, engine Pixi)
-src/lib/vtt/engine/                   (stage, camera, layers, objects, tools)
+src/lib/vtt/engine/                   (stage, camera, input, textures, caption-art)
 src/lib/vtt/fx/                       (partículas, presets, clima)
 src/lib/vtt/audio/
 src/lib/storage/

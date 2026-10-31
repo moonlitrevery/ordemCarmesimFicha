@@ -1,22 +1,35 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { unlockAudio } from '@/lib/vtt/audio/unlock';
 import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
+import { SceneSync } from '@/lib/vtt/scene-sync';
 import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
 import { ApprovalPanel } from './ApprovalPanel';
+import { CalibrationModal } from './CalibrationModal';
+import { CaptionModal } from './CaptionModal';
 import { LibraryPanel } from './LibraryPanel';
+import { MapToolbar } from './MapToolbar';
 import { MembersPanel } from './MembersPanel';
+import { PlacePanel } from './PlacePanel';
 import { PlayerUploadPanel } from './PlayerUploadPanel';
+import { ScenesPanel } from './ScenesPanel';
+import { SceneViewBanner } from './SceneViewBanner';
 import { SidePanel, type SidePanelTab } from './SidePanel';
+import { TokenContextMenu } from './TokenContextMenu';
 
-const TOAST_MS = 4000;
+// ssr: false e import dinâmico: Pixi só existe no navegador e só nesta rota.
+const MapCanvas = dynamic(
+  () => import('./MapCanvas').then((module) => module.MapCanvas),
+  { ssr: false }
+);
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -35,7 +48,6 @@ const PLAYER_TABS: SidePanelTab[] = [
 ];
 
 const GM_PLACEHOLDER_TABS: SidePanelTab[] = [
-  { id: 'scenes', label: 'Cenas', content: <Placeholder title="As cenas" /> },
   { id: 'sound', label: 'Som', content: <Placeholder title="O som" /> },
   { id: 'fx', label: 'Efeitos', content: <Placeholder title="Os efeitos" /> },
 ];
@@ -55,7 +67,8 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const pendingCount = useVttStore((s) => s.pendingAssets.length);
   const role = useVttStore((s) => s.me?.role) ?? initial.me.role;
 
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useVttStore((s) => s.toast);
+  const viewedSceneId = useVttStore((s) => s.viewedSceneId);
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
@@ -92,8 +105,6 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     }
     refreshRef.current = refresh;
 
-    let toastTimer: number | undefined;
-
     async function refreshPending(notify: boolean) {
       const { data, error } = await supabase
         .from('assets')
@@ -108,11 +119,11 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       useVttStore.getState().setPendingAssets(next);
       // Só avisa se o banco confirma item novo: o broadcast pode ser forjado.
       if (notify && next.some((asset) => !known.has(asset.id))) {
-        setToast('Novo arquivo aguardando aprovação');
-        window.clearTimeout(toastTimer);
-        toastTimer = window.setTimeout(() => setToast(null), TOAST_MS);
+        useVttStore.getState().showToast('Novo arquivo aguardando aprovação');
       }
     }
+
+    let sync: SceneSync | null = null;
 
     const channel = joinTableChannel(supabase, tableId, {
       userId,
@@ -120,13 +131,20 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       onStatus: (next) => useVttStore.getState().setConnection(next),
       onSubscribed: () => {
         void refresh();
+        void sync?.reload();
         if (isGm) void refreshPending(false);
       },
     });
     channelRef.current = channel;
 
+    sync = new SceneSync(supabase, channel, tableId, userId);
+    sync.start();
+    useVttStore.setState({ sync });
+    void sync.reload();
+
     channel.on('session:state', () => void refresh());
     channel.on('member:changed', () => void refresh());
+    channel.on('scene:assign', () => void refresh());
     if (isGm) channel.on('asset:pending', () => void refreshPending(true));
 
     const presenceOf = () => {
@@ -157,8 +175,9 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
     return () => {
       disposed = true;
-      window.clearTimeout(toastTimer);
       unsubscribeMe();
+      sync?.stop();
+      useVttStore.setState({ sync: null });
       channel.leave();
       channelRef.current = null;
     };
@@ -191,7 +210,16 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     setAudioUnlocked(true);
   }
 
+  const closeDrawers = () => {
+    // Na gaveta (touch) o painel cobre o mapa; com mouse fica aberto ao lado.
+    if (!window.matchMedia('(pointer: fine)').matches) {
+      setLeftOpen(false);
+      setRightOpen(false);
+    }
+  };
+
   const gmTabs: SidePanelTab[] = [
+    { id: 'scenes', label: 'Cenas', content: <ScenesPanel /> },
     {
       id: 'members',
       label: 'Membros',
@@ -209,10 +237,20 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     ...GM_PLACEHOLDER_TABS,
   ];
 
+  const placeTab: SidePanelTab = {
+    id: 'place',
+    label: 'Colocar',
+    content: <PlacePanel onArmed={closeDrawers} />,
+  };
+
   const rightTabs: SidePanelTab[] =
-    role === 'jogador'
-      ? [
+    role === 'espectador'
+      ? PLAYER_TABS
+      : role === 'mestre'
+        ? [...PLAYER_TABS, placeTab]
+        : [
           ...PLAYER_TABS,
+          placeTab,
           {
             id: 'upload',
             label: 'Enviar imagem',
@@ -224,8 +262,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
               />
             ),
           },
-        ]
-      : PLAYER_TABS;
+        ];
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-ink text-parchment">
@@ -332,22 +369,32 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           />
         )}
 
-        <div className="flex min-w-0 flex-1 items-center justify-center p-4 text-center">
-          {isGm || sessionOpen ? (
-            <div className="space-y-1 text-ink-muted">
-              <p className="font-display text-2xl">O mapa aparece aqui</p>
-              {isGm && !sessionOpen && (
-                <p className="text-sm">
-                  Sessão fechada: os jogadores ainda não veem o mapa.
+        <main className="relative min-w-0 flex-1 overflow-hidden">
+          {viewedSceneId ? (
+            <>
+              <MapCanvas key={tableId} />
+              <SceneViewBanner />
+              <MapToolbar />
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center p-4 text-center">
+              {isGm ? (
+                <p className="max-w-sm text-sm text-ink-muted">
+                  Nenhuma cena ainda. Abra o painel Mestre e crie a primeira na aba
+                  Cenas.
+                </p>
+              ) : (
+                <p className="font-display text-2xl text-ink-muted">
+                  {sessionOpen
+                    ? 'A mestra ainda não abriu uma cena'
+                    : 'A sessão ainda não começou'}
                 </p>
               )}
             </div>
-          ) : (
-            <p className="font-display text-2xl text-ink-muted">
-              A sessão ainda não começou
-            </p>
           )}
-        </div>
+          <CaptionModal />
+          <CalibrationModal />
+        </main>
 
         <SidePanel
           side="right"
@@ -365,6 +412,8 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           </p>
         )}
       </div>
+
+      <TokenContextMenu />
 
       {!audioUnlocked && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-ink/95 p-4">
