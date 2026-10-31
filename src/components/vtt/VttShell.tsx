@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { unlockAudio } from '@/lib/vtt/audio/unlock';
 import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
+import { ChatSync } from '@/lib/vtt/chat-sync';
 import { SceneSync } from '@/lib/vtt/scene-sync';
 import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
@@ -15,11 +16,13 @@ import type { TableSnapshot } from '@/lib/vtt/types';
 import { ApprovalPanel } from './ApprovalPanel';
 import { CalibrationModal } from './CalibrationModal';
 import { CaptionModal } from './CaptionModal';
+import { ChatPanel } from './ChatPanel';
 import { LibraryPanel } from './LibraryPanel';
 import { MapToolbar } from './MapToolbar';
 import { MembersPanel } from './MembersPanel';
 import { PlacePanel } from './PlacePanel';
 import { PlayerUploadPanel } from './PlayerUploadPanel';
+import { QuickSheet } from './QuickSheet';
 import { ScenesPanel } from './ScenesPanel';
 import { SceneViewBanner } from './SceneViewBanner';
 import { SidePanel, type SidePanelTab } from './SidePanel';
@@ -38,7 +41,6 @@ function Placeholder({ title }: { title: string }) {
 }
 
 const PLAYER_TABS: SidePanelTab[] = [
-  { id: 'chat', label: 'Chat', content: <Placeholder title="O chat" /> },
   { id: 'docs', label: 'Docs', content: <Placeholder title="Os documentos" /> },
   {
     id: 'reports',
@@ -69,8 +71,10 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
   const toast = useVttStore((s) => s.toast);
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
+  const chatUnread = useVttStore((s) => s.chatUnread);
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
+  const [rightTab, setRightTab] = useState('chat');
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
@@ -139,7 +143,9 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
     sync = new SceneSync(supabase, channel, tableId, userId);
     sync.start();
-    useVttStore.setState({ sync });
+    const chat = new ChatSync(supabase, tableId, userId);
+    chat.start();
+    useVttStore.setState({ sync, chat });
     void sync.reload();
 
     channel.on('session:state', () => void refresh());
@@ -177,11 +183,20 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       disposed = true;
       unsubscribeMe();
       sync?.stop();
-      useVttStore.setState({ sync: null });
+      chat.stop();
+      useVttStore.setState({ sync: null, chat: null });
       channel.leave();
       channelRef.current = null;
     };
   }, [tableId, userId, isGm, router]);
+
+  const chatVisible = rightOpen && rightTab === 'chat';
+  useEffect(() => {
+    useVttStore.setState((s) => ({
+      chatVisible,
+      chatUnread: chatVisible ? 0 : s.chatUnread,
+    }));
+  }, [chatVisible]);
 
   const notifyMemberChanged = useCallback(async (changedId: string) => {
     channelRef.current?.emit({ type: 'member:changed', userId: changedId });
@@ -237,6 +252,15 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     ...GM_PLACEHOLDER_TABS,
   ];
 
+  const chatTab: SidePanelTab = {
+    id: 'chat',
+    label: 'Chat',
+    content: <ChatPanel />,
+    badge: chatUnread,
+    quietBadge: true,
+  };
+  const sharedTabs = [chatTab, ...PLAYER_TABS];
+
   const placeTab: SidePanelTab = {
     id: 'place',
     label: 'Colocar',
@@ -245,11 +269,11 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
   const rightTabs: SidePanelTab[] =
     role === 'espectador'
-      ? PLAYER_TABS
+      ? sharedTabs
       : role === 'mestre'
-        ? [...PLAYER_TABS, placeTab]
+        ? [...sharedTabs, placeTab]
         : [
-          ...PLAYER_TABS,
+          ...sharedTabs,
           placeTab,
           {
             id: 'upload',
@@ -338,6 +362,9 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           onClick={() => setRightOpen((v) => !v)}
         >
           Painéis
+          {chatUnread > 0 && (
+            <span className="ml-1 text-ink-muted">{chatUnread}</span>
+          )}
         </button>
       </header>
 
@@ -392,6 +419,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
               )}
             </div>
           )}
+          <QuickSheet />
           <CaptionModal />
           <CalibrationModal />
         </main>
@@ -401,6 +429,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           label="Chat, documentos e relatórios"
           open={rightOpen}
           tabs={rightTabs}
+          onActiveChange={setRightTab}
         />
 
         {toast && (

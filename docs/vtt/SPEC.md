@@ -45,7 +45,7 @@ Todas as tabelas novas com RLS. "Membro" = linha em `table_members` com `banned 
 - **pending_placements**: `id`, `asset_id`, `scene_id`, `x`, `y`, `scale`, `created_by`, `created_at`. Arquivo solto no mapa por jogador: só ele vê, semitransparente. A RPC `approve_asset(p_asset)` aprova o asset, vira cada colocação em `scene_objects` (mantendo o autor) e devolve as cenas afetadas; recusar apaga o asset e o cascade leva a colocação. Arquivo solto no mapa entra como `token`.
 - Quem vê o quê: `my_scene(table)` (sessão aberta; jogador = `scene_id` ou cena padrão; espectador = cena padrão), `can_view_scene`, `can_edit_scene` (espectador não edita), `is_scene_gm`. `scenes` só mostra ao jogador a cena em que ele está. Duplicar cena é a RPC `duplicate_scene` (copia objetos, anexos e desenhos). Ao criar a primeira cena, ela vira a padrão; apagar a padrão promove outra.
 - **npcs**: mini-fichas, só mestre lê/escreve. (fase 5)
-- **chat_messages**: (fase 4)
+- **chat_messages**: `id`, `table_id`, `author_id`, `author_name`, `character_id`, `character_name`, `kind` (`'text' | 'roll' | 'whisper' | 'system'`), `body`, `roll` jsonb (`{notation,groups,modifier,total,math,label}`), `hidden`, `whisper_to`, `deleted`, `created_at`. O trigger `guard_chat_message` preenche `author_name` e `character_name` a partir do banco (só com ficha própria, ou qualquer uma para a mestra da mesa), recusa `system` de quem não é mestra e sussurro para quem não está na mesa, e ao apagar limpa `body` e `roll`. Update só em `deleted`, e só para `true`. Quem rola sorteia no próprio navegador, como o resto do site: o resultado não é conferido pelo servidor. RPC `table_character_names(p_table)`: nomes de personagens de quem divide a mesa, para o autocomplete do `/shiu`.
 - **table_documents** e **table_reports**: por mesa. (fase 8)
 
 Toda migração nova vai em `supabase/migrations/0NN_*.sql` **e** é refletida em `supabase/schema.sql`. Toda migração termina com `notify pgrst, 'reload schema';`. A mestra roda o SQL à mão no SQL Editor — ao final de cada fase, imprima o SQL que ela precisa rodar.
@@ -80,7 +80,8 @@ Sessão **fechada**: canvas mostra "A sessão ainda não começou" pra jogadores
 - **Segredo não viaja no canal**, que todo membro recebe: objeto oculto e qualquer mudança em cena sem plateia (`isSceneLive`) saem como `scene:refresh {sceneId}`, e o RLS decide o que cada um relê. Sem `obj:drag` nesses casos.
 - Tudo o que muda a cena passa por `SceneSync` (`src/lib/vtt/scene-sync.ts`); o canvas e os painéis só chamam seus métodos e leem o store.
 - Reconexão: ao voltar o status `SUBSCRIBED`, recarrega o snapshot da cena.
-- Chat usa `postgres_changes` em `chat_messages` filtrado por `table_id` (RLS se aplica).
+- Chat usa `postgres_changes` em `chat_messages` filtrado por `table_id` (RLS se aplica), num canal próprio com tópico único (`chat:{tableId}:{uuid}`), fora do canal privado da mesa: um erro na tabela do chat não pode derrubar o canvas. Mesmo esquema para `characters` (Ficha Rápida e `CharacterSheet`), onde só `hp_current`, `mana_current` e `sanity_current` são mesclados (`src/lib/resource-sync.ts`): campo com mudança local não salva não é sobrescrito, e o save só envia recurso que mudou desde o último confirmado.
+- Toda rolagem da Mesa passa por `ChatSync.roll`: vai para o chat e para `dice_rolls`. O personagem que rola é o escolhido na Ficha Rápida, também no `/r`; sem escolha, sai só o nome de usuário no chat e em `/rolagens`.
 
 ## 6. Arquivos (Vercel Blob)
 

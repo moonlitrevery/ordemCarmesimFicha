@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   computeDerivedMaxes,
   getAttributeModifier,
+  getEffectiveMaxes,
   getAttributePointsAvailable,
   getCarryLimit,
   getInventoryWeight,
@@ -18,6 +19,11 @@ import {
   ORDER_RANKS,
   VALID_IMAGE_URL,
 } from '@/lib/constants';
+import {
+  mergeRemoteResources,
+  resourcesToSave,
+  type ResourceValues,
+} from '@/lib/resource-sync';
 import { FloatingDiceButton } from '@/components/dice/FloatingDiceButton';
 import { QuickRollButton } from '@/components/dice/DiceRoller';
 import { CursesSection } from '@/components/character/CursesSection';
@@ -93,6 +99,23 @@ type SheetState = {
   skill_points_spent: SkillUpgradeSpent;
 };
 
+/** HP acima do máximo não é salvo: conta como o máximo, igual à tela. */
+function localResources(
+  sheet: SheetState,
+  elements: CharacterElementRow[]
+): ResourceValues {
+  const maxes = getEffectiveMaxes(
+    getTotalLevel(elements),
+    sheet.attributes,
+    sheet.resource_mods || DEFAULT_RESOURCE_MODS
+  );
+  return {
+    hp_current: Math.min(sheet.hp_current, maxes.hp),
+    mana_current: sheet.mana_current,
+    sanity_current: sheet.sanity_current,
+  };
+}
+
 function toState(c: Character): SheetState {
   return {
     name: c.name ?? '',
@@ -153,19 +176,18 @@ export function CharacterSheet({
   }, [character.id, sheet.name, setRollContext]);
 
   const totalLevel = getTotalLevel(elements);
-  const derived = useMemo(
-    () => computeDerivedMaxes(totalLevel, sheet.attributes),
-    [totalLevel, sheet.attributes]
+  const effectiveMaxes = useMemo(
+    () => getEffectiveMaxes(totalLevel, sheet.attributes, sheet.resource_mods),
+    [totalLevel, sheet.attributes, sheet.resource_mods]
   );
 
-  const effectiveMaxes = useMemo(
-    () => ({
-      hp: Math.max(1, derived.hpMax + (sheet.resource_mods.hp || 0)),
-      mana: Math.max(1, derived.manaMax + (sheet.resource_mods.mana || 0)),
-      sanity: Math.max(1, derived.sanityMax + (sheet.resource_mods.sanity || 0)),
-    }),
-    [derived, sheet.resource_mods]
-  );
+  // Último valor de cada recurso que o banco confirmou. O save só manda o que
+  // mudou aqui desde então: a Ficha Rápida pode ter mudado o resto em outra aba.
+  const lastSavedResourcesRef = useRef<ResourceValues>({
+    hp_current: character.hp_current ?? 0,
+    mana_current: character.mana_current ?? 0,
+    sanity_current: character.sanity_current ?? 0,
+  });
 
   const persistCharacter = useCallback(
     async (next: SheetState, nextElements: CharacterElementRow[]) => {
@@ -180,6 +202,10 @@ export function CharacterSheet({
         manaMax: Math.max(1, baseMaxes.manaMax + (mods.mana || 0)),
         sanityMax: Math.max(1, baseMaxes.sanityMax + (mods.sanity || 0)),
       };
+      const changedResources = resourcesToSave(
+        localResources(next, nextElements),
+        lastSavedResourcesRef.current
+      );
       const payload = {
         name: next.name || 'Sem nome',
         occupation: next.occupation || null,
@@ -195,10 +221,8 @@ export function CharacterSheet({
         subarcana: next.subarcana || null,
         attributes: next.attributes,
         // hp_max não é persistido: sempre derivado de CON + nível (getMaxHp).
-        hp_current: Math.min(next.hp_current, maxes.hpMax),
-        mana_current: next.mana_current,
+        ...changedResources,
         mana_max: maxes.manaMax,
-        sanity_current: next.sanity_current,
         sanity_max: maxes.sanityMax,
         skills: next.skills,
         spells: next.spells,
@@ -223,6 +247,10 @@ export function CharacterSheet({
         .update(payload)
         .eq('id', character.id);
       if (error) throw error;
+      lastSavedResourcesRef.current = {
+        ...lastSavedResourcesRef.current,
+        ...changedResources,
+      };
 
       // sync elements: upsert all, delete removed
       for (const el of nextElements) {
@@ -266,10 +294,54 @@ export function CharacterSheet({
   sheetRef.current = sheet;
   elementsRef.current = elements;
 
+  // Recurso vindo de outra aba já está no banco: mesclar não pede save. Mas se já
+  // havia um save agendado, ele continua valendo (a limpeza do efeito o cancelou).
+  const remoteMergeRef = useRef(false);
+  const savePendingRef = useRef(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`character:${character.id}:${crypto.randomUUID()}`)
+      .on<ResourceValues>(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'characters',
+          filter: `id=eq.${character.id}`,
+        },
+        ({ new: row }) => {
+          const merged = mergeRemoteResources(
+            localResources(sheetRef.current, elementsRef.current),
+            lastSavedResourcesRef.current,
+            {
+              hp_current: row.hp_current,
+              mana_current: row.mana_current,
+              sanity_current: row.sanity_current,
+            }
+          );
+          lastSavedResourcesRef.current = merged.lastSaved;
+          if (!merged.changed) return;
+          remoteMergeRef.current = true;
+          setSheet((s) => ({ ...s, ...merged.local }));
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [character.id]);
+
   useEffect(() => {
     if (!ready) return;
+    const remoteOnly = remoteMergeRef.current && !savePendingRef.current;
+    remoteMergeRef.current = false;
+    if (remoteOnly) return;
+    savePendingRef.current = true;
     setStatus('saving');
     const t = setTimeout(async () => {
+      savePendingRef.current = false;
       const snapSheet = sheetRef.current;
       const snapElements = elementsRef.current;
       try {

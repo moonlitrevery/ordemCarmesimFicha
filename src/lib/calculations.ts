@@ -209,6 +209,20 @@ export function computeDerivedMaxes(
   return { hpMax, manaMax, sanityMax };
 }
 
+/** Máximos que a ficha mostra: derivados + ajuste manual, nunca abaixo de 1. */
+export function getEffectiveMaxes(
+  totalLevel: number,
+  attributes: Attributes,
+  mods: { hp?: number; mana?: number; sanity?: number }
+): { hp: number; mana: number; sanity: number } {
+  const derived = computeDerivedMaxes(totalLevel, attributes);
+  return {
+    hp: Math.max(1, derived.hpMax + (mods.hp || 0)),
+    mana: Math.max(1, derived.manaMax + (mods.mana || 0)),
+    sanity: Math.max(1, derived.sanityMax + (mods.sanity || 0)),
+  };
+}
+
 /** Valor da perícia = 10 + MOD do atributo + treinamento */
 export function getSkillTotal(skill: Skill, attributes: Attributes): number {
   const attrValue = attributes[skill.attribute] ?? 10;

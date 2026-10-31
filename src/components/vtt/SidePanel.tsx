@@ -7,6 +7,8 @@ export interface SidePanelTab {
   label: string;
   content: ReactNode;
   badge?: number;
+  /** Contador discreto, sem o vermelho de "precisa de atenção". */
+  quietBadge?: boolean;
 }
 
 /**
@@ -20,11 +22,13 @@ export function SidePanel({
   label,
   open,
   tabs,
+  onActiveChange,
 }: {
   side: 'left' | 'right';
   label: string;
   open: boolean;
   tabs: SidePanelTab[];
+  onActiveChange?: (id: string) => void;
 }) {
   const [activeId, setActiveId] = useState(tabs[0].id);
   const [seenIds, setSeenIds] = useState<ReadonlySet<string>>(new Set());
@@ -49,7 +53,10 @@ export function SidePanel({
             type="button"
             role="tab"
             aria-selected={tab.id === activeId}
-            onClick={() => setActiveId(tab.id)}
+            onClick={() => {
+              setActiveId(tab.id);
+              onActiveChange?.(tab.id);
+            }}
             className={
               'whitespace-nowrap border-b-2 px-3 py-2 text-sm transition ' +
               (tab.id === activeId
@@ -59,7 +66,14 @@ export function SidePanel({
           >
             {tab.label}
             {Boolean(tab.badge) && (
-              <span className="ml-1.5 rounded-full bg-crimson px-1.5 text-xs text-parchment">
+              <span
+                className={
+                  'ml-1.5 rounded-full px-1.5 text-xs ' +
+                  (tab.quietBadge
+                    ? 'bg-ink-raised text-ink-muted'
+                    : 'bg-crimson text-parchment')
+                }
+              >
                 {tab.badge}
               </span>
             )}

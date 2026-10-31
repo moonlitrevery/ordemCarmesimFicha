@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { Asset } from './assets/rules';
+import type { ChatMessage } from './chat-rules';
+import type { ChatSync } from './chat-sync';
 import type { SceneSync } from './scene-sync';
 import type {
   Drawing,
@@ -36,7 +38,19 @@ interface VttState {
   libraryVersion: number;
   /** Quem persiste e transmite as ações de cena. Existe enquanto a mesa está aberta. */
   sync: SceneSync | null;
+  chat: ChatSync | null;
   toast: string | null;
+
+  chatMessages: ChatMessage[];
+  chatHasMore: boolean;
+  chatError: string | null;
+  chatUnread: number;
+  /** Painel aberto na aba do chat: mensagem nova já está sendo vista. */
+  chatVisible: boolean;
+  chatCharacterNames: { owner_id: string; name: string }[];
+  /** Ficha escolhida na Ficha Rápida: é quem rola, inclusive no /r. */
+  rollCharacter: { id: string; name: string } | null;
+  rollHidden: boolean;
 
   scenes: VttScene[];
   /** Cena aberta pela mestra para preparar. É local dela. */
@@ -116,7 +130,16 @@ export const useVttStore = create<VttState>((set) => ({
   pendingAssets: [],
   libraryVersion: 0,
   sync: null,
+  chat: null,
   toast: null,
+  chatMessages: [],
+  chatHasMore: false,
+  chatError: null,
+  chatUnread: 0,
+  chatVisible: false,
+  chatCharacterNames: [],
+  rollCharacter: null,
+  rollHidden: false,
   scenes: [],
   gmSceneChoice: null,
   viewedSceneId: null,
@@ -142,6 +165,14 @@ export const useVttStore = create<VttState>((set) => ({
       audioUnlocked: false,
       connection: 'connecting',
       pendingAssets: [],
+      chatMessages: [],
+      chatHasMore: false,
+      chatError: null,
+      chatUnread: 0,
+      chatVisible: false,
+      chatCharacterNames: [],
+      rollCharacter: null,
+      rollHidden: false,
       scenes: [],
       gmSceneChoice: null,
       viewedSceneId: null,
