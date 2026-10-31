@@ -12,6 +12,8 @@ export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export type AssetStatus = 'approved' | 'pending' | 'rejected';
 
+export type AssetVisibility = 'mestre' | 'jogadores';
+
 export interface Asset {
   id: string;
   kind: AssetKind;
@@ -26,6 +28,7 @@ export interface Asset {
   duration_s: number | null;
   tags: string[];
   status: AssetStatus;
+  visibility: AssetVisibility;
   uploaded_by: string | null;
   created_at: string;
 }
@@ -109,6 +112,11 @@ export function libraryImageUrl(
 ): string | null {
   if (!isImageKind(asset.kind)) return null;
   return hasThumb(asset.kind) ? asset.thumb_url : asset.url;
+}
+
+/** Arquivo do repositório, servido de /vtt/_built/: vem do manifest, sem linha em `assets`. */
+export function isStaticAsset(asset: Pick<Asset, 'url'>): boolean {
+  return asset.url.startsWith('/vtt/');
 }
 
 export function canRoleUploadKind(isMestre: boolean, kind: AssetKind): boolean {

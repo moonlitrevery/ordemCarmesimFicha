@@ -10,6 +10,24 @@ const src = path.join(__dirname, "src");
 const nextConfig = {
   eslint: { ignoreDuringBuilds: false },
   pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
+  experimental: {
+    // Lido com fs pela rota: sem isso o manifest não vai para a função da Vercel.
+    outputFileTracingIncludes: {
+      '/api/vtt/static': ['./generated/vtt-manifest.json'],
+    },
+  },
+  async headers() {
+    return [
+      {
+        // Nome vem do conteúdo: nunca muda, e não deve aparecer em buscador.
+        source: '/vtt/_built/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
+    ];
+  },
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

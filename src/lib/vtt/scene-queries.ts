@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { loadStaticAssets } from './assets/static';
 import type {
   Drawing,
   PendingPlacement,
@@ -49,9 +50,18 @@ export async function fetchAssets(
     .select(SCENE_ASSET_COLUMNS)
     .in('id', ids);
   if (error) throw error;
-  return Object.fromEntries(
+  const found = Object.fromEntries(
     ((data ?? []) as SceneAsset[]).map((asset) => [asset.id, asset])
   );
+  // Só baixa o manifest se a cena usa algo que não está no banco.
+  if (ids.every((id) => found[id])) return found;
+  const fixed = await loadStaticAssets();
+  fixed
+    .filter((asset) => ids.includes(asset.id))
+    .forEach((asset) => {
+      found[asset.id] = asset;
+    });
+  return found;
 }
 
 /** O RLS decide o que vem: oculto e cena alheia não chegam ao jogador. */

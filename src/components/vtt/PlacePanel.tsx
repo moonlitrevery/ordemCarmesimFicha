@@ -8,6 +8,7 @@ import {
   type Asset,
   type AssetKind,
 } from '@/lib/vtt/assets/rules';
+import { fetchLibraryAssets } from '@/lib/vtt/assets/static';
 import { useVttStore } from '@/lib/vtt/store';
 import { AssetGrid } from './LibraryPanel';
 
@@ -27,17 +28,11 @@ export function PlacePanel({ onArmed }: { onArmed: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    void createClient()
-      .from('assets')
-      .select('*')
-      .eq('kind', kind)
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .then(({ data, error: err }) => {
-        if (cancelled) return;
-        setError(err ? 'Não foi possível carregar a lista.' : null);
-        setAssets((data ?? []) as Asset[]);
-      });
+    void fetchLibraryAssets(createClient(), kind).then((result) => {
+      if (cancelled) return;
+      setError(result.error ? 'Não foi possível carregar a lista.' : null);
+      setAssets(result.assets);
+    });
     return () => {
       cancelled = true;
     };

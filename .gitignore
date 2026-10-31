@@ -16,6 +16,10 @@
 # production
 /build
 
+# biblioteca estática da Mesa: gerados por npm run vtt:manifest
+/generated/
+/public/vtt/_built/
+
 # misc
 .DS_Store
 *.pem

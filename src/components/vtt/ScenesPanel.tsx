@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { libraryImageUrl, type Asset } from '@/lib/vtt/assets/rules';
+import { fetchLibraryAssets } from '@/lib/vtt/assets/static';
 import { membersInScene } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import type { VttMember, VttScene } from '@/lib/vtt/types';
@@ -13,15 +14,9 @@ function useMapAssets(): Asset[] {
   const [maps, setMaps] = useState<Asset[]>([]);
   useEffect(() => {
     let cancelled = false;
-    void createClient()
-      .from('assets')
-      .select('*')
-      .eq('kind', 'mapa')
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (!cancelled) setMaps((data ?? []) as Asset[]);
-      });
+    void fetchLibraryAssets(createClient(), 'mapa').then(({ assets }) => {
+      if (!cancelled) setMaps(assets);
+    });
     return () => {
       cancelled = true;
     };

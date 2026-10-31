@@ -99,7 +99,10 @@ export class SceneSync {
     this.unsubscribers.push(
       channel.on('scene:assign', () => void this.reload()),
       channel.on('scene:refresh', (event) => this.onRefresh(event)),
-      channel.on('asset:resolved', () => this.scheduleRefresh()),
+      channel.on('asset:resolved', () => {
+        store().bumpLibrary();
+        this.scheduleRefresh();
+      }),
       channel.on('obj:drag', (event) => this.onDrag(event)),
       channel.on('obj:upsert', (event) => this.onUpsert(event)),
       channel.on('obj:delete', (event) => this.onDelete(event)),

@@ -7,11 +7,13 @@ import {
   ASSET_KIND_LABELS,
   ASSET_DRAG_TYPE,
   isAudioKind,
+  isStaticAsset,
   matchesSearch,
   parseTags,
   type Asset,
   type AssetKind,
 } from '@/lib/vtt/assets/rules';
+import { fetchLibraryAssets } from '@/lib/vtt/assets/static';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
 import { isPlaceableKind } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
@@ -57,6 +59,23 @@ function AssetEditor({
     onSaved({ ...asset, ...patch });
   }
 
+  async function toggleVisible(visible: boolean) {
+    setBusy(true);
+    setError(null);
+    const visibility = visible ? 'jogadores' : 'mestre';
+    const { error: err } = await createClient()
+      .from('assets')
+      .update({ visibility })
+      .eq('id', asset.id);
+    setBusy(false);
+    if (err) {
+      setError('Não foi possível mudar a visibilidade. Tente de novo.');
+      return;
+    }
+    onSaved({ ...asset, visibility });
+    useVttStore.getState().sync?.notifyAssetResolved();
+  }
+
   async function remove() {
     setBusy(true);
     setError(null);
@@ -87,6 +106,15 @@ function AssetEditor({
         placeholder="Tags, separadas por vírgula"
         onChange={(e) => setTags(e.target.value)}
       />
+      <label className="flex items-center gap-2 text-xs text-parchment">
+        <input
+          type="checkbox"
+          checked={asset.visibility === 'jogadores'}
+          disabled={busy}
+          onChange={(e) => void toggleVisible(e.target.checked)}
+        />
+        Visível pros jogadores
+      </label>
       {confirming ? (
         <div className="flex items-center gap-2">
           <span className="min-w-0 flex-1 text-xs text-ink-muted">
@@ -213,6 +241,11 @@ export function AssetGrid({
                   {asset.name}
                 </span>
               </button>
+              {isStaticAsset(asset) && (
+                <span className="pointer-events-none absolute left-1 top-1 rounded bg-ink/80 px-1.5 py-0.5 text-[10px] leading-none text-parchment">
+                  fixo
+                </span>
+              )}
               {isAudioKind(asset.kind) && onTogglePreview && (
                 <button
                   type="button"
@@ -251,24 +284,16 @@ export function LibraryPanel() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void createClient()
-      .from('assets')
-      .select('*')
-      .eq('kind', kind)
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .then(({ data, error: err }) => {
-        if (cancelled) return;
-        setError(
-          err
-            ? err.message.includes('assets')
-              ? 'Tabela de arquivos não encontrada. Rode supabase/migrations/008_vtt_assets.sql no Supabase.'
-              : err.message
-            : null
-        );
-        setAssets((data ?? []) as Asset[]);
-        setLoading(false);
-      });
+    void fetchLibraryAssets(createClient(), kind).then((result) => {
+      if (cancelled) return;
+      setError(
+        result.error?.includes('assets')
+          ? 'Tabela de arquivos não encontrada. Rode supabase/migrations/008_vtt_assets.sql no Supabase.'
+          : result.error
+      );
+      setAssets(result.assets);
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -367,7 +392,17 @@ export function LibraryPanel() {
         onTogglePreview={togglePreview}
       />
 
-      {selected && (
+      {selected && isStaticAsset(selected) && (
+        <p className="shrink-0 rounded-md border border-ink-border p-2 text-xs text-ink-muted">
+          Arquivo fixo do site: muda só no repositório, não dá para editar nem
+          apagar por aqui.{' '}
+          {selected.visibility === 'jogadores'
+            ? 'Visível pros jogadores.'
+            : 'Só a mestra vê; para liberar, mova para public/vtt/jogadores/.'}
+        </p>
+      )}
+
+      {selected && !isStaticAsset(selected) && (
         <AssetEditor
           key={selected.id}
           asset={selected}

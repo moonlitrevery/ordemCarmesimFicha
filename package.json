@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/patch-next-realpath.mjs && next dev",
-    "build": "node scripts/patch-next-realpath.mjs && next build",
+    "build": "node scripts/patch-next-realpath.mjs && node scripts/vtt-manifest.mjs && next build",
+    "vtt:manifest": "node scripts/vtt-manifest.mjs",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
@@ -33,7 +34,9 @@
     "@types/react-dom": "^18",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.35",
+    "music-metadata": "^12.3.3",
     "postcss": "^8",
+    "sharp": "^0.35.5",
     "tailwindcss": "^3.4.1",
     "typescript": "5.9.3",
     "vitest": "^2.1.9"
