@@ -10,6 +10,10 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      screens: {
+        // Tablet grande passa de 1024 px mas usa gaveta: o critério é ter mouse.
+        desk: { raw: '(min-width: 1024px) and (pointer: fine)' },
+      },
       colors: {
         crimson: {
           DEFAULT: '#8B1E2D',

@@ -11,7 +11,10 @@ export function Nav() {
   const [email, setEmail] = useState<string | null>(null);
   const [isMestre, setIsMestre] = useState(false);
   const hideOnAuth =
-    pathname === '/' || pathname === '/login' || pathname === '/cadastro';
+    pathname === '/' ||
+    pathname === '/login' ||
+    pathname === '/cadastro' ||
+    pathname.startsWith('/mesa/');
 
   useEffect(() => {
     const supabase = createClient();
@@ -46,6 +49,7 @@ export function Nav() {
 
   const links = [
     { href: '/fichas', label: 'Fichas' },
+    { href: '/mesa', label: 'Mesa' },
     ...(isMestre ? [{ href: '/rolagens', label: 'Rolagens' }] : []),
     { href: '/lore', label: 'Lore' },
     { href: '/regras', label: 'Regras' },

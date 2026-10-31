@@ -46,6 +46,7 @@ export async function updateSession(request: NextRequest) {
   const isPublicLanding = path === '/';
   const isProtected =
     path.startsWith('/fichas') ||
+    path.startsWith('/mesa') ||
     path.startsWith('/lore') ||
     path.startsWith('/regras') ||
     path.startsWith('/rolagens');

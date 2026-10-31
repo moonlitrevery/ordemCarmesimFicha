@@ -1,0 +1,122 @@
+# Mesa (VTT) — Especificação técnica
+
+> Copie este arquivo para `docs/vtt/SPEC.md` no repositório. **Todo prompt de fase manda o Claude Code ler este arquivo antes de começar.** Ele é a fonte única de decisões; se um prompt de fase e este SPEC discordarem, vale o prompt de fase (ele é mais novo) e o SPEC deve ser atualizado no mesmo PR.
+
+## 0. Contexto
+
+O site da Ordem Carmesim (Next.js 14 App Router + TypeScript + Tailwind + Supabase, deploy na Vercel) ganha uma aba **Mesa**: um tabletop virtual próprio, integrado às fichas que já existem. Uso privado: uma mestra (role `mestre`) e ~6 jogadores, um dos quais joga num **Samsung Galaxy Tab S9 FE+** (régua de desempenho). Código em inglês, interface em pt-BR, seguindo o padrão visual e de componentes do repo (`panel`, `field`, `label`, `btn-ghost`, cores `crimson`, `ink-*`, `parchment`).
+
+**Prioridade nº 1: desempenho.** Tudo tem que rodar liso no tablet e não pode comer CPU/RAM no PC. Regras na seção 7 são obrigatórias em toda fase.
+
+## 1. Stack adicional
+
+| Função | Escolha | Por quê |
+|---|---|---|
+| Render do mapa | **PixiJS v8** (WebGL), carregado com `dynamic import` só na rota da Mesa, `ssr: false` | rápido em mobile, sprites/partículas baratos |
+| Estado do cliente | **zustand** | leve, fácil de atualizar fora do React (Pixi) |
+| Tempo real | **Supabase Realtime**: 1 canal privado por mesa (`mesa:{tableId}`) com *presence* + *broadcast*; `postgres_changes` só pro chat | já está no projeto |
+| Arquivos | **Vercel Blob** (store **público**) com **client upload** (`@vercel/blob/client`) | já está na Vercel, sem cartão; Hobby inclui 1 GB armazenado e 10 GB de transferência/mês |
+| Áudio | **howler.js** | loop, fade, várias camadas, desbloqueio de áudio no mobile |
+| PDF | **pdfjs-dist** (import dinâmico) | celular Android não abre PDF inline |
+| .docx | **mammoth** (import dinâmico) + **DOMPurify** | relatórios em Word |
+| Markdown | **react-markdown** + **remark-gfm** (já tem remark-gfm) | relatórios .md |
+
+Não adicionar outras libs grandes sem necessidade. Nada de Konva, Fabric, Three.js, Socket.io, servidor próprio.
+
+## 2. Rotas
+
+```
+/mesa                → lista "Minhas mesas" + campo "Entrar com código" (todo mundo vê)
+/mesa/[id]           → a mesa (canvas + painéis). Só membros não banidos (ou mestre dona)
+```
+Link **Mesa** no `Nav` para todos os logados. Middleware: `/mesa` protegido igual `/fichas`.
+
+## 3. Modelo de dados (Supabase)
+
+Todas as tabelas novas com RLS. "Membro" = linha em `table_members` com `banned = false`. "Mestre da mesa" = `tables.owner_id = auth.uid()` (e o owner sempre tem `profiles.role = 'mestre'`). Crie funções `security definer` auxiliares: `is_table_member(table_id)`, `is_table_gm(table_id)`.
+
+- **tables**: `id`, `name`, `code` (texto único, 6 chars A-Z0-9 sem ambíguos 0/O/1/I), `owner_id`, `session_open bool default false`, `default_scene_id` (cena "padrão" — a fita amarela do Roll20), `initiative jsonb default '{"entries":[],"current":0,"round":1}'`, `created_at`.
+- **table_members**: `table_id`, `user_id`, `role` (`'jogador' | 'espectador'`, default `'jogador'`), `scene_id` (nullable — se preenchido, o jogador está separado do grupo nessa cena), `banned bool default false`, `joined_at`. PK (`table_id`,`user_id`). Entrada **só** via RPC `join_table(p_code text)` (security definer): acha a mesa pelo código, recusa se banido, faz upsert como jogador, retorna o id. Ninguém lê `tables.code` exceto o mestre.
+- **assets** (biblioteca **global**, compartilhada entre mesas): `id`, `kind` (`'mapa' | 'token' | 'addon' | 'adereco' | 'audio_ambiente' | 'audio_sfx' | 'cutscene'`), `name`, `storage_key`, `url`, `mime`, `size_bytes`, `width`, `height`, `duration_s`, `tags text[]`, `status` (`'approved' | 'pending' | 'rejected'`), `uploaded_by`, `created_at`. Upload de jogador nasce `pending`; da mestra nasce `approved`. Jogadores leem só `approved` + os próprios `pending`.
+- **scenes**: `id`, `table_id`, `name`, `folder` (texto livre, pra agrupar), `sort`, `map_asset_id`, `meters_per_px` (calibração da régua), `ambient jsonb` (camadas de som salvas), `weather jsonb` (efeitos de tela salvos), `fog` (fase 11), `created_at`.
+- **scene_objects**: `id`, `scene_id`, `asset_id`, `kind` (`'token' | 'adereco' | 'addon'`), `x`, `y`, `rotation` (rad), `scale`, `flip_x bool`, `flip_y bool`, `z int`, `parent_id` (nullable, anexo), `local` jsonb (offset/rot relativos ao pai quando anexado), `caption jsonb` (`{text,color,stroke,strokeWidth,glow,glowColor,obfuscated}`), `effects jsonb` (lista de efeitos/magias ativos), `conditions text[]`, `character_id` (nullable, vínculo com ficha), `npc_id` (nullable), `hidden bool` (só mestre vê), `created_by`, `updated_at`.
+- **drawings**: `id`, `scene_id`, `author_id`, `points` (array achatado, simplificado), `color`, `width`, `created_at`.
+- **npcs**: mini-fichas, só mestre lê/escreve. (fase 5)
+- **chat_messages**: (fase 4)
+- **table_documents** e **table_reports**: por mesa. (fase 8)
+
+Toda migração nova vai em `supabase/migrations/0NN_*.sql` **e** é refletida em `supabase/schema.sql`. Toda migração termina com `notify pgrst, 'reload schema';`. A mestra roda o SQL à mão no SQL Editor — ao final de cada fase, imprima o SQL que ela precisa rodar.
+
+## 4. Permissões
+
+| Ação | Mestre | Jogador | Espectador |
+|---|---|---|---|
+| Criar/editar/apagar mesa, código, cenas, mapas | ✅ | ❌ | ❌ |
+| Abrir/fechar sessão, mover jogadores entre cenas, expulsar/banir, trocar papel | ✅ | ❌ | ❌ |
+| Ver o canvas | ✅ (qualquer cena) | ✅ (só a cena dele, sessão aberta) | ✅ (cena padrão, sessão aberta) |
+| Mover/girar/redimensionar/espelhar/legenda/anexar **qualquer** token | ✅ | ✅ | ❌ |
+| Ocultar objeto, vincular NPC | ✅ | ❌ | ❌ |
+| Apagar objeto | ✅ | só os que criou | ❌ |
+| Efeitos e magias no token, condições | ✅ | ✅ | ❌ |
+| Desenhar / apagar o próprio desenho / apagar tudo | ✅ / ✅ / ✅ | ✅ / ✅ / ❌ | ❌ |
+| Ping, régua | ✅ | ✅ | ✅ |
+| Chat, rolagens | ✅ | ✅ | ✅ (escreve; não tem ficha) |
+| Som, efeitos de tela, cutscene, iniciativa | ✅ | ❌ | ❌ |
+| Subir imagem no mapa / referência | direto | vai pra aprovação | ❌ |
+| Apagar qualquer arquivo/documento/mensagem | ✅ | os próprios | os próprios (msgs) |
+
+Sessão **fechada**: canvas mostra "A sessão ainda não começou" pra jogadores/espectadores; chat, documentos e relatórios continuam acessíveis. A mestra sempre vê tudo.
+
+## 5. Tempo real
+
+- **Um canal por mesa**: `supabase.channel('mesa:'+tableId, { config: { private: true, presence: { key: userId } } })`. Use Realtime Authorization (policies em `realtime.messages`) pra só membros/mestre conseguirem entrar. Se o projeto não suportar, documente e use canal público com nome contendo o UUID da mesa.
+- **Presence**: `{ userId, name, role, sceneId, ready? }` — mostra quem está online e em qual cena.
+- **Broadcast** (tipado num único `type VttEvent` em `src/lib/vtt/events.ts`): `obj:drag` (transitório, throttle 50 ms, só posição), `obj:upsert`, `obj:delete`, `scene:assign`, `session:state`, `ping`, `draw:add`, `draw:delete`, `audio:*`, `fx:*`, `doc:show`, `cutscene:*`, `asset:pending`.
+- **Fonte da verdade é o banco.** Ao entrar: carrega snapshot (mesa, cena, objetos, desenhos). Ação persistente = escreve no banco **e** faz broadcast do resultado (com `updated_at`); quem recebe aplica se `updated_at` for mais novo (last-write-wins). Arrastar: broadcast `obj:drag` durante o movimento, persiste uma vez no `pointerup`.
+- Reconexão: ao voltar o status `SUBSCRIBED`, recarrega o snapshot da cena.
+- Chat usa `postgres_changes` em `chat_messages` filtrado por `table_id` (RLS se aplica).
+
+## 6. Arquivos (Vercel Blob)
+
+- `src/lib/storage/` com uma interface `StorageProvider` (`createUploadToken`, `delete`) e a implementação **Vercel Blob**. Manter a interface pra dar pra trocar de provedor no futuro sem mexer no resto. Variável: `BLOB_READ_WRITE_TOKEN` (criada automaticamente quando o Blob store é ligado ao projeto na Vercel; local via `vercel env pull`).
+- **Client upload** (o arquivo vai do navegador direto pro Blob, sem passar pela função da Vercel): route handler `POST /api/upload` usando `handleUpload` do `@vercel/blob/client`. Em `onBeforeGenerateToken`: validar a sessão Supabase (server client), papel, `kind`, `allowedContentTypes` e `maximumSizeInBytes` por tipo; pathname `{kind}/{uuid}.{ext}` (`addRandomSuffix: true`).
+- **Não depender de `onUploadCompleted`** (não roda em localhost). Fluxo: cliente chama `upload()` → recebe `{ url, pathname }` → chama `POST /api/assets` (ou a rota da tabela certa) que valida de novo e cria a linha no banco (`assets`, `table_documents` ou `table_reports`) com `status` conforme o papel.
+- `DELETE /api/upload/[id]`: só mestre (ou dono de item pendente/próprio) — `del(url)` no Blob e apaga a linha.
+- **Economia de cota (Hobby):** nunca usar `list()` do Blob (conta como operação avançada; a lista vem sempre do banco); servir os arquivos direto pela URL pública (cache da CDN); `Cache-Control` longo (`cacheControlMaxAge` de 1 ano — os nomes são únicos). Se a cota estourar, o Blob fica bloqueado até o mês virar (não cobra) — mostrar erro claro no upload.
+- **Antes de subir, o cliente reduz imagens** com `createImageBitmap` + `OffscreenCanvas` (fallback `<canvas>`) para **WebP q≈0.85**: mapa até **4096 px** no maior lado; token/addon até **512 px**; adereço até **1024 px**; referência até 2048 px. Guarda `width/height`.
+- Limites: imagem 15 MB antes da compressão; áudio (ogg/mp3/m4a; recusar wav) 8 MB; PDF 20 MB; docx/md/txt 10 MB; cutscene (webm/mp4) 40 MB.
+- Upload com barra de progresso (`onUploadProgress` do `upload()`), arrastar-e-soltar e seleção múltipla ("upload em lote").
+
+## 7. Regras de desempenho (obrigatórias)
+
+1. A rota `/mesa/[id]` carrega Pixi, howler, pdf.js e mammoth **por import dinâmico**; nada disso entra no bundle do resto do site.
+2. **Render sob demanda**: o ticker do Pixi para quando nada está mudando. Liga só quando há arrasto, animação, partícula ou efeito ativo visível. Use um contador de "pedidos de animação".
+3. `resolution = min(devicePixelRatio, 2)`; em **modo leve**, `min(dpr, 1.25)` e ticker a 30 fps.
+4. **Modo leve**: liga sozinho se `navigator.hardwareConcurrency <= 4`, `navigator.deviceMemory <= 4`, ou se a média de FPS ficar < 40 por 5 s com efeito ativo (pergunta antes com um toast "Ativar modo leve?"). O usuário pode ligar/desligar no menu (salvo em `localStorage`, try/catch). Modo leve corta partículas em ~70%, usa 1 camada de chuva/neblina, legendas ofuscadas sem animação, sem glow animado.
+5. Partículas: **pool de sprites** reaproveitado, uma única textura-atlas gerada em runtime, `ParticleContainer` onde der. Teto global de partículas: 1200 (normal) / 300 (leve). Efeito fora da tela não emite.
+6. Chuva e neblina com **TilingSprite** rolando (barato), não com milhares de partículas.
+7. Nada de filtros caros do Pixi (Blur/Glow em tempo real). "Brilho" = sprite radial pré-renderizado com blend aditivo.
+8. Texturas: destruir ao trocar de cena (`texture.destroy(true)` do mapa antigo). Cache LRU de texturas de token.
+9. React só pros painéis (HUD). O canvas é atualizado pelo store (zustand `subscribe`), **sem re-render do React por frame**.
+10. Gestos no touch: 1 dedo arrasta token / desenha (conforme ferramenta), 2 dedos = pan + pinça de zoom, **pressionar e segurar 450 ms = menu de contexto** (igual botão direito).
+11. Toda fase termina medindo: abrir a mesa com 1 mapa 4096 px + 15 tokens + chuva + 2 magias ativas no Chrome DevTools com CPU 4× slowdown — mirar ≥ 45 fps e < 300 MB de memória da aba. Reportar os números.
+
+## 8. Estrutura de pastas sugerida
+
+```
+src/app/mesa/page.tsx
+src/app/mesa/[id]/page.tsx            (server: checa membro, carrega snapshot)
+src/components/vtt/                   (HUD React: painéis, menus, modais)
+src/lib/vtt/                          (store, events, realtime, engine Pixi)
+src/lib/vtt/engine/                   (stage, camera, layers, objects, tools)
+src/lib/vtt/fx/                       (partículas, presets, clima)
+src/lib/vtt/audio/
+src/lib/storage/
+```
+
+## 9. Convenções
+
+- Tudo tipado; nada de `any` novo.
+- Toda string de UI em pt-BR.
+- Testes Vitest pras funções puras (parser de dados, cálculos de NPC, transformações de anexo, simplificação de traço, régua).
+- Cada fase: `npm run lint`, `npm test`, `npm run build` passando. Sem push. Resumo final + SQL a rodar + números de desempenho.
