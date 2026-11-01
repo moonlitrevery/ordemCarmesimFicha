@@ -47,6 +47,7 @@ import {
 import { QuickSheet } from './QuickSheet';
 import { ScaleChip } from './ScaleChip';
 import { ScenesPanel } from './ScenesPanel';
+import { SceneTransitionOverlay } from './SceneTransitionOverlay';
 import { SceneViewBanner } from './SceneViewBanner';
 import { SettingsMenu } from './SettingsMenu';
 import { TokenContextMenu } from './TokenContextMenu';
@@ -172,8 +173,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       onOnline: (next) => useVttStore.getState().setOnline(next),
       onStatus: (next) => useVttStore.getState().setConnection(next),
       onSubscribed: () => {
-        void refresh();
-        void sync?.reload();
+        void refresh().then(() => sync?.reload());
         void initiative?.reload();
         void npcs?.reload();
         // A primeira carga é do `start`; aqui é só ao reconectar.
@@ -208,7 +208,12 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
     channel.on('session:state', () => void refresh());
     channel.on('member:changed', () => void refresh());
-    channel.on('scene:assign', () => void refresh());
+    channel.on('table:refresh', () => void refresh());
+    // Nesta ordem: o RLS já mostra só a cena nova, e com a padrão antiga no store
+    // o jogador cairia em "sem cena" (o canvas desmonta) antes de chegar nela.
+    channel.on('scene:assign', () => {
+      void refresh().then(() => sync?.reload());
+    });
     if (isGm) channel.on('asset:pending', () => void refreshPending(true));
 
     const presenceOf = () => {
@@ -389,6 +394,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         {viewedSceneId ? (
           <>
             <MapCanvas key={tableId} />
+            <SceneTransitionOverlay />
             <SceneViewBanner />
             <MapToolbar />
             <ScaleChip />

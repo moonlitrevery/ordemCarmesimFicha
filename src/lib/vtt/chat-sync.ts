@@ -33,7 +33,6 @@ export class ChatSync {
 
   start() {
     void this.subscribe().catch(() => undefined);
-    void this.loadCharacterNames();
   }
 
   stop() {
@@ -126,16 +125,6 @@ export class ChatSync {
       chatMessages: mergeChatMessages(s.chatMessages, rows),
       chatHasMore: rows.length === CHAT_PAGE_SIZE,
     }));
-  }
-
-  private async loadCharacterNames() {
-    const { data } = await this.supabase.rpc('table_character_names', {
-      p_table: this.tableId,
-    });
-    if (this.stopped || !data) return;
-    useVttStore.setState({
-      chatCharacterNames: data as { owner_id: string; name: string }[],
-    });
   }
 
   private async insert(

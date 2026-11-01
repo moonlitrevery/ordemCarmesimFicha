@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  conditionsForKind,
   conditionArc,
   customCondition,
   isValidConditionList,
@@ -11,6 +12,14 @@ import {
   STANDARD_CONDITIONS,
   toggleCondition,
 } from './conditions';
+
+describe('conditionsForKind', () => {
+  it('addon só tem Arma travada, adereço nada, token tudo', () => {
+    expect(conditionsForKind('addon').map((item) => item.id)).toEqual(['arma-travada']);
+    expect(conditionsForKind('adereco')).toEqual([]);
+    expect(conditionsForKind('token')).toEqual(STANDARD_CONDITIONS);
+  });
+});
 
 describe('lista padrão', () => {
   it('tem as 11 condições das regras, cada uma com ícone', () => {

@@ -6,22 +6,20 @@ import { ArrowLeft } from 'lucide-react';
 import { userColor } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import type { VttPresence } from '@/lib/vtt/types';
-import { FLOATING_PANEL, useDismiss } from './hud';
+import { FLOATING_PANEL, PersonAvatar, useDismiss } from './hud';
 import { MembersPanel } from './MembersPanel';
 
 const MAX_AVATARS = 6;
 
 function Avatar({ person }: { person: VttPresence }) {
+  // A cor vem do banco, não da presença: quem está no canal não pode trocar a dos outros.
+  const color = useVttStore((s) => s.peopleColors[person.userId]) ?? userColor(person.userId);
   return (
-    <span
-      className="group relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink text-xs font-semibold uppercase text-ink"
-      style={{ backgroundColor: userColor(person.userId) }}
-    >
-      {person.name.slice(0, 1)}
+    <PersonAvatar name={person.name} color={color} className="group h-7 w-7">
       <span className="pointer-events-none absolute right-0 top-full z-40 mt-1.5 hidden whitespace-nowrap rounded-md border border-ink-border bg-ink-raised px-2 py-1 text-xs font-normal normal-case text-parchment desk:group-hover:block">
         {person.name}
       </span>
-    </span>
+    </PersonAvatar>
   );
 }
 

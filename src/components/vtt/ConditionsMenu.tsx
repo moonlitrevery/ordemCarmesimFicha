@@ -3,13 +3,13 @@
 import { useState, type FormEvent } from 'react';
 import { Check, ChevronLeft } from 'lucide-react';
 import {
+  conditionsForKind,
   CUSTOM_EMOJI_CHOICES,
   customCondition,
   MAX_CUSTOM_CONDITION_LENGTH,
   resolveCondition,
   resolveConditions,
   sanitizeEmoji,
-  STANDARD_CONDITIONS,
 } from '@/lib/vtt/conditions';
 import { useVttStore } from '@/lib/vtt/store';
 import type { SceneObject } from '@/lib/vtt/types';
@@ -77,7 +77,7 @@ export function ConditionsMenu({
         Condições
       </button>
       <hr className="my-1 border-ink-border" />
-      {STANDARD_CONDITIONS.map(({ id }) => (
+      {conditionsForKind(object.kind).map(({ id }) => (
         <ConditionRow
           key={id}
           conditionKey={id}

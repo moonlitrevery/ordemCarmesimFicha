@@ -9,7 +9,7 @@ import type {
 } from './types';
 
 export const SCENE_COLUMNS =
-  'id, table_id, name, folder, sort, map_asset_id, meters_per_px, weather, created_at';
+  'id, table_id, name, folder, sort, map_asset_id, meters_per_px, weather, lighting, created_at';
 
 export const OBJECT_COLUMNS =
   'id, scene_id, asset_id, kind, x, y, rotation, scale, flip_x, flip_y, z, parent_id, local, caption, effects, conditions, character_id, npc_id, hidden, created_by, updated_at';

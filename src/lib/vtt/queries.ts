@@ -7,7 +7,7 @@ import type {
 } from './types';
 
 export const TABLE_COLUMNS =
-  'id, name, owner_id, session_open, default_scene_id, initiative, created_at';
+  'id, name, owner_id, session_open, default_scene_id, initiative, scene_transition, created_at';
 
 type MemberRow = {
   user_id: string;
@@ -15,7 +15,7 @@ type MemberRow = {
   scene_id: string | null;
   banned: boolean;
   joined_at: string;
-  profiles: { display_name: string } | null;
+  profiles: { display_name: string; color: string | null } | null;
 };
 
 /**
@@ -43,12 +43,12 @@ export async function fetchTableSnapshot(
   const [membersRes, ownerRes] = await Promise.all([
     supabase
       .from('table_members')
-      .select('user_id, role, scene_id, banned, joined_at, profiles(display_name)')
+      .select('user_id, role, scene_id, banned, joined_at, profiles(display_name, color)')
       .eq('table_id', tableId)
       .order('joined_at'),
     supabase
       .from('profiles')
-      .select('display_name')
+      .select('display_name, color')
       .eq('id', table.owner_id)
       .maybeSingle(),
   ]);
@@ -60,6 +60,7 @@ export async function fetchTableSnapshot(
   ).map((m) => ({
     userId: m.user_id,
     name: m.profiles?.display_name ?? 'Jogador',
+    color: m.profiles?.color ?? null,
     role: m.role,
     sceneId: m.scene_id,
     banned: m.banned,
@@ -67,11 +68,13 @@ export async function fetchTableSnapshot(
   }));
 
   const ownerName = ownerRes.data?.display_name ?? 'Mestre';
+  const ownerColor = ownerRes.data?.color ?? null;
 
   if (table.owner_id === userId) {
     return {
       table,
       ownerName,
+      ownerColor,
       members,
       me: { userId, name: ownerName, role: 'mestre', sceneId: null },
     };
@@ -82,6 +85,7 @@ export async function fetchTableSnapshot(
   return {
     table,
     ownerName,
+    ownerColor,
     members,
     me: { userId, name: self.name, role: self.role, sceneId: self.sceneId },
   };

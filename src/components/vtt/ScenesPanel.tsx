@@ -4,10 +4,16 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { ChevronDown, ChevronUp, Map as MapIcon } from 'lucide-react';
 import { libraryImageUrl, type Asset } from '@/lib/vtt/assets/rules';
 import { assetsOfKind } from '@/lib/vtt/assets/static';
-import { membersInScene } from '@/lib/vtt/scene-rules';
+import { membersInScene, userColor } from '@/lib/vtt/scene-rules';
+import {
+  parseSceneTransition,
+  SCENE_TRANSITION_LABELS,
+  SCENE_TRANSITIONS,
+} from '@/lib/vtt/scene-transition';
 import { useVttStore } from '@/lib/vtt/store';
 import type { VttMember, VttScene } from '@/lib/vtt/types';
 import { AssetThumb } from './AssetThumb';
+import { PersonAvatar } from './hud';
 
 function useMapAssets(): Asset[] {
   const library = useVttStore((s) => s.library);
@@ -113,17 +119,38 @@ function Avatars({ people, onlineIds }: { people: VttMember[]; onlineIds: Set<st
         <li
           key={person.userId}
           title={person.name}
-          className={
-            'flex h-6 w-6 items-center justify-center rounded-full border text-[10px] uppercase text-parchment ' +
-            (onlineIds.has(person.userId)
-              ? 'border-emerald-500/70'
-              : 'border-ink-border opacity-60')
-          }
+          className={onlineIds.has(person.userId) ? '' : 'opacity-60'}
         >
-          {person.name.slice(0, 2)}
+          <PersonAvatar
+            name={person.name}
+            color={person.color ?? userColor(person.userId)}
+            className="h-6 w-6"
+          />
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Da mesa inteira, mas cada um toca a sua ao trocar de cena. */
+function TransitionPicker() {
+  const sync = useVttStore((s) => s.sync);
+  const style = useVttStore((s) => parseSceneTransition(s.table?.scene_transition));
+  return (
+    <label className="block space-y-1">
+      <span className="label">Transição entre cenas</span>
+      <select
+        className="field min-h-11 px-2 py-1 text-xs desk:min-h-8"
+        value={style}
+        onChange={(e) => void sync?.setSceneTransition(parseSceneTransition(e.target.value))}
+      >
+        {SCENE_TRANSITIONS.map((option) => (
+          <option key={option} value={option}>
+            {SCENE_TRANSITION_LABELS[option]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -377,6 +404,7 @@ export function ScenesPanel() {
 
   return (
     <div className="space-y-3">
+      <TransitionPicker />
       {players.length > 0 && (
         <section className="space-y-2 rounded-md border border-ink-border p-2">
           <h3 className="label">Separar grupo</h3>

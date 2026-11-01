@@ -126,6 +126,7 @@ export class VttEngine implements EngineBridge {
   private uiLayer = new Container();
 
   private textures = new TextureStore();
+  private loads = new Set<Promise<void>>();
   private nodes = new Map<string, ObjectNode>();
   private captions = new Map<string, CaptionNode>();
   private markerArt = new MarkerArt();
@@ -438,6 +439,7 @@ export class VttEngine implements EngineBridge {
 
     this.fx?.syncObjects(objects, this.nodes);
     this.fx?.syncWeather(scene?.weather ?? []);
+    this.fx?.syncLighting(scene?.lighting ?? null);
     this.syncCaptions(objects);
     this.syncMarkers(objects);
     this.drawSelection();
@@ -464,17 +466,19 @@ export class VttEngine implements EngineBridge {
       this.fittedSceneId = null;
 
       if (url) {
-        void this.textures.acquire(url).then(
-          (texture) => {
-            if (this.destroyed || this.mapUrl !== url) return;
-            this.mapSprite = new Sprite(texture);
-            this.mapSize = { width: texture.width, height: texture.height };
-            this.mapLayer.addChild(this.mapSprite);
-            this.drawBackdrop();
-            this.fitOnce();
-            this.invalidate();
-          },
-          () => useVttStore.getState().showToast('Não foi possível carregar o mapa.')
+        this.trackLoad(
+          this.textures.acquire(url).then(
+            (texture) => {
+              if (this.destroyed || this.mapUrl !== url) return;
+              this.mapSprite = new Sprite(texture);
+              this.mapSize = { width: texture.width, height: texture.height };
+              this.mapLayer.addChild(this.mapSprite);
+              this.drawBackdrop();
+              this.fitOnce();
+              this.invalidate();
+            },
+            () => useVttStore.getState().showToast('Não foi possível carregar o mapa.')
+          )
         );
       }
     }
@@ -552,27 +556,58 @@ export class VttEngine implements EngineBridge {
     node.url = url;
     node.width = size.width ?? FALLBACK_OBJECT_SIZE;
     node.height = size.height ?? FALLBACK_OBJECT_SIZE;
-    void this.textures.acquire(url, true).then(
-      (texture) => {
-        if (this.destroyed || node.url !== url) return;
-        node.sprite.texture = texture;
-        node.width = texture.width;
-        node.height = texture.height;
-        this.fx?.layoutObject(node.id);
-        this.layoutCaptions();
-        this.layoutMarkers();
-        this.drawSelection();
-        this.invalidate();
-      },
-      () => {
-        if (this.destroyed || node.url !== url) return;
-        // Quadrado no lugar: dá para ver, selecionar e apagar o objeto quebrado.
-        node.sprite.texture = Texture.WHITE;
-        node.sprite.tint = CRIMSON;
-        node.sprite.setSize(node.width, node.height);
-        this.invalidate();
-      }
+    this.trackLoad(
+      this.textures.acquire(url, true).then(
+        (texture) => {
+          if (this.destroyed || node.url !== url) return;
+          node.sprite.texture = texture;
+          node.width = texture.width;
+          node.height = texture.height;
+          this.fx?.layoutObject(node.id);
+          this.layoutCaptions();
+          this.layoutMarkers();
+          this.drawSelection();
+          this.invalidate();
+        },
+        () => {
+          if (this.destroyed || node.url !== url) return;
+          // Quadrado no lugar: dá para ver, selecionar e apagar o objeto quebrado.
+          node.sprite.texture = Texture.WHITE;
+          node.sprite.tint = CRIMSON;
+          node.sprite.setSize(node.width, node.height);
+          this.invalidate();
+        }
+      )
     );
+  }
+
+  private trackLoad(load: Promise<void>) {
+    this.loads.add(load);
+    void load.finally(() => this.loads.delete(load));
+  }
+
+  /**
+   * Resolve com as texturas pedidas até agora carregadas e já desenhadas: o envio
+   * para a GPU acontece no primeiro quadro, e é isso que a transição esconde.
+   */
+  async sceneLoaded(): Promise<void> {
+    await Promise.allSettled(Array.from(this.loads));
+    if (this.destroyed) return;
+    this.invalidate();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+
+  isInsideMap(wx: number, wy: number): boolean {
+    return wx >= 0 && wy >= 0 && wx <= this.mapSize.width && wy <= this.mapSize.height;
+  }
+
+  zoom(): number {
+    return this.camera.zoom;
+  }
+
+  viewCenter(): Point {
+    return this.toWorld(this.viewWidth / 2, this.viewHeight / 2);
   }
 
   private placeNode(object: SceneObject, objects: Record<string, SceneObject>) {

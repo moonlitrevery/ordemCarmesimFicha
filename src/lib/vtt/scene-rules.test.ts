@@ -3,7 +3,9 @@ import {
   allowPerKey,
   attachPatch,
   backZ,
+  buildPastedRows,
   canDeleteObject,
+  copyFamily,
   defaultObjectScale,
   descendantsOf,
   detachPatch,
@@ -15,12 +17,14 @@ import {
   isValidObject,
   membersInScene,
   patchFromWorld,
+  readableTextOn,
   resolveViewedScene,
   sanitizeCaption,
   scrambleText,
   userColor,
   worldTransform,
   wouldCreateCycle,
+  type ObjectCopy,
 } from './scene-rules';
 import type { SceneObject, VttMember } from './types';
 
@@ -55,6 +59,7 @@ function member(userId: string, patch: Partial<VttMember> = {}): VttMember {
   return {
     userId,
     name: userId,
+    color: null,
     role: 'jogador',
     sceneId: null,
     banned: false,
@@ -298,7 +303,93 @@ describe('tamanho inicial', () => {
   });
 });
 
+describe('copiar e colar', () => {
+  const base = {
+    scene_id: 's1',
+    asset_id: 'a1',
+    kind: 'token' as const,
+    x: 10,
+    y: 20,
+    rotation: 1,
+    scale: 2,
+    flip_x: true,
+    flip_y: false,
+    z: 3,
+    parent_id: null,
+    local: null,
+    caption: null,
+    effects: [{ type: 'effect', id: 'brilho' }],
+    conditions: ['arma-travada'],
+    character_id: 'ficha',
+    npc_id: 'npc',
+    hidden: false,
+    created_by: 'outra',
+    updated_at: '2026-01-01',
+  };
+  const parent: SceneObject = { ...base, id: 'p' };
+  const addon: SceneObject = {
+    ...base,
+    id: 'c',
+    kind: 'addon',
+    parent_id: 'p',
+    local: { x: 5, y: 6, rotation: 0.5, scale: 1, flipX: false, flipY: false },
+  };
+  const objects = { p: parent, c: addon };
+  let next = 0;
+  const target = {
+    sceneId: 's2',
+    x: 100,
+    y: 200,
+    z: 9,
+    userId: 'eu',
+    isGm: false,
+    newId: () => `novo${++next}`,
+  };
+
+  it('leva anexo, efeitos e condições, sem ficha nem NPC', () => {
+    const copy = copyFamily('p', objects, {}) as ObjectCopy;
+    const [root, child] = buildPastedRows(copy, target);
+    expect(root).toMatchObject({
+      scene_id: 's2',
+      x: 100,
+      y: 200,
+      rotation: 1,
+      scale: 2,
+      flip_x: true,
+      z: 9,
+      effects: base.effects,
+      conditions: base.conditions,
+      character_id: null,
+      npc_id: null,
+      created_by: 'eu',
+    });
+    expect(root.id).not.toBe('p');
+    expect(child.parent_id).toBe(root.id);
+    expect(child.local).toEqual(addon.local);
+  });
+
+  it('copiar só o anexo faz um objeto solto', () => {
+    const copy = copyFamily('c', objects, {}) as ObjectCopy;
+    const [root] = buildPastedRows(copy, target);
+    expect(root.parent_id).toBeNull();
+    expect(root.local).toBeNull();
+    expect(root.x).toBe(100);
+    expect(root.kind).toBe('addon');
+  });
+
+  it('oculto só continua oculto para a mestra', () => {
+    const copy = copyFamily('p', { p: { ...parent, hidden: true } }, {}) as ObjectCopy;
+    expect(buildPastedRows(copy, target)[0].hidden).toBe(false);
+    expect(buildPastedRows(copy, { ...target, isGm: true })[0].hidden).toBe(true);
+  });
+});
+
 describe('cor e limites', () => {
+  it('a inicial continua legível em qualquer cor', () => {
+    expect(readableTextOn('#000000')).toBe('#f5e6c8');
+    expect(readableTextOn('#ffffff')).toBe('#0c0a0d');
+  });
+
   it('cor é estável', () => {
     expect(userColor('abc')).toBe(userColor('abc'));
   });

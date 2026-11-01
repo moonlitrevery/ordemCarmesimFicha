@@ -3,7 +3,13 @@ import type { Asset } from './assets/rules';
 import { checkUploadAvailable, uploadAsset } from './assets/upload';
 import type { VttEventOf } from './events';
 import { toggleCondition } from './conditions';
-import { setEffectColor, toggleEffect, type EffectEntry, type WeatherEntry } from './fx/rules';
+import {
+  setEffectColor,
+  toggleEffect,
+  type EffectEntry,
+  type LightingState,
+  type WeatherEntry,
+} from './fx/rules';
 import { calibrate } from './geometry';
 import {
   HistoryStack,
@@ -25,8 +31,10 @@ import {
   allowPerKey,
   attachPatch,
   backZ,
+  buildPastedRows,
   canDeleteObject,
   canEditObjects,
+  copyFamily,
   defaultObjectScale,
   descendantsOf,
   detachPatch,
@@ -37,11 +45,12 @@ import {
   ownTransform,
   patchFromOwn,
   resolveViewedScene,
-  userColor,
   wouldCreateCycle,
+  type ObjectCopy,
   type ObjectPatch,
 } from './scene-rules';
-import { useVttStore } from './store';
+import { parseSceneTransition, SceneTransition, type SceneTransitionStyle } from './scene-transition';
+import { personColor, useVttStore } from './store';
 import type {
   Drawing,
   ObjectKind,
@@ -54,13 +63,16 @@ const DRAG_THROTTLE_MS = 50;
 const RULER_THROTTLE_MS = 100;
 const PING_INTERVAL_MS = 1000;
 const REFRESH_DELAY_MS = 300;
-const WEATHER_SAVE_MS = 250;
+const SCENE_FX_SAVE_MS = 250;
+const PASTE_OFFSET_PX = 24;
 
 const SAVE_ERROR = 'Não foi possível salvar. Tente de novo.';
 const SKIPPED_STEP = 'Esse passo foi pulado: o que ele mudava já não existe.';
 
 /** `skipped`: sumiu por ação de outra pessoa, e não há o que desfazer. */
 type ApplyResult = 'applied' | 'skipped' | 'failed';
+
+type SceneFxPatch = Partial<{ weather: WeatherEntry[]; lighting: LightingState }>;
 
 /** O que a sync pede ao canvas: só o transitório, que não passa pelo store. */
 export interface EngineBridge {
@@ -72,6 +84,10 @@ export interface EngineBridge {
   ) => void;
   /** Tamanho do mapa aberto, para escolher o tamanho inicial dos objetos. */
   mapSide: () => number | null;
+  zoom: () => number;
+  viewCenter: () => { x: number; y: number };
+  /** Resolve quando a cena já no store estiver carregada e desenhada. */
+  sceneLoaded: () => Promise<void>;
 }
 
 function store() {
@@ -101,11 +117,17 @@ export class SceneSync {
   private history = new HistoryStack();
   private historyQueue: Promise<void> = Promise.resolve();
   private writes = new Set<Promise<unknown>>();
-  /** Clima ainda não gravado: releitura não pode passar por cima do que a mestra mexeu. */
-  private pendingWeather: { sceneId: string; weather: WeatherEntry[] } | null = null;
-  private weatherTimer: ReturnType<typeof setTimeout> | undefined;
-  private weatherTicket = 0;
-  private weatherSave: Promise<void> = Promise.resolve();
+  /** Clima e luz ainda não gravados: releitura não pode passar por cima do que a mestra mexeu. */
+  private pendingFx: { sceneId: string; patch: SceneFxPatch } | null = null;
+  private fxTimer: ReturnType<typeof setTimeout> | undefined;
+  private fxTicket = 0;
+  private fxSave: Promise<void> = Promise.resolve();
+  private transition = new SceneTransition((sceneTransition) =>
+    useVttStore.setState({ sceneTransition })
+  );
+  /** Fica na memória desta aba: vale para outra cena da mesma mesa. */
+  private copied: ObjectCopy | null = null;
+  private pasteCount = 0;
   /** Objeto na mão de quem está arrastando: evento de fora não o tira do lugar. */
   interactingId: string | null = null;
 
@@ -119,7 +141,7 @@ export class SceneSync {
   start() {
     const { channel } = this;
     this.unsubscribers.push(
-      channel.on('scene:assign', () => void this.reload()),
+      // `scene:assign` é do VttShell: relê a mesa antes de chamar `reload`.
       channel.on('scene:refresh', (event) => this.onRefresh(event)),
       channel.on('asset:resolved', () => {
         store().bumpLibrary();
@@ -132,7 +154,7 @@ export class SceneSync {
       channel.on('draw:delete', (event) => this.onDrawDelete(event)),
       channel.on('ping', (event) => this.onPing(event)),
       channel.on('ruler', (event) => this.onRuler(event)),
-      channel.on('fx:weather', (event) => void this.onWeather(event)),
+      channel.on('fx:weather', (event) => void this.onSceneFx(event)),
       // Sessão, cena padrão e separação chegam pelo snapshot: decidem a cena vista.
       useVttStore.subscribe((state, prev) => {
         if (
@@ -149,8 +171,9 @@ export class SceneSync {
   }
 
   stop() {
-    void this.flushWeather();
+    void this.flushSceneFx();
     this.stopped = true;
+    this.transition.stop();
     clearTimeout(this.refreshTimer);
     this.unsubscribers.forEach((unsubscribe) => unsubscribe());
     this.unsubscribers = [];
@@ -169,17 +192,18 @@ export class SceneSync {
     try {
       const scenes = await fetchScenes(this.supabase, this.tableId);
       if (this.stopped || ticket !== this.loadTicket) return;
-      const pending = this.pendingWeather;
+      const pending = this.pendingFx;
       useVttStore.setState({
         scenes: pending
           ? scenes.map((scene) =>
-              scene.id === pending.sceneId ? { ...scene, weather: pending.weather } : scene
+              scene.id === pending.sceneId ? { ...scene, ...pending.patch } : scene
             )
           : scenes,
       });
       await this.loadViewedScene(scenes, ticket);
     } catch {
       // Falha de rede: mantém o que está na tela; o próximo SUBSCRIBED recarrega.
+      if (ticket === this.loadTicket) this.transition.reveal();
     }
   }
 
@@ -197,6 +221,7 @@ export class SceneSync {
     const scene = scenes.find((s) => s.id === viewedSceneId);
 
     if (!scene) {
+      this.transition.reveal();
       this.clearHistory();
       useVttStore.setState({
         viewedSceneId: null,
@@ -209,16 +234,30 @@ export class SceneSync {
       return;
     }
 
+    // A primeira cena não tem o que cobrir: o canvas ainda nem existe. Uma leitura
+    // mais nova que decida ficar nesta cena é quem desfaz a cobertura da anterior.
+    const previous = state.viewedSceneId;
+    const swapping = previous !== null && previous !== scene.id;
+    let covered: Promise<void> | null = null;
+    if (swapping) {
+      covered = this.transition.begin(
+        parseSceneTransition(state.table.scene_transition),
+        state.lightMode
+      );
+    }
+
     const bundle = await fetchSceneBundle(
       this.supabase,
       scene.id,
       this.userId,
       scene.map_asset_id
     );
+    if (covered) await covered;
     if (this.stopped || ticket !== this.loadTicket) return;
 
     const changedScene = store().viewedSceneId !== scene.id;
     if (changedScene) this.clearHistory();
+    if (!swapping) this.transition.reveal();
     const held = this.interactingId;
     const current = store().objects[held ?? ''];
     useVttStore.setState((s) => ({
@@ -238,6 +277,10 @@ export class SceneSync {
       attachingId: changedScene ? null : s.attachingId,
       calibrating: changedScene ? false : s.calibrating,
     }));
+    // O store já avisou o canvas, que pediu as texturas da cena nova.
+    if (swapping) {
+      this.transition.finishWhen(this.engine?.sceneLoaded() ?? Promise.resolve());
+    }
   }
 
   private scheduleRefresh() {
@@ -324,14 +367,14 @@ export class SceneSync {
     if (!allowPerKey(this.pingLimits, event.userId, Date.now(), PING_INTERVAL_MS)) {
       return;
     }
-    this.engine?.showPing(event.x, event.y, userColor(event.userId));
+    this.engine?.showPing(event.x, event.y, personColor(event.userId));
   }
 
   private onRuler(event: VttEventOf<'ruler'>) {
     if (event.sceneId !== store().viewedSceneId) return;
     const { line } = event;
     if (line && !(line.length === 4 && line.every(Number.isFinite))) return;
-    this.engine?.showRuler(event.userId, userColor(event.userId), line);
+    this.engine?.showRuler(event.userId, personColor(event.userId), line);
   }
 
   // ---------- Objetos ----------
@@ -473,6 +516,90 @@ export class SceneSync {
     this.record({ type: 'create', row });
   }
 
+  // ---------- Copiar e colar ----------
+
+  get hasCopy(): boolean {
+    return this.copied !== null;
+  }
+
+  copyObject(id: string) {
+    const state = store();
+    if (!this.canEdit()) return;
+    const copy = copyFamily(id, state.objects, state.sceneAssets);
+    if (!copy) return;
+    this.copied = copy;
+    this.pasteCount = 0;
+    state.showToast('Copiado. Ctrl+V cola, também em outra cena.');
+  }
+
+  /** Sem o mouse no mapa: ao lado do original, ou no meio da tela em outra cena. */
+  async pasteCopy(at: { x: number; y: number } | null) {
+    const { copied } = this;
+    const sceneId = store().viewedSceneId;
+    if (!copied || !sceneId || !this.canEdit()) return;
+    this.pasteCount++;
+    let point = at;
+    if (!point) {
+      if (copied.sceneId === sceneId) {
+        const step = (PASTE_OFFSET_PX * this.pasteCount) / (this.engine?.zoom() ?? 1);
+        point = { x: copied.world.x + step, y: copied.world.y + step };
+      } else {
+        point = this.engine?.viewCenter() ?? copied.world;
+      }
+    }
+    await this.pasteFamily(copied, sceneId, point);
+  }
+
+  /** O atalho do tablet: não mexe no que foi copiado com Ctrl+C. */
+  async duplicateObject(id: string) {
+    const state = store();
+    if (!this.canEdit() || !state.viewedSceneId) return;
+    const copy = copyFamily(id, state.objects, state.sceneAssets);
+    if (!copy) return;
+    const step = PASTE_OFFSET_PX / (this.engine?.zoom() ?? 1);
+    await this.pasteFamily(copy, state.viewedSceneId, {
+      x: copy.world.x + step,
+      y: copy.world.y + step,
+    });
+  }
+
+  /**
+   * Pela mesma RPC do desfazer: insert normal não aceita anexo, efeitos nem condições,
+   * e ela aplica as regras de `can_place_asset`. Pais antes dos filhos.
+   */
+  private async pasteFamily(copy: ObjectCopy, sceneId: string, at: { x: number; y: number }) {
+    const state = store();
+    const zs = Object.values(state.objects).map((object) => object.z);
+    const rows = buildPastedRows(copy, {
+      sceneId,
+      x: at.x,
+      y: at.y,
+      z: zs.length > 0 ? Math.max(...zs) + 1 : 1,
+      userId: this.userId,
+      isGm: state.me?.role === 'mestre',
+      newId: () => crypto.randomUUID(),
+    });
+    useVttStore.setState((s) => ({ sceneAssets: { ...s.sceneAssets, ...copy.assets } }));
+
+    const created = await this.track(
+      (async () => {
+        const done: HistoryCommand[] = [];
+        for (const row of rows) {
+          const restored = await this.insertRow(row);
+          if (!restored) {
+            store().showToast('Não foi possível colar. Você pode não ter acesso a essa imagem.');
+            break;
+          }
+          done.push({ type: 'create', row: restored });
+        }
+        return done;
+      })()
+    );
+    if (created.length === 0) return;
+    if (store().viewedSceneId === sceneId) useVttStore.setState({ selectedId: rows[0].id });
+    this.record({ type: 'batch', commands: created });
+  }
+
   /** Arquivo solto no mapa: da mestra entra direto, de jogador espera aprovação. */
   async dropFiles(files: File[], x: number, y: number) {
     const state = store();
@@ -600,18 +727,21 @@ export class SceneSync {
 
   /** Devolve o objeto com o mesmo id, anexo, legenda, efeitos e condições. */
   private async restoreObject(row: SceneObject): Promise<boolean> {
+    if (await this.insertRow(row)) return true;
+    store().showToast('Não foi possível restaurar. Tente de novo.');
+    return false;
+  }
+
+  private async insertRow(row: SceneObject): Promise<SceneObject | null> {
     const { data, error } = await this.supabase
       .rpc('restore_scene_object', { p_object: row })
       .select(OBJECT_COLUMNS)
       .single();
-    if (error || !data) {
-      store().showToast('Não foi possível restaurar. Tente de novo.');
-      return false;
-    }
+    if (error || !data) return null;
     const restored = data as unknown as SceneObject;
     this.applyRow(restored);
     this.broadcastObject(restored);
-    return true;
+    return restored;
   }
 
   private ownPatch(id: string, change: (own: ReturnType<typeof ownTransform>) => ReturnType<typeof ownTransform>) {
@@ -736,30 +866,40 @@ export class SceneSync {
 
   /** Aparece na hora para a mestra; grava e avisa agrupado, porque o controle desliza. */
   setWeather(sceneId: string, weather: WeatherEntry[]) {
-    if (this.pendingWeather && this.pendingWeather.sceneId !== sceneId) {
-      void this.flushWeather();
-    }
-    this.weatherTicket++;
-    this.pendingWeather = { sceneId, weather };
-    useVttStore.setState((s) => ({
-      scenes: s.scenes.map((scene) => (scene.id === sceneId ? { ...scene, weather } : scene)),
-    }));
-    clearTimeout(this.weatherTimer);
-    this.weatherTimer = setTimeout(() => void this.flushWeather(), WEATHER_SAVE_MS);
+    this.queueSceneFx(sceneId, { weather });
   }
 
-  private async flushWeather() {
-    clearTimeout(this.weatherTimer);
-    const pending = this.pendingWeather;
+  setLighting(sceneId: string, lighting: LightingState) {
+    this.queueSceneFx(sceneId, { lighting });
+  }
+
+  private queueSceneFx(sceneId: string, patch: SceneFxPatch) {
+    const sameScene = this.pendingFx?.sceneId === sceneId;
+    if (this.pendingFx && !sameScene) void this.flushSceneFx();
+    this.fxTicket++;
+    this.pendingFx = {
+      sceneId,
+      patch: sameScene ? { ...this.pendingFx?.patch, ...patch } : patch,
+    };
+    useVttStore.setState((s) => ({
+      scenes: s.scenes.map((scene) => (scene.id === sceneId ? { ...scene, ...patch } : scene)),
+    }));
+    clearTimeout(this.fxTimer);
+    this.fxTimer = setTimeout(() => void this.flushSceneFx(), SCENE_FX_SAVE_MS);
+  }
+
+  private async flushSceneFx() {
+    clearTimeout(this.fxTimer);
+    const pending = this.pendingFx;
     if (!pending) return;
-    const ticket = this.weatherTicket;
+    const ticket = this.fxTicket;
     // Uma gravação de cada vez: a mais antiga não pode chegar por último.
-    this.weatherSave = this.weatherSave.then(async () => {
+    this.fxSave = this.fxSave.then(async () => {
       const { error } = await this.supabase
         .from('scenes')
-        .update({ weather: pending.weather })
+        .update(pending.patch)
         .eq('id', pending.sceneId);
-      if (ticket === this.weatherTicket) this.pendingWeather = null;
+      if (ticket === this.fxTicket) this.pendingFx = null;
       if (error) {
         store().showToast(SAVE_ERROR);
         this.scheduleRefresh();
@@ -767,23 +907,57 @@ export class SceneSync {
       }
       this.channel.emit({ type: 'fx:weather', sceneId: pending.sceneId });
     });
-    await this.weatherSave;
+    await this.fxSave;
   }
 
-  /** Só o aviso viaja: o RLS decide se este jogador pode ler o clima da cena. */
-  private async onWeather({ sceneId }: VttEventOf<'fx:weather'>) {
-    if (sceneId !== store().viewedSceneId || this.pendingWeather) return;
+  /** Só o aviso viaja: o RLS decide se este jogador pode ler a cena. */
+  private async onSceneFx({ sceneId }: VttEventOf<'fx:weather'>) {
+    if (sceneId !== store().viewedSceneId || this.pendingFx) return;
     const { data, error } = await this.supabase
       .from('scenes')
-      .select('weather')
+      .select('weather, lighting')
       .eq('id', sceneId)
       .maybeSingle();
-    if (this.stopped || error || !data || this.pendingWeather) return;
+    if (this.stopped || error || !data || this.pendingFx) return;
     useVttStore.setState((s) => ({
       scenes: s.scenes.map((scene) =>
-        scene.id === sceneId ? { ...scene, weather: data.weather } : scene
+        scene.id === sceneId
+          ? { ...scene, weather: data.weather, lighting: data.lighting }
+          : scene
       ),
     }));
+  }
+
+  // ---------- Preferências ----------
+
+  /** Grava no perfil e avisa: quem recebe relê a mesa, com as cores do banco. */
+  async setMyColor(color: string) {
+    const previous = store().peopleColors;
+    useVttStore.setState({ peopleColors: { ...previous, [this.userId]: color } });
+    const { error } = await this.supabase
+      .from('profiles')
+      .update({ color })
+      .eq('id', this.userId);
+    if (error) {
+      useVttStore.setState({ peopleColors: previous });
+      store().showToast(SAVE_ERROR);
+      return;
+    }
+    this.channel.emit({ type: 'member:changed', userId: this.userId });
+  }
+
+  async setSceneTransition(style: SceneTransitionStyle) {
+    const { error } = await this.supabase
+      .from('tables')
+      .update({ scene_transition: style })
+      .eq('id', this.tableId);
+    if (error) {
+      store().showToast(SAVE_ERROR);
+      return;
+    }
+    const { table } = store();
+    if (table) useVttStore.setState({ table: { ...table, scene_transition: style } });
+    this.channel.emit({ type: 'table:refresh' });
   }
 
   // ---------- Desenhos ----------
@@ -974,7 +1148,7 @@ export class SceneSync {
     const now = Date.now();
     if (now - this.lastPing < PING_INTERVAL_MS) return;
     this.lastPing = now;
-    this.engine?.showPing(x, y, userColor(this.userId));
+    this.engine?.showPing(x, y, personColor(this.userId));
     this.channel.emit({ type: 'ping', sceneId, userId: this.userId, x, y });
   }
 

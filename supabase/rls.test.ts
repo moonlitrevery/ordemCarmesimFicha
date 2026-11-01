@@ -693,7 +693,100 @@ describe('migrações 016 e 017', () => {
     expect(read.weather).toEqual(weather);
   });
 
+  it('cor pessoal: cada um grava a sua, colega de mesa lê, formato é conferido', async () => {
+    const update = `update public.profiles set color = $1 where id = $2 returning color`;
+    expect(await asUser(PLAYER, update, ['#123abc', PLAYER])).toEqual([{ color: '#123abc' }]);
+    expect(await asUser(PLAYER, update, ['#123abc', GM])).toEqual([]);
+    await expect(asUser(PLAYER, update, ['vermelho', PLAYER])).rejects.toThrow(/profiles_color_check/);
+    expect(await asUser(SPECTATOR, `select color from public.profiles where id = $1`, [PLAYER])).toEqual([
+      { color: '#123abc' },
+    ]);
+  });
+
+  it('iluminação: só a mestra grava, formato é conferido, duplicar leva junto', async () => {
+    const update = `update public.scenes set lighting = $1::jsonb where id = $2 returning lighting`;
+    const night = { on: true, preset: 'noite', color: '#000000', intensity: 60 };
+    expect(await asUser(PLAYER, update, [JSON.stringify(night), defaultScene])).toEqual([]);
+    expect(await asUser(GM, update, [JSON.stringify(night), defaultScene])).toEqual([{ lighting: night }]);
+    expect(await asUser(PLAYER, `select lighting from public.scenes where id = $1`, [defaultScene])).toEqual([
+      { lighting: night },
+    ]);
+    for (const bad of [
+      { ...night, preset: 'sol' },
+      { ...night, intensity: 101 },
+      { ...night, color: 'azul' },
+      { preset: 'noite' },
+    ]) {
+      await expect(asUser(GM, update, [JSON.stringify(bad), defaultScene])).rejects.toThrow(/scenes_lighting_check/);
+    }
+    const [{ duplicate_scene: copy }] = await asUser<{ duplicate_scene: string }>(
+      GM,
+      `select public.duplicate_scene($1)`,
+      [defaultScene]
+    );
+    expect(await asUser(GM, `select lighting from public.scenes where id = $1`, [copy])).toEqual([
+      { lighting: night },
+    ]);
+    await asUser(GM, `delete from public.scenes where id = $1`, [copy]);
+  });
+
+  it('transição: todos leem, só a mestra grava', async () => {
+    const update = `update public.tables set scene_transition = $1 where id = $2 returning scene_transition`;
+    expect(await asUser(PLAYER, update, ['corte', openTable])).toEqual([]);
+    expect(await asUser(GM, update, ['simbolo', openTable])).toEqual([{ scene_transition: 'simbolo' }]);
+    await expect(asUser(GM, update, ['girar', openTable])).rejects.toThrow(/tables_scene_transition_check/);
+    expect(await asUser(PLAYER, `select scene_transition from public.tables where id = $1`, [openTable])).toEqual([
+      { scene_transition: 'simbolo' },
+    ]);
+  });
+
+  it('colar: jogador cola com anexo e efeitos, mas não oculto nem vínculo', async () => {
+    const paste = `select id, parent_id, effects, conditions, npc_id, hidden from public.restore_scene_object($1::jsonb)`;
+    const row = (id: string, extra: Record<string, unknown>) => ({
+      id,
+      scene_id: defaultScene,
+      asset_id: approvedToken,
+      kind: 'token',
+      x: 1,
+      y: 2,
+      created_by: PLAYER,
+      effects: [{ type: 'effect', id: 'brilho' }],
+      conditions: ['arma-travada'],
+      ...extra,
+    });
+    const parentId = '99999999-9999-4999-8999-000000000b01';
+    const childId = '99999999-9999-4999-8999-000000000b02';
+    await asUser(PLAYER, paste, [JSON.stringify(row(parentId, {}))]);
+    const local = { x: 1, y: 1, rotation: 0, scale: 1, flipX: false, flipY: false };
+    const [child] = await asUser<Record<string, unknown>>(PLAYER, paste, [
+      JSON.stringify(row(childId, { parent_id: parentId, local })),
+    ]);
+    expect(child).toMatchObject({
+      parent_id: parentId,
+      effects: [{ type: 'effect', id: 'brilho' }],
+      conditions: ['arma-travada'],
+      npc_id: null,
+    });
+    await expect(
+      asUser(PLAYER, paste, [
+        JSON.stringify(row('99999999-9999-4999-8999-000000000b03', { hidden: true })),
+      ])
+    ).rejects.toThrow(/forbidden/);
+    await expect(
+      asUser(SPECTATOR, paste, [
+        JSON.stringify(row('99999999-9999-4999-8999-000000000b04', { created_by: SPECTATOR })),
+      ])
+    ).rejects.toThrow(/forbidden/);
+  });
+
+  it('o /shiu não lê mais nomes de personagem', async () => {
+    await expect(
+      asUser(PLAYER, `select * from public.table_character_names($1)`, [openTable])
+    ).rejects.toThrow(/does not exist/);
+  });
+
   it('rodam de novo sobre o schema pronto e mantêm o NPC fechado', async () => {
+    await db.exec(readSql('migrations', '019_vtt_playtest_fixes.sql'));
     await db.exec(readSql('migrations', '018_vtt_effects.sql'));
     await db.exec(readSql('migrations', '016_vtt_npcs.sql'));
     await db.exec(readSql('migrations', '017_vtt_library_perf.sql'));

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Copy,
   Eye,
   EyeOff,
   FlipHorizontal2,
@@ -22,6 +23,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { conditionsForKind } from '@/lib/vtt/conditions';
 import { supportsEffects } from '@/lib/vtt/fx/rules';
 import { canDeleteObject } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
@@ -217,7 +219,13 @@ export function TokenContextMenu() {
         label="Mandar pra trás"
         onClick={run(() => sync.sendToBack(id))}
       />
-      {isToken && (
+      <Item
+        icon={Copy}
+        label="Duplicar"
+        hint="Ctrl+C / V"
+        onClick={run(() => void sync.duplicateObject(id))}
+      />
+      {conditionsForKind(kind).length > 0 && (
         <Item
           icon={Zap}
           label="Condições"

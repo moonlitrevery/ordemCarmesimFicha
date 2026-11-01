@@ -3,10 +3,9 @@ import {
   canEditObjects,
   effectiveParent,
   patchFromWorld,
-  userColor,
   worldTransform,
 } from '../scene-rules';
-import { useVttStore } from '../store';
+import { personColor, useVttStore } from '../store';
 import type { SceneObject } from '../types';
 import { snapAngle, type Point } from '../transform';
 import { pinch, zoomAt } from './camera';
@@ -75,6 +74,8 @@ export class EngineInput {
   private doubleTapPending = false;
   private cleanup: (() => void)[] = [];
   private tipTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Onde o mouse está, para o Ctrl+V. Fora do canvas (sobre o HUD) é nulo. */
+  private cursor: Point | null = null;
 
   constructor(
     private engine: VttEngine,
@@ -101,6 +102,7 @@ export class EngineInput {
     listen('pointerup', (e) => this.onUp(e));
     listen('pointercancel', (e) => this.onCancel(e));
     listen('pointerleave', () => {
+      this.cursor = null;
       engine.revealCaption(null);
       this.showConditionTip(null, { x: 0, y: 0 });
     });
@@ -333,6 +335,7 @@ export class EngineInput {
   private onMove(event: PointerEvent) {
     const known = this.pointers.has(event.pointerId);
     const at = this.screen(event);
+    if (event.pointerType !== 'touch') this.cursor = at;
 
     if (!known) {
       this.hover(at, event);
@@ -497,7 +500,7 @@ export class EngineInput {
       gesture.x2,
       gesture.y2,
     ];
-    if (me) this.engine.showRuler(me.userId, userColor(me.userId), line);
+    if (me) this.engine.showRuler(me.userId, personColor(me.userId), line);
     if (!calibrating) sync?.emitRuler(line);
   }
 
@@ -719,6 +722,7 @@ export class EngineInput {
     }
     const { selectedId, sync } = store();
     if (this.onHistoryKey(event)) return;
+    if (this.onClipboardKey(event)) return;
     if (event.key === 'Escape') {
       useVttStore.setState({
         selectedId: null,
@@ -739,6 +743,27 @@ export class EngineInput {
     } else if (event.key === 'e' || event.key === 'E') {
       sync.rotateBy(selectedId, QUARTER_TURN);
     }
+  }
+
+  /** Ctrl+C e Ctrl+V. Texto marcado (uma mensagem do chat) continua sendo do navegador. */
+  private onClipboardKey(event: KeyboardEvent): boolean {
+    if (!event.ctrlKey && !event.metaKey) return false;
+    const key = event.key.toLowerCase();
+    if (key !== 'c' && key !== 'v') return false;
+    const { sync, selectedId } = store();
+    if (!sync || !this.canEdit() || this.gesture.kind !== 'none') return false;
+    if (key === 'c') {
+      if (!selectedId || window.getSelection()?.toString()) return false;
+      sync.copyObject(selectedId);
+      return true;
+    }
+    if (!sync.hasCopy) return false;
+    event.preventDefault();
+    // Segurar a tecla não vira uma pilha de cópias.
+    if (event.repeat) return true;
+    const world = this.cursor && this.engine.toWorld(this.cursor.x, this.cursor.y);
+    void sync.pasteCopy(world && this.engine.isInsideMap(world.x, world.y) ? world : null);
+    return true;
   }
 
   /** Ctrl+Z desfaz; Ctrl+Shift+Z e Ctrl+Y refazem. Campo de texto nem chega aqui. */

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { SPELL_PRESETS, TOKEN_EFFECTS } from './presets';
 import {
+  lightingColors,
+  LIGHTING_OFF,
+  parseLighting,
   approach,
   curveAt,
   emitterReach,
@@ -253,5 +256,28 @@ describe('FpsMonitor', () => {
     const monitor = new FpsMonitor();
     expect(run(monitor, 30, 4)).toBe(false);
     expect(run(monitor, 30, 4, 60_000)).toBe(false);
+  });
+});
+
+describe('iluminação', () => {
+  it('sem valor ou com preset desconhecido fica desligada', () => {
+    expect(parseLighting(null)).toEqual(LIGHTING_OFF);
+    expect(parseLighting({ preset: 'sol', on: true })).toEqual(LIGHTING_OFF);
+  });
+
+  it('corrige cor e intensidade tortas', () => {
+    const state = parseLighting({ on: true, preset: 'custom', color: 'azul', intensity: 400 });
+    expect(state.on).toBe(true);
+    expect(state.intensity).toBe(100);
+    expect(state.color).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('só o Crepúsculo tem duas cores, e a personalizada usa a escolhida', () => {
+    const colors = (preset: string) =>
+      lightingColors(parseLighting({ on: true, preset, color: '#112233', intensity: 50 }));
+    const [top, bottom] = colors('crepusculo');
+    expect(top).not.toBe(bottom);
+    expect(colors('noite')[0]).toBe(colors('noite')[1]);
+    expect(colors('custom')).toEqual(['#112233', '#112233']);
   });
 });

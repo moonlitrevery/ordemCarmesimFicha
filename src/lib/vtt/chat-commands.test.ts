@@ -10,7 +10,7 @@ const targets: WhisperTarget[] = [
   { userId: 'u1', name: 'Ana' },
   { userId: 'u2', name: 'Maria' },
   { userId: 'u3', name: 'Maria Clara' },
-  { userId: 'u1', name: 'Kaël', hint: 'Ana' },
+  { userId: 'u4', name: 'Kaël', color: '#123456' },
 ];
 
 describe('parseChatInput', () => {
@@ -54,11 +54,15 @@ describe('parseChatInput', () => {
     });
   });
 
-  it('/shiu aceita personagem e ignora acento e caixa', () => {
+  it('/shiu ignora acento e caixa', () => {
     expect(parseChatInput('/shiu kael psiu', targets)).toMatchObject({
-      to: { userId: 'u1' },
+      to: { userId: 'u4' },
       body: 'psiu',
     });
+  });
+
+  it('/shiu recusa quem não é da lista, como um personagem', () => {
+    expect(parseChatInput('/shiu Dra. Vex oi', targets).kind).toBe('error');
   });
 
   it('/shiu não confunde prefixo de palavra', () => {
@@ -89,7 +93,11 @@ describe('chatSuggestions', () => {
   it('lista nomes depois de /shiu', () => {
     expect(chatSuggestions('/shiu ', targets)).toHaveLength(4);
     const [first] = chatSuggestions('/shiu kae', targets);
-    expect(first).toEqual({ value: '/shiu Kaël ', label: 'Kaël', hint: 'Ana' });
+    expect(first).toEqual({
+      value: '/shiu Kaël ',
+      label: 'Kaël',
+      person: { userId: 'u4', color: '#123456' },
+    });
   });
 
   it('nome escolhido encerra a lista', () => {
@@ -103,20 +111,15 @@ describe('chatSuggestions', () => {
 });
 
 describe('buildWhisperTargets', () => {
-  it('junta usuários e personagens, sem a própria pessoa', () => {
+  it('só pessoas, em ordem, sem a própria', () => {
     const list = buildWhisperTargets(
       [
         { userId: 'eu', name: 'Eu' },
+        { userId: 'b', name: 'Bia' },
         { userId: 'a', name: 'Ana' },
-      ],
-      [
-        { owner_id: 'a', name: 'Kael' },
-        { owner_id: 'eu', name: 'Minha' },
-        { owner_id: 'fora', name: 'Estranho' },
       ],
       'eu'
     );
-    expect(list.map((t) => t.name)).toEqual(['Ana', 'Kael']);
-    expect(list[1]).toMatchObject({ userId: 'a', hint: 'Ana' });
+    expect(list.map((t) => t.name)).toEqual(['Ana', 'Bia']);
   });
 });

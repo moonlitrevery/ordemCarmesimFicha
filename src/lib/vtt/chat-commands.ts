@@ -1,11 +1,10 @@
 import { parseDiceExpression } from '../dice';
 
-/** Quem pode receber sussurro: cada nome (de usuário ou de personagem) é uma linha. */
+/** Quem pode receber sussurro: sempre uma pessoa da mesa, nunca um personagem. */
 export interface WhisperTarget {
   userId: string;
   name: string;
-  /** Nome de usuário, quando `name` é de personagem. */
-  hint?: string;
+  color?: string;
 }
 
 export type ChatCommand =
@@ -19,6 +18,8 @@ export interface ChatSuggestion {
   value: string;
   label: string;
   hint?: string;
+  /** Sugestão que é uma pessoa: desenha o avatar com a cor dela. */
+  person?: { userId: string; color?: string };
 }
 
 const COMMANDS: { command: string; hint: string }[] = [
@@ -121,27 +122,16 @@ export function chatSuggestions(
     .map((target) => ({
       value: `/shiu ${target.name} `,
       label: target.name,
-      hint: target.hint,
+      person: { userId: target.userId, color: target.color },
     }));
 }
 
-/** Usuários e personagens, sem a própria pessoa: ninguém sussurra para si. */
+/** Membros e a mestra, sem a própria pessoa: ninguém sussurra para si. */
 export function buildWhisperTargets(
-  people: { userId: string; name: string }[],
-  characters: { owner_id: string; name: string }[],
+  people: WhisperTarget[],
   selfId: string
 ): WhisperTarget[] {
-  const nameOf = new Map(people.map((person) => [person.userId, person.name]));
-  const targets: WhisperTarget[] = people.filter((p) => p.userId !== selfId);
-  for (const character of characters) {
-    const owner = nameOf.get(character.owner_id);
-    if (owner === undefined || character.owner_id === selfId) continue;
-    if (!character.name.trim()) continue;
-    targets.push({
-      userId: character.owner_id,
-      name: character.name,
-      hint: owner,
-    });
-  }
-  return targets.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  return people
+    .filter((person) => person.userId !== selfId)
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }

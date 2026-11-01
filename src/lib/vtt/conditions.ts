@@ -1,3 +1,5 @@
+import type { ObjectKind } from './types';
+
 export const MAX_VISIBLE_CONDITIONS = 6;
 export const MAX_CUSTOM_CONDITION_LENGTH = 24;
 
@@ -71,6 +73,17 @@ export const STANDARD_CONDITIONS: StandardCondition[] = [
     path: 'M7 18a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 9a4.5 4.5 0 0 1 0 9z M8 21h8',
   },
 ];
+
+/** Addon (a arma anexada) só tem o que faz sentido para um objeto; o resto é do token. */
+const ADDON_CONDITIONS = ['arma-travada'];
+
+export function conditionsForKind(kind: ObjectKind): StandardCondition[] {
+  if (kind === 'token') return STANDARD_CONDITIONS;
+  if (kind === 'addon') {
+    return STANDARD_CONDITIONS.filter((item) => ADDON_CONDITIONS.includes(item.id));
+  }
+  return [];
+}
 
 export const CUSTOM_EMOJI_CHOICES = [
   '🔥', '❄️', '⚡', '💀', '🩸', '🕸️', '👁️', '🌀',

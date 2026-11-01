@@ -2,16 +2,93 @@
 
 import {
   DEFAULT_WEATHER_INTENSITY,
+  LIGHTING_LABELS,
+  LIGHTING_PRESETS,
+  parseLighting,
   parseWeather,
   patchWeather,
   WEATHER_LABELS,
   WEATHER_TYPES,
+  type LightingState,
   type WeatherEntry,
   type WeatherType,
 } from '@/lib/vtt/fx/rules';
 import { useVttStore } from '@/lib/vtt/store';
+import type { VttScene } from '@/lib/vtt/types';
 
-/** Clima da cena aberta: salvo nela e visto por quem estiver nela. */
+function LightingSection({ scene }: { scene: VttScene }) {
+  const sync = useVttStore((s) => s.sync);
+  const lighting = parseLighting(scene.lighting);
+  const change = (patch: Partial<LightingState>) =>
+    sync?.setLighting(scene.id, { ...lighting, ...patch });
+
+  return (
+    <section className="space-y-2 border-t border-ink-border pt-3">
+      <h3 className="label">Iluminação</h3>
+      <div className="grid grid-cols-2 gap-1" role="radiogroup" aria-label="Iluminação">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!lighting.on}
+          className={
+            'min-h-11 rounded-md border px-2 py-1 text-xs desk:min-h-8 ' +
+            (!lighting.on ? 'border-crimson bg-crimson/25' : 'border-ink-border hover:border-crimson/60')
+          }
+          onClick={() => change({ on: false })}
+        >
+          Nenhuma
+        </button>
+        {LIGHTING_PRESETS.map((preset) => {
+          const active = lighting.on && lighting.preset === preset;
+          return (
+            <button
+              key={preset}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              className={
+                'min-h-11 rounded-md border px-2 py-1 text-xs desk:min-h-8 ' +
+                (active ? 'border-crimson bg-crimson/25' : 'border-ink-border hover:border-crimson/60')
+              }
+              onClick={() => change({ on: true, preset })}
+            >
+              {LIGHTING_LABELS[preset]}
+            </button>
+          );
+        })}
+      </div>
+      {lighting.preset === 'custom' && (
+        <label className="flex min-h-11 items-center gap-2 desk:min-h-0">
+          <input
+            type="color"
+            className="h-8 w-12 shrink-0 cursor-pointer rounded border border-ink-border bg-transparent"
+            value={lighting.color}
+            onChange={(e) => change({ color: e.target.value })}
+          />
+          <span className="text-xs text-ink-muted">Cor da iluminação</span>
+        </label>
+      )}
+      <label className="block">
+        <span className="flex justify-between text-xs text-ink-muted">
+          Intensidade
+          <span className="tabular-nums">{lighting.intensity}%</span>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          className="block min-h-11 w-full accent-crimson desk:min-h-0"
+          aria-label="Intensidade da iluminação"
+          value={lighting.intensity}
+          onChange={(e) => change({ intensity: Number(e.target.value) })}
+        />
+      </label>
+    </section>
+  );
+}
+
+/** Clima e iluminação da cena aberta: salvos nela e vistos por quem estiver nela. */
 export function WeatherPanel() {
   const sync = useVttStore((s) => s.sync);
   const scene = useVttStore((s) => s.scenes.find((item) => item.id === s.viewedSceneId));
@@ -64,6 +141,7 @@ export function WeatherPanel() {
           </div>
         );
       })}
+      <LightingSection scene={scene} />
     </div>
   );
 }

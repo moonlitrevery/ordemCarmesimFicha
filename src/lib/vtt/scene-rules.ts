@@ -4,6 +4,7 @@ import type {
   Drawing,
   ObjectKind,
   PendingPlacement,
+  SceneAsset,
   SceneObject,
   TableRole,
   VttMember,
@@ -245,6 +246,71 @@ export function detachPatch(
   };
 }
 
+// ---------- Copiar e colar ----------
+
+/** O objeto e o que está anexado nele, como eram na hora de copiar. */
+export interface ObjectCopy {
+  sceneId: string;
+  /** Onde o objeto estava no mundo: anexado, a cópia nasce solta nesse lugar. */
+  world: Transform;
+  rows: SceneObject[];
+  assets: Record<string, SceneAsset>;
+}
+
+export function copyFamily(
+  id: string,
+  objects: Record<string, SceneObject>,
+  sceneAssets: Record<string, SceneAsset>
+): ObjectCopy | null {
+  const root = objects[id];
+  if (!root) return null;
+  const rows = [root, ...descendantsOf(id, objects)];
+  const assets: Record<string, SceneAsset> = {};
+  for (const row of rows) {
+    if (sceneAssets[row.asset_id]) assets[row.asset_id] = sceneAssets[row.asset_id];
+  }
+  return { sceneId: root.scene_id, world: worldTransform(root, objects), rows, assets };
+}
+
+/**
+ * Linhas novas, pais antes dos filhos. Não leva vínculo com ficha nem NPC. Jogador
+ * não vê oculto, então só a mestra chega aqui com um; mesmo assim, nasce visível.
+ */
+export function buildPastedRows(
+  copy: ObjectCopy,
+  target: {
+    sceneId: string;
+    x: number;
+    y: number;
+    z: number;
+    userId: string;
+    isGm: boolean;
+    newId: () => string;
+  }
+): SceneObject[] {
+  const ids = new Map(copy.rows.map((row) => [row.id, target.newId()]));
+  return copy.rows.map((row, index) => {
+    const pasted: SceneObject = {
+      ...row,
+      id: ids.get(row.id) as string,
+      scene_id: target.sceneId,
+      parent_id: row.parent_id ? ids.get(row.parent_id) ?? null : null,
+      character_id: null,
+      npc_id: null,
+      hidden: target.isGm && row.hidden,
+      created_by: target.userId,
+    };
+    if (index > 0) return pasted;
+    return {
+      ...pasted,
+      ...rootPatch({ ...copy.world, x: target.x, y: target.y }),
+      parent_id: null,
+      local: null,
+      z: target.z,
+    };
+  });
+}
+
 // ---------- Ordem ----------
 
 /** A imagem do pai fica em z 0: um anexo pode ir para a frente ou para trás dela. */
@@ -354,6 +420,26 @@ export function userColor(userId: string): string {
     hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
   }
   return USER_COLORS[hash % USER_COLORS.length];
+}
+
+/** As cores geradas e mais quatro, para quem escolhe a própria. */
+export const PERSONAL_COLORS = [
+  ...USER_COLORS,
+  '#c4374a',
+  '#2fb98a',
+  '#8a94a6',
+  '#ffffff',
+];
+
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && HEX_COLOR.test(value);
+}
+
+/** A cor escolhida é livre: a inicial no avatar precisa continuar legível nela. */
+export function readableTextOn(color: string): string {
+  const channel = (start: number) => Number.parseInt(color.slice(start, start + 2), 16);
+  const luminance = 0.299 * channel(1) + 0.587 * channel(3) + 0.114 * channel(5);
+  return luminance > 140 ? '#0c0a0d' : '#f5e6c8';
 }
 
 /** Limite por chave (ping: 1 por segundo por pessoa, inclusive quem recebe). */

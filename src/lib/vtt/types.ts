@@ -32,12 +32,16 @@ export interface VttTable {
   session_open: boolean;
   default_scene_id: string | null;
   initiative: InitiativeState;
+  /** Ler com `parseSceneTransition`. */
+  scene_transition: string;
   created_at: string;
 }
 
 export interface VttMember {
   userId: string;
   name: string;
+  /** `null`: nunca escolheu, usa a gerada a partir do id. */
+  color: string | null;
   role: TableMemberRole;
   sceneId: string | null;
   banned: boolean;
@@ -68,6 +72,8 @@ export interface VttScene {
   meters_per_px: number | null;
   /** Efeitos de tela salvos. Ler com `parseWeather`. */
   weather: unknown;
+  /** Iluminação salva. Ler com `parseLighting`. */
+  lighting: unknown;
   created_at: string;
 }
 
@@ -145,6 +151,7 @@ export interface SceneAsset {
 export interface TableSnapshot {
   table: VttTable;
   ownerName: string;
+  ownerColor: string | null;
   members: VttMember[];
   me: VttMe;
 }

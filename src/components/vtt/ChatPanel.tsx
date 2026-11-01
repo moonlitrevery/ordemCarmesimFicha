@@ -23,9 +23,11 @@ import {
   type ChatMessage,
   type ChatRoll,
 } from '@/lib/vtt/chat-rules';
+import { userColor } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import { variableRange } from '@/lib/vtt/virtual-grid';
 import { DiceIcon } from './DiceIcon';
+import { PersonAvatar } from './hud';
 
 const TEXT_ROW_ESTIMATE = 60;
 const ROLL_ROW_ESTIMATE = 124;
@@ -350,7 +352,7 @@ function MessageList() {
 function ChatInput() {
   const chat = useVttStore((s) => s.chat);
   const members = useVttStore((s) => s.members);
-  const names = useVttStore((s) => s.chatCharacterNames);
+  const colors = useVttStore((s) => s.peopleColors);
   const ownerId = useVttStore((s) => s.table?.owner_id);
   const ownerName = useVttStore((s) => s.ownerName);
   const userId = useVttStore((s) => s.me?.userId);
@@ -366,8 +368,14 @@ function ChatInput() {
       .filter((member) => !member.banned)
       .map(({ userId: id, name }) => ({ userId: id, name }));
     if (ownerId) people.push({ userId: ownerId, name: ownerName });
-    return buildWhisperTargets(people, names, userId ?? '');
-  }, [members, names, ownerId, ownerName, userId]);
+    return buildWhisperTargets(
+      people.map((person) => ({
+        ...person,
+        color: colors[person.userId] ?? userColor(person.userId),
+      })),
+      userId ?? ''
+    );
+  }, [members, colors, ownerId, ownerName, userId]);
 
   const suggestions = useMemo(
     () => (dismissed ? [] : chatSuggestions(text, targets)),
@@ -419,7 +427,7 @@ function ChatInput() {
         >
           {suggestions.map((suggestion, index) => (
             <li
-              key={`${suggestion.label}-${suggestion.hint ?? ''}`}
+              key={suggestion.person?.userId ?? suggestion.label}
               role="option"
               aria-selected={index === active}
             >
@@ -431,6 +439,13 @@ function ChatInput() {
                 }
                 onClick={() => change(suggestion.value)}
               >
+                {suggestion.person && (
+                  <PersonAvatar
+                    name={suggestion.label}
+                    color={suggestion.person.color ?? userColor(suggestion.person.userId)}
+                    className="h-6 w-6"
+                  />
+                )}
                 <span className="shrink-0">{suggestion.label}</span>
                 {suggestion.hint && (
                   <span className="min-w-0 truncate text-xs text-ink-muted">

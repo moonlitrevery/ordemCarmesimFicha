@@ -7,7 +7,9 @@ import { EMPTY_INITIATIVE, parseInitiative } from './initiative';
 import type { InitiativeSync } from './initiative-sync';
 import type { Npc } from './npc-rules';
 import type { NpcSync } from './npc-sync';
+import { userColor } from './scene-rules';
 import type { SceneSync } from './scene-sync';
+import type { SceneTransitionView } from './scene-transition';
 import type {
   Drawing,
   InitiativeState,
@@ -33,6 +35,10 @@ export interface PendingAsset extends Asset {
 interface VttState {
   table: VttTable | null;
   ownerName: string;
+  /** Só as cores escolhidas, lidas do banco. Sem linha aqui, vale `userColor`. */
+  peopleColors: Record<string, string>;
+  /** Cobre o mapa enquanto a cena troca. É local de cada cliente. */
+  sceneTransition: SceneTransitionView | null;
   me: VttMe | null;
   members: VttMember[];
   online: VttPresence[];
@@ -65,7 +71,6 @@ interface VttState {
   chatUnread: number;
   /** Painel aberto na aba do chat: mensagem nova já está sendo vista. */
   chatVisible: boolean;
-  chatCharacterNames: { owner_id: string; name: string }[];
   /** Ficha escolhida na Ficha Rápida: é quem rola, inclusive no /r. */
   rollCharacter: { id: string; name: string } | null;
   rollHidden: boolean;
@@ -142,10 +147,20 @@ function initialLightMode(): boolean {
   );
 }
 
+function colorsOf(snapshot: TableSnapshot): Record<string, string> {
+  const colors: Record<string, string> = {};
+  for (const member of snapshot.members) {
+    if (member.color) colors[member.userId] = member.color;
+  }
+  if (snapshot.ownerColor) colors[snapshot.table.owner_id] = snapshot.ownerColor;
+  return colors;
+}
+
 function fromSnapshot(snapshot: TableSnapshot) {
   return {
     table: snapshot.table,
     ownerName: snapshot.ownerName,
+    peopleColors: colorsOf(snapshot),
     me: snapshot.me,
     members: snapshot.members,
     sessionOpen: snapshot.table.session_open,
@@ -155,6 +170,8 @@ function fromSnapshot(snapshot: TableSnapshot) {
 export const useVttStore = create<VttState>((set) => ({
   table: null,
   ownerName: '',
+  peopleColors: {},
+  sceneTransition: null,
   me: null,
   members: [],
   online: [],
@@ -179,7 +196,6 @@ export const useVttStore = create<VttState>((set) => ({
   chatError: null,
   chatUnread: 0,
   chatVisible: false,
-  chatCharacterNames: [],
   rollCharacter: null,
   rollHidden: false,
   scenes: [],
@@ -209,6 +225,7 @@ export const useVttStore = create<VttState>((set) => ({
   enterTable: (snapshot) =>
     set({
       ...fromSnapshot(snapshot),
+      sceneTransition: null,
       initiative: parseInitiative(snapshot.table.initiative),
       npcs: {},
       npcError: null,
@@ -223,7 +240,6 @@ export const useVttStore = create<VttState>((set) => ({
       chatError: null,
       chatUnread: 0,
       chatVisible: false,
-      chatCharacterNames: [],
       rollCharacter: null,
       rollHidden: false,
       scenes: [],
@@ -289,3 +305,8 @@ export const useVttStore = create<VttState>((set) => ({
     }),
   cancelCalibration: () => set({ calibrating: false, calibrationPixels: null }),
 }));
+
+/** A cor da pessoa fora do React (ping, régua). */
+export function personColor(userId: string): string {
+  return useVttStore.getState().peopleColors[userId] ?? userColor(userId);
+}

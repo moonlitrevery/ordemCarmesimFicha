@@ -217,6 +217,70 @@ export function patchWeather(
   ]);
 }
 
+// ---------- Iluminação ----------
+
+export const LIGHTING_PRESETS = ['noite', 'escuridao', 'crepusculo', 'penumbra', 'custom'] as const;
+
+export type LightingPreset = (typeof LIGHTING_PRESETS)[number];
+
+export const LIGHTING_LABELS: Record<LightingPreset, string> = {
+  noite: 'Noite',
+  escuridao: 'Escuridão',
+  crepusculo: 'Crepúsculo',
+  penumbra: 'Penumbra',
+  custom: 'Cor personalizada',
+};
+
+export const DEFAULT_LIGHTING_INTENSITY = 60;
+export const DEFAULT_LIGHTING_COLOR = '#3a2a5e';
+
+export interface LightingState {
+  on: boolean;
+  preset: LightingPreset;
+  /** Só em `custom`. */
+  color: string;
+  /** 0 a 100. Fica guardada com a iluminação desligada. */
+  intensity: number;
+}
+
+export const LIGHTING_OFF: LightingState = {
+  on: false,
+  preset: 'noite',
+  color: DEFAULT_LIGHTING_COLOR,
+  intensity: DEFAULT_LIGHTING_INTENSITY,
+};
+
+/** Só o Crepúsculo tem duas cores: de cima para baixo da tela. */
+const LIGHTING_COLORS: Record<Exclude<LightingPreset, 'custom'>, [string, string]> = {
+  noite: ['#1c2c66', '#1c2c66'],
+  escuridao: ['#000000', '#000000'],
+  crepusculo: ['#47307f', '#d97a3a'],
+  penumbra: ['#55555c', '#55555c'],
+};
+
+export function parseLighting(raw: unknown): LightingState {
+  const value = raw as Partial<LightingState> | null;
+  if (!value || typeof value !== 'object' || !LIGHTING_PRESETS.includes(value.preset as LightingPreset)) {
+    return LIGHTING_OFF;
+  }
+  return {
+    on: value.on === true,
+    preset: value.preset as LightingPreset,
+    color:
+      typeof value.color === 'string' && HEX_COLOR.test(value.color)
+        ? value.color
+        : DEFAULT_LIGHTING_COLOR,
+    intensity:
+      typeof value.intensity === 'number' && Number.isFinite(value.intensity)
+        ? Math.max(0, Math.min(100, Math.round(value.intensity)))
+        : DEFAULT_LIGHTING_INTENSITY,
+  };
+}
+
+export function lightingColors(state: LightingState): [string, string] {
+  return state.preset === 'custom' ? [state.color, state.color] : LIGHTING_COLORS[state.preset];
+}
+
 /** Sobe ou desce até o alvo sem passar dele: fade do clima e mudança de intensidade. */
 export function approach(current: number, target: number, step: number): number {
   return current < target

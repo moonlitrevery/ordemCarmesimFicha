@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import { readableTextOn } from '@/lib/vtt/scene-rules';
 
 /** Fundo do que flutua sobre o mapa. Blur só com mouse: no tablet pesa sobre o WebGL. */
 export const FLOATING =
@@ -87,6 +88,32 @@ export function IconButton({
         </span>
       )}
     </button>
+  );
+}
+
+/** Círculo com a inicial na cor da pessoa. `className` escolhe o tamanho. */
+export function PersonAvatar({
+  name,
+  color,
+  className,
+  children,
+}: {
+  name: string;
+  color: string;
+  className: string;
+  children?: ReactNode;
+}) {
+  return (
+    <span
+      className={
+        'relative flex shrink-0 items-center justify-center rounded-full border-2 border-ink text-xs font-semibold uppercase ' +
+        className
+      }
+      style={{ backgroundColor: color, color: readableTextOn(color) }}
+    >
+      {name.slice(0, 1)}
+      {children}
+    </span>
   );
 }
 

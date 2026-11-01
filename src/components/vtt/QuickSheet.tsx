@@ -9,8 +9,12 @@ import {
 } from '@/lib/calculations';
 import { DEFAULT_SKILLS } from '@/lib/constants';
 import {
+  backpackToSave,
+  mergeRemoteBackpack,
   mergeRemoteResources,
+  normalizeBackpack,
   resourcesToSave,
+  type BackpackValues,
   type ResourceKey,
   type ResourceValues,
 } from '@/lib/resource-sync';
@@ -31,9 +35,11 @@ import {
   DEFAULT_RESOURCE_MODS,
   type Attributes,
   type CharacterElementRow,
+  type InventoryItem,
   type ResourceMods,
   type Skill,
 } from '@/types/database';
+import { QuickBackpack } from './QuickBackpack';
 
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -52,11 +58,13 @@ interface QuickCharacter extends ResourceValues {
   attributes: Attributes;
   skills: Skill[];
   resource_mods: ResourceMods;
+  inventory: InventoryItem[] | null;
+  money: number | string | null;
   character_elements: CharacterElementRow[];
 }
 
 const CHARACTER_COLUMNS =
-  'id, name, attributes, skills, resource_mods, hp_current, mana_current, sanity_current, character_elements(level)';
+  'id, name, attributes, skills, resource_mods, hp_current, mana_current, sanity_current, inventory, money, character_elements(level)';
 
 function normalizeCharacter(row: QuickCharacter): QuickCharacter {
   return {
@@ -186,6 +194,7 @@ export function QuickSheet() {
 
   const [characters, setCharacters] = useState<QuickCharacter[] | null>(null);
   const [resources, setResources] = useState<ResourceValues | null>(null);
+  const [backpack, setBackpack] = useState<BackpackValues | null>(null);
   const [lastRoll, setLastRoll] = useState<ChatRoll | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,7 +206,10 @@ export function QuickSheet() {
   const lastSavedRef = useRef<ResourceValues | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const activeIdRef = useRef<string | null>(null);
+  const backpackRef = useRef<BackpackValues | null>(null);
+  const lastSavedBackpackRef = useRef<BackpackValues | null>(null);
   resourcesRef.current = resources;
+  backpackRef.current = backpack;
 
   useEffect(() => {
     let cancelled = false;
@@ -235,22 +247,26 @@ export function QuickSheet() {
     timerRef.current = undefined;
     const local = resourcesRef.current;
     const saved = lastSavedRef.current;
-    if (!local || !saved) return;
+    const localBackpack = backpackRef.current;
+    const savedBackpack = lastSavedBackpackRef.current;
+    if (!local || !saved || !localBackpack || !savedBackpack) return;
     const changed = resourcesToSave(local, saved);
-    if (Object.keys(changed).length === 0) return;
+    const changedBackpack = backpackToSave(localBackpack, savedBackpack);
+    if (Object.keys(changed).length + Object.keys(changedBackpack).length === 0) return;
     // Só estas colunas: o resto da ficha pode estar aberto em outra aba.
     void createClient()
       .from('characters')
-      .update(changed)
+      .update({ ...changed, ...changedBackpack })
       .eq('id', id)
       .then(({ error: err }) => {
         if (err) {
-          useVttStore.getState().showToast('Não foi possível salvar o recurso.');
+          useVttStore.getState().showToast('Não foi possível salvar a ficha.');
           return;
         }
         // Resposta de uma ficha que já saiu da tela não vale para a atual.
-        if (activeIdRef.current === id && lastSavedRef.current) {
+        if (activeIdRef.current === id && lastSavedRef.current && lastSavedBackpackRef.current) {
           lastSavedRef.current = { ...lastSavedRef.current, ...changed };
+          lastSavedBackpackRef.current = { ...lastSavedBackpackRef.current, ...changedBackpack };
         }
       });
   }, []);
@@ -265,17 +281,30 @@ export function QuickSheet() {
     setResources(initial);
     resourcesRef.current = initial;
     lastSavedRef.current = initial;
+    const initialBackpack = normalizeBackpack(row);
+    setBackpack(initialBackpack);
+    backpackRef.current = initialBackpack;
+    lastSavedBackpackRef.current = initialBackpack;
     activeIdRef.current = selectedId;
 
-    const applyRemote = (remote: ResourceValues) => {
+    const applyRemote = (remote: ResourceValues, remotePack: BackpackValues) => {
       const local = resourcesRef.current;
       const saved = lastSavedRef.current;
-      if (!local || !saved || activeIdRef.current !== selectedId) return;
+      const localPack = backpackRef.current;
+      const savedPack = lastSavedBackpackRef.current;
+      if (!local || !saved || !localPack || !savedPack) return;
+      if (activeIdRef.current !== selectedId) return;
       const merged = mergeRemoteResources(local, saved, remote);
       lastSavedRef.current = merged.lastSaved;
       if (merged.changed) {
         resourcesRef.current = merged.local;
         setResources(merged.local);
+      }
+      const mergedPack = mergeRemoteBackpack(localPack, savedPack, remotePack);
+      lastSavedBackpackRef.current = mergedPack.lastSaved;
+      if (mergedPack.changed) {
+        backpackRef.current = mergedPack.local;
+        setBackpack(mergedPack.local);
       }
     };
 
@@ -291,7 +320,7 @@ export function QuickSheet() {
           filter: `id=eq.${selectedId}`,
         },
         ({ new: next }) => {
-          applyRemote(resourcesOf(next));
+          applyRemote(resourcesOf(next), normalizeBackpack(next));
           // A ficha pode ter mudado atributos e perícias em outra aba.
           setCharacters((list) =>
             (list ?? []).map((c) =>
@@ -313,11 +342,15 @@ export function QuickSheet() {
         if (status !== 'SUBSCRIBED') return;
         void supabase
           .from('characters')
-          .select('hp_current, mana_current, sanity_current')
+          .select('hp_current, mana_current, sanity_current, inventory, money')
           .eq('id', selectedId)
           .maybeSingle()
           .then(({ data }) => {
-            if (data) applyRemote(resourcesOf(data as ResourceValues));
+            if (data) {
+              const fresh = data as ResourceValues &
+                Pick<QuickCharacter, 'inventory' | 'money'>;
+              applyRemote(resourcesOf(fresh), normalizeBackpack(fresh));
+            }
           });
       });
 
@@ -355,6 +388,15 @@ export function QuickSheet() {
     const next = { ...resourcesRef.current, [key]: value };
     resourcesRef.current = next;
     setResources(next);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => flush(selectedId), SAVE_DEBOUNCE_MS);
+  }
+
+  function changeBackpack(patch: Partial<BackpackValues>) {
+    if (!backpackRef.current || !selectedId) return;
+    const next = { ...backpackRef.current, ...patch };
+    backpackRef.current = next;
+    setBackpack(next);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => flush(selectedId), SAVE_DEBOUNCE_MS);
   }
@@ -403,7 +445,7 @@ export function QuickSheet() {
           </p>
         )}
 
-        {character && resources && maxes && (
+        {character && resources && backpack && maxes && (
           <>
             <div className="space-y-1.5">
               {RESOURCES.map(({ key, label, maxKey }) => (
@@ -479,6 +521,12 @@ export function QuickSheet() {
                 ))}
               </ul>
             </details>
+
+            <QuickBackpack
+              backpack={backpack}
+              attributes={character.attributes}
+              onChange={changeBackpack}
+            />
           </>
         )}
       </div>

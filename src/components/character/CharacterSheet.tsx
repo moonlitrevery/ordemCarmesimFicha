@@ -20,8 +20,12 @@ import {
   VALID_IMAGE_URL,
 } from '@/lib/constants';
 import {
+  backpackToSave,
+  mergeRemoteBackpack,
   mergeRemoteResources,
+  normalizeBackpack,
   resourcesToSave,
+  type BackpackValues,
   type ResourceValues,
 } from '@/lib/resource-sync';
 import { FloatingDiceButton } from '@/components/dice/FloatingDiceButton';
@@ -189,6 +193,9 @@ export function CharacterSheet({
     sanity_current: character.sanity_current ?? 0,
   });
 
+  // Mesma coisa para a mochila, que a Ficha Rápida também edita.
+  const lastSavedBackpackRef = useRef<BackpackValues>(normalizeBackpack(character));
+
   const persistCharacter = useCallback(
     async (next: SheetState, nextElements: CharacterElementRow[]) => {
       const supabase = createClient();
@@ -205,6 +212,10 @@ export function CharacterSheet({
       const changedResources = resourcesToSave(
         localResources(next, nextElements),
         lastSavedResourcesRef.current
+      );
+      const changedBackpack = backpackToSave(
+        { inventory: next.inventory, money: next.money },
+        lastSavedBackpackRef.current
       );
       const payload = {
         name: next.name || 'Sem nome',
@@ -227,8 +238,7 @@ export function CharacterSheet({
         skills: next.skills,
         spells: next.spells,
         weapons: next.weapons,
-        inventory: next.inventory,
-        money: next.money,
+        ...changedBackpack,
         armor: next.armor,
         curses: next.curses,
         historical_feats: next.historical_feats,
@@ -250,6 +260,10 @@ export function CharacterSheet({
       lastSavedResourcesRef.current = {
         ...lastSavedResourcesRef.current,
         ...changedResources,
+      };
+      lastSavedBackpackRef.current = {
+        ...lastSavedBackpackRef.current,
+        ...changedBackpack,
       };
 
       // sync elements: upsert all, delete removed
@@ -303,7 +317,7 @@ export function CharacterSheet({
     const supabase = createClient();
     const channel = supabase
       .channel(`character:${character.id}:${crypto.randomUUID()}`)
-      .on<ResourceValues>(
+      .on<ResourceValues & Pick<Character, 'inventory' | 'money'>>(
         'postgres_changes',
         {
           event: 'UPDATE',
@@ -321,10 +335,19 @@ export function CharacterSheet({
               sanity_current: row.sanity_current,
             }
           );
+          const mergedBackpack = mergeRemoteBackpack(
+            {
+              inventory: sheetRef.current.inventory,
+              money: sheetRef.current.money,
+            },
+            lastSavedBackpackRef.current,
+            normalizeBackpack(row)
+          );
           lastSavedResourcesRef.current = merged.lastSaved;
-          if (!merged.changed) return;
+          lastSavedBackpackRef.current = mergedBackpack.lastSaved;
+          if (!merged.changed && !mergedBackpack.changed) return;
           remoteMergeRef.current = true;
-          setSheet((s) => ({ ...s, ...merged.local }));
+          setSheet((s) => ({ ...s, ...merged.local, ...mergedBackpack.local }));
         }
       )
       .subscribe();

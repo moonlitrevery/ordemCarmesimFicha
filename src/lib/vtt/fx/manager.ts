@@ -6,11 +6,13 @@ import { FULL_TURN, type FxColor, type SpriteDef } from './presets';
 import {
   isAnimatedPreset,
   isOnScreen,
+  parseLighting,
   parseWeather,
   presetReach,
   resolveEffects,
   type ResolvedEffect,
 } from './rules';
+import { LightingLayer } from './lighting';
 import { WeatherLayer } from './weather';
 
 // Abaixo e acima de qualquer anexo; o selo de oculto (1_000_000) continua por cima.
@@ -78,6 +80,8 @@ export class FxManager {
   private atlas: FxAtlas;
   private system: ParticleSystem;
   private weather: WeatherLayer;
+  private lighting = new LightingLayer();
+  private lightingKey = '';
   private attachments = new Map<string, Attachment>();
   private owners = new Map<string, FxOwner>();
   private weatherKey = '[]';
@@ -97,7 +101,8 @@ export class FxManager {
     this.atlas = new FxAtlas(host.renderer);
     this.system = new ParticleSystem(this.atlas);
     this.weather = new WeatherLayer(this.system);
-    stage.addChild(this.weather.container);
+    // Nesta ordem: o mundo já está no stage, e a chuva fica sobre a escuridão.
+    stage.addChild(this.lighting.container, this.weather.container);
     host.renderer.canvas.addEventListener?.('webglcontextrestored', this.onContextRestored);
   }
 
@@ -258,8 +263,18 @@ export class FxManager {
     this.wake();
   }
 
+  syncLighting(raw: unknown) {
+    const state = parseLighting(raw);
+    const key = JSON.stringify(state);
+    if (key === this.lightingKey) return;
+    this.lightingKey = key;
+    this.lighting.set(state);
+    this.wake();
+  }
+
   resize() {
     this.weather.resize(this.host.viewWidth(), this.host.viewHeight());
+    this.lighting.resize(this.host.viewWidth(), this.host.viewHeight());
   }
 
   applyLightMode() {
@@ -293,7 +308,7 @@ export class FxManager {
   }
 
   private hasWork(): boolean {
-    if (this.weather.active) return true;
+    if (this.weather.active || this.lighting.animating) return true;
     const lightMode = this.host.lightMode();
     for (const [id, attachment] of Array.from(this.attachments.entries())) {
       const owner = this.owners.get(id);
@@ -324,6 +339,7 @@ export class FxManager {
       if (owner) this.tickAttachment(attachment, owner, dt, lightMode, width, height);
     });
     this.weather.update(dt, width, height, lightMode);
+    this.lighting.update(dt, width, height);
 
     if (!this.hasWork()) {
       this.stopAnimation?.();
@@ -378,6 +394,7 @@ export class FxManager {
     this.host.renderer.canvas.removeEventListener?.('webglcontextrestored', this.onContextRestored);
     this.attachments.forEach((attachment, id) => this.detach(id, attachment));
     this.weather.destroy();
+    this.lighting.destroy();
     this.atlas.destroy();
   }
 }
