@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
 
 export function Nav() {
@@ -17,45 +16,58 @@ export function Nav() {
     pathname.startsWith('/mesa/');
 
   useEffect(() => {
-    const supabase = createClient();
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
 
-    async function load(userId: string | undefined) {
-      if (!userId) {
-        setEmail(null);
-        setIsMestre(false);
-        return;
-      }
-      const { data: userData } = await supabase.auth.getUser();
-      setEmail(userData.user?.email ?? null);
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .maybeSingle();
-      setIsMestre(profile?.role === 'mestre');
-    }
-
-    supabase.auth.getUser().then(({ data }) => {
-      void load(data.user?.id);
+    // Supabase fora do bundle inicial: Regras e Lore são só texto e não esperam por ele.
+    void Promise.all([
+      import('@/lib/supabase/client'),
+      import('@/lib/profile-cache'),
+    ]).then(([{ createClient }, { getCachedProfile }]) => {
+      if (!active) return;
+      // Já dispara uma vez ao assinar (INITIAL_SESSION), com a sessão atual.
+      const { data: sub } = createClient().auth.onAuthStateChange(
+        (_e, session) => {
+          const user = session?.user;
+          setEmail(user?.email ?? null);
+          if (!user) {
+            setIsMestre(false);
+            return;
+          }
+          getCachedProfile(user.id).then(
+            (profile) => {
+              if (active) setIsMestre(profile?.role === 'mestre');
+            },
+            () => {
+              if (active) setIsMestre(false);
+            }
+          );
+        }
+      );
+      unsubscribe = () => sub.subscription.unsubscribe();
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      void load(session?.user?.id);
-    });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
   }, []);
 
   if (hideOnAuth) return null;
 
+  // Rota dinâmica sem loading.tsx: o prefetch custa uma ida ao servidor e não adianta nada.
   const links = [
-    { href: '/fichas', label: 'Fichas' },
-    { href: '/mesa', label: 'Mesa' },
-    ...(isMestre ? [{ href: '/rolagens', label: 'Rolagens' }] : []),
+    { href: '/fichas', label: 'Fichas', prefetch: false },
+    { href: '/mesa', label: 'Mesa', prefetch: false },
+    ...(isMestre
+      ? [{ href: '/rolagens', label: 'Rolagens', prefetch: false }]
+      : []),
     { href: '/lore', label: 'Lore' },
     { href: '/regras', label: 'Regras' },
   ];
 
   async function signOut() {
+    const { createClient } = await import('@/lib/supabase/client');
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push('/login');
@@ -67,6 +79,7 @@ export function Nav() {
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:px-6">
         <Link
           href="/fichas"
+          prefetch={false}
           className="font-display text-2xl tracking-wide text-parchment"
         >
           Ordem <span className="text-crimson-soft">Carmesim</span>
@@ -78,6 +91,7 @@ export function Nav() {
               <Link
                 key={l.href}
                 href={l.href}
+                prefetch={l.prefetch}
                 className={
                   'rounded-md px-3 py-1.5 text-base transition ' +
                   (active

@@ -4,16 +4,18 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { createPortal } from 'react-dom';
+import dynamic from 'next/dynamic';
 import { formatModifier } from '@/lib/calculations';
-import { logDiceRoll } from '@/lib/dice-log';
+
+// Framer e Supabase só carregam em páginas que rolam dados, não no layout de todas.
+const loadToastStack = () =>
+  import('@/components/dice/DiceToastStack').then((m) => m.DiceToastStack);
+const DiceToastStack = dynamic(loadToastStack, { ssr: false });
 
 export type DiceToastItem = {
   id: string;
@@ -52,9 +54,8 @@ export function useDiceToast() {
 
 export function DiceToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<DiceToastItem[]>([]);
-  // Só depois de montar: no servidor não há `document`, e o HTML precisa ser igual.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // Continua montada depois do último toast: a animação de saída depende disso.
+  const [hasRolled, setHasRolled] = useState(false);
   const rollContextRef = useRef<RollContext>(null);
 
   const dismiss = useCallback((id: string) => {
@@ -63,6 +64,8 @@ export function DiceToastProvider({ children }: { children: ReactNode }) {
 
   const setRollContext = useCallback((ctx: RollContext) => {
     rollContextRef.current = ctx;
+    // Quem define contexto vai rolar: baixa antes, para o primeiro toast não atrasar.
+    if (ctx) void loadToastStack();
   }, []);
 
   const persist = useCallback(
@@ -76,16 +79,18 @@ export function DiceToastProvider({ children }: { children: ReactNode }) {
     }) => {
       const ctx = rollContextRef.current;
       if (!ctx) return;
-      void logDiceRoll({
-        characterId: ctx.characterId,
-        characterName: ctx.characterName || 'Personagem',
-        label: payload.label,
-        notation: payload.notation,
-        dieResult: payload.dieResult ?? null,
-        bonus: payload.bonus ?? 0,
-        total: payload.total,
-        breakdown: payload.breakdown,
-      });
+      void import('@/lib/dice-log').then(({ logDiceRoll }) =>
+        logDiceRoll({
+          characterId: ctx.characterId,
+          characterName: ctx.characterName || 'Personagem',
+          label: payload.label,
+          notation: payload.notation,
+          dieResult: payload.dieResult ?? null,
+          bonus: payload.bonus ?? 0,
+          total: payload.total,
+          breakdown: payload.breakdown,
+        })
+      );
     },
     []
   );
@@ -105,6 +110,7 @@ export function DiceToastProvider({ children }: { children: ReactNode }) {
         bonus,
         breakdown,
       };
+      setHasRolled(true);
       setToasts((prev) => [...prev, item].slice(-6));
       window.setTimeout(() => dismiss(id), 10000);
       persist({
@@ -141,35 +147,7 @@ export function DiceToastProvider({ children }: { children: ReactNode }) {
   return (
     <DiceToastContext.Provider value={value}>
       {children}
-      {mounted &&
-        createPortal(
-          <div className="pointer-events-none fixed bottom-20 right-4 z-[9999] flex w-[min(100vw-1.5rem,16rem)] flex-col-reverse gap-2 md:bottom-24 md:right-6">
-            <AnimatePresence initial={false}>
-              {toasts.map((t) => (
-                <motion.button
-                  key={t.id}
-                  type="button"
-                  initial={{ opacity: 0, y: 16, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: 24, scale: 0.95 }}
-                  transition={{ duration: 0.2 }}
-                  onClick={() => dismiss(t.id)}
-                  className="pointer-events-auto w-full rounded-lg border border-crimson/40 bg-ink-panel/95 px-3 py-2.5 text-left shadow-panel backdrop-blur-md"
-                  title="Clique para fechar"
-                >
-                  <p className="label mb-0.5 truncate text-crimson-soft">{t.label}</p>
-                  <p className="font-display text-3xl leading-none text-parchment">
-                    {t.total}
-                  </p>
-                  <p className="mt-1 text-xs text-ink-muted">
-                    1d20 {formatModifier(t.bonus)} · {t.breakdown}
-                  </p>
-                </motion.button>
-              ))}
-            </AnimatePresence>
-          </div>,
-          document.body
-        )}
+      {hasRolled && <DiceToastStack toasts={toasts} onDismiss={dismiss} />}
     </DiceToastContext.Provider>
   );
 }

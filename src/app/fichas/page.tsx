@@ -8,6 +8,11 @@ import {
 } from '@/components/character/CharacterBrowser';
 import type { Character, CharacterElementRow, Profile } from '@/types/database';
 
+type CharacterListRow = Pick<
+  Character,
+  'id' | 'owner_id' | 'name' | 'occupation' | 'arcana' | 'image_url'
+>;
+
 export default async function FichasPage() {
   const supabase = createClient();
   const {
@@ -17,28 +22,31 @@ export default async function FichasPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('*')
+    .select('role')
     .eq('id', user.id)
     .single();
 
   const isMestre = profile?.role === 'mestre';
 
-  let query = supabase.from('characters').select('*').order('updated_at', {
-    ascending: false,
-  });
+  let query = supabase
+    .from('characters')
+    .select('id, owner_id, name, occupation, arcana, image_url')
+    .order('updated_at', {
+      ascending: false,
+    });
 
   if (!isMestre) {
     query = query.eq('owner_id', user.id);
   }
 
   const { data: characters } = await query;
-  const list = (characters ?? []) as Character[];
+  const list = (characters ?? []) as CharacterListRow[];
 
   const ids = list.map((c) => c.id);
   const { data: elements } = ids.length
     ? await supabase
         .from('character_elements')
-        .select('*')
+        .select('element, level, fragments_current, character_id')
         .in('character_id', ids)
     : { data: [] as CharacterElementRow[] };
 
@@ -63,7 +71,7 @@ export default async function FichasPage() {
 
   const userId = user.id;
 
-  function toCard(c: Character) {
+  function toCard(c: CharacterListRow) {
     return {
       id: c.id,
       name: c.name,
@@ -77,7 +85,7 @@ export default async function FichasPage() {
 
   const groups: CharacterGroup[] = [];
   if (isMestre) {
-    const byOwner = new Map<string, Character[]>();
+    const byOwner = new Map<string, CharacterListRow[]>();
     for (const c of list) {
       const arr = byOwner.get(c.owner_id) ?? [];
       arr.push(c);

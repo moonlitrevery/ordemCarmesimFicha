@@ -1,6 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { m } from 'framer-motion';
+import { MotionProvider } from '@/components/ui/MotionProvider';
 import { ELEMENT_LABELS } from '@/lib/constants';
 import { getMosaicPieceColors, getTotalLevel } from '@/lib/calculations';
 import type { CharacterElementRow } from '@/types/database';
@@ -73,33 +74,35 @@ export function MosaicFrame({
               <rect x="24" y="30" width="152" height="200" fill="#141014" />
 
               <g clipPath="url(#mosaicClip)">
-                {PIECES.map((d, i) => {
-                  const fill = fills[i];
-                  const filled = i < total && !!fill;
-                  return (
-                    <g key={i} filter={filled ? 'url(#glassRipple)' : undefined}>
-                      <motion.path
-                        d={d}
-                        fill={filled ? fill!.color : 'url(#emptyGlass)'}
-                        stroke="#0a0608"
-                        strokeWidth="2.4"
-                        strokeLinejoin="round"
-                        initial={false}
-                        animate={{ opacity: filled ? 1 : 0.55 }}
-                        transition={{ duration: 0.5 }}
-                      >
-                        <title>
-                          {filled
-                            ? 'Nível ' + (i + 1) + ' — ' + ELEMENT_LABELS[fill!.element]
-                            : 'Nível ' + (i + 1) + ' — vazio'}
-                        </title>
-                      </motion.path>
-                      {filled && (
-                        <path d={d} fill="url(#glassGloss)" stroke="none" style={{ pointerEvents: 'none' }} opacity={0.7} />
-                      )}
-                    </g>
-                  );
-                })}
+                <MotionProvider>
+                  {PIECES.map((d, i) => {
+                    const fill = fills[i];
+                    const filled = i < total && !!fill;
+                    return (
+                      <g key={i} filter={filled ? 'url(#glassRipple)' : undefined}>
+                        <m.path
+                          d={d}
+                          fill={filled ? fill!.color : 'url(#emptyGlass)'}
+                          stroke="#0a0608"
+                          strokeWidth="2.4"
+                          strokeLinejoin="round"
+                          initial={false}
+                          animate={{ opacity: filled ? 1 : 0.55 }}
+                          transition={{ duration: 0.5 }}
+                        >
+                          <title>
+                            {filled
+                              ? 'Nível ' + (i + 1) + ' — ' + ELEMENT_LABELS[fill!.element]
+                              : 'Nível ' + (i + 1) + ' — vazio'}
+                          </title>
+                        </m.path>
+                        {filled && (
+                          <path d={d} fill="url(#glassGloss)" stroke="none" style={{ pointerEvents: 'none' }} opacity={0.7} />
+                        )}
+                      </g>
+                    );
+                  })}
+                </MotionProvider>
               </g>
 
               <rect x="24" y="30" width="152" height="200" fill="none" stroke="#8B1E2D" strokeWidth="1" opacity="0.4" />

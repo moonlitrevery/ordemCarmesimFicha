@@ -106,11 +106,16 @@ export function CharacterBrowser({
                 key={card.id}
                 className="panel group relative overflow-hidden transition hover:border-crimson/50"
               >
-                <Link href={`/fichas/${card.id}`} className="block">
+                <Link
+                  href={`/fichas/${card.id}`}
+                  prefetch={false}
+                  className="block"
+                >
                   <CharacterImage
                     url={card.imageUrl}
                     name={card.name}
                     className="h-40 w-full"
+                    lazy
                   />
                   <div className="space-y-1 p-4 pr-20">
                     <h3 className="font-display text-xl text-parchment group-hover:text-crimson-soft">

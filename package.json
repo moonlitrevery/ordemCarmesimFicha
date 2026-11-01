@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.14",
+    "@next/bundle-analyzer": "^14.2.35",
     "@tailwindcss/typography": "^0.5.20",
     "@types/howler": "^2.2.13",
     "@types/mdx": "^2.0.14",

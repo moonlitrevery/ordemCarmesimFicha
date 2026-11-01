@@ -60,4 +60,18 @@ body {
   .label {
     @apply text-xs font-medium uppercase tracking-[0.12em] text-ink-muted;
   }
+
+  /* Só transform: roda no compositor, sem layout a cada quadro no tablet. */
+  .fragment-shimmer {
+    animation: fragment-shimmer 2.4s linear infinite;
+  }
+
+  @keyframes fragment-shimmer {
+    from {
+      transform: translateX(-30%);
+    }
+    to {
+      transform: translateX(120%);
+    }
+  }
 }

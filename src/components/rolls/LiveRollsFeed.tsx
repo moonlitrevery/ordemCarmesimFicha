@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { m, AnimatePresence } from 'framer-motion';
+import { MotionProvider } from '@/components/ui/MotionProvider';
 import { createClient } from '@/lib/supabase/client';
 
 export type DiceRollRow = {
@@ -124,32 +125,34 @@ export function LiveRollsFeed() {
       )}
 
       <div className="space-y-2">
-        <AnimatePresence initial={false}>
-          {rolls.map((r) => (
-            <motion.article
-              key={r.id}
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-display text-lg text-parchment">
-                  {r.character_name}
-                  <span className="text-ink-muted"> · </span>
-                  <span className="text-crimson-soft">{r.label}</span>
+        <MotionProvider>
+          <AnimatePresence initial={false}>
+            {rolls.map((r) => (
+              <m.article
+                key={r.id}
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-lg text-parchment">
+                    {r.character_name}
+                    <span className="text-ink-muted"> · </span>
+                    <span className="text-crimson-soft">{r.label}</span>
+                  </p>
+                  <p className="text-xs text-ink-muted">
+                    {r.roller_name || 'Jogador'} · {formatTime(r.created_at)} ·{' '}
+                    {r.notation}
+                    {r.breakdown ? ` · ${r.breakdown}` : ''}
+                  </p>
+                </div>
+                <p className="font-display text-4xl leading-none text-crimson-soft">
+                  {r.total}
                 </p>
-                <p className="text-xs text-ink-muted">
-                  {r.roller_name || 'Jogador'} · {formatTime(r.created_at)} ·{' '}
-                  {r.notation}
-                  {r.breakdown ? ` · ${r.breakdown}` : ''}
-                </p>
-              </div>
-              <p className="font-display text-4xl leading-none text-crimson-soft">
-                {r.total}
-              </p>
-            </motion.article>
-          ))}
-        </AnimatePresence>
+              </m.article>
+            ))}
+          </AnimatePresence>
+        </MotionProvider>
       </div>
     </div>
   );

@@ -16,7 +16,7 @@ export function TableCard({
 }) {
   return (
     <article className="panel flex flex-col gap-3 p-4 transition hover:border-crimson/50">
-      <Link href={`/mesa/${id}`} className="block min-w-0">
+      <Link href={`/mesa/${id}`} prefetch={false} className="block min-w-0">
         <h3 className="truncate font-display text-2xl text-parchment">{name}</h3>
         <p className="truncate text-sm text-ink-muted">Mestre: {ownerName}</p>
         <p className="mt-2 flex items-center gap-2 text-xs text-ink-muted">

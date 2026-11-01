@@ -1,3 +1,4 @@
+import { getCachedProfile } from '@/lib/profile-cache';
 import { createClient } from '@/lib/supabase/client';
 
 export type DiceRollLogInput = {
@@ -14,16 +15,14 @@ export type DiceRollLogInput = {
 export async function logDiceRoll(input: DiceRollLogInput): Promise<void> {
   try {
     const supabase = createClient();
+    // Sessão local: quem valida o usuário no insert é o RLS.
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) return;
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('display_name')
-      .eq('id', user.id)
-      .maybeSingle();
+    const profile = await getCachedProfile(user.id).catch(() => null);
 
     await supabase.from('dice_rolls').insert({
       character_id: input.characterId || null,

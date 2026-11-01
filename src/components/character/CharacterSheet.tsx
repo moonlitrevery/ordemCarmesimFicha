@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import {
   computeDerivedMaxes,
@@ -43,7 +44,6 @@ import { ArmorSection } from '@/components/character/ArmorSection';
 import { useDiceToast } from '@/components/dice/DiceToast';
 import { ElementsSection } from '@/components/character/ElementsSection';
 import { LevelProgression } from '@/components/character/LevelProgression';
-import { MosaicFrame } from '@/components/mosaic/MosaicFrame';
 import { CharacterImage } from '@/components/ui/CharacterImage';
 import { SaveIndicator, type SaveStatus } from '@/components/ui/SaveIndicator';
 import { SkillsList } from '@/components/character/SkillsList';
@@ -102,6 +102,30 @@ type SheetState = {
   attribute_points_spent: number;
   skill_points_spent: SkillUpgradeSpent;
 };
+
+type PatchSheet = (
+  partial: Partial<SheetState> | ((s: SheetState) => Partial<SheetState>)
+) => void;
+
+// Digitar num campo só renderiza a seção daquele campo.
+const MemoLevelProgression = memo(LevelProgression);
+const MemoSkillsList = memo(SkillsList);
+const MemoElementsSection = memo(ElementsSection);
+const MemoSpellsSection = memo(SpellsSection);
+const MemoWeaponsSection = memo(WeaponsSection);
+const MemoArmorSection = memo(ArmorSection);
+const MemoInventorySection = memo(InventorySection);
+const MemoCursesSection = memo(CursesSection);
+const MemoHistoricalFeatsSection = memo(HistoricalFeatsSection);
+const MemoNotesSection = memo(NotesSection);
+const MemoBackstorySection = memo(BackstorySection);
+const MemoFloatingDiceButton = memo(FloatingDiceButton);
+// Só existe na aba Mosaico.
+const MemoMosaicFrame = memo(
+  dynamic(() =>
+    import('@/components/mosaic/MosaicFrame').then((m) => m.MosaicFrame)
+  )
+);
 
 /** HP acima do máximo não é salvo: conta como o máximo, igual à tela. */
 function localResources(
@@ -196,6 +220,9 @@ export function CharacterSheet({
   // Mesma coisa para a mochila, que a Ficha Rápida também edita.
   const lastSavedBackpackRef = useRef<BackpackValues>(normalizeBackpack(character));
 
+  // Elementos já no banco: sem mudança aqui, o save nem toca em character_elements.
+  const lastSavedElementsRef = useRef(initialElements);
+
   const persistCharacter = useCallback(
     async (next: SheetState, nextElements: CharacterElementRow[]) => {
       const supabase = createClient();
@@ -266,6 +293,8 @@ export function CharacterSheet({
         ...changedBackpack,
       };
 
+      if (nextElements === lastSavedElementsRef.current) return null;
+
       // sync elements: upsert all, delete removed
       for (const el of nextElements) {
         const { error: elErr } = await supabase.from('character_elements').upsert(
@@ -282,9 +311,6 @@ export function CharacterSheet({
       }
 
       const keep = new Set(nextElements.map((e) => e.element));
-      const toRemove = initialElements
-        .concat(nextElements)
-        .filter((e) => e.id && !keep.has(e.element));
       // refetch ids after upsert — delete orphans by element not in keep
       const { data: existing } = await supabase
         .from('character_elements')
@@ -298,9 +324,10 @@ export function CharacterSheet({
           await supabase.from('character_elements').delete().in('id', orphanIds);
         }
       }
-      void toRemove;
+      lastSavedElementsRef.current = nextElements;
+      return existing;
     },
-    [character.id, initialElements]
+    [character.id]
   );
 
   const sheetRef = useRef(sheet);
@@ -368,20 +395,23 @@ export function CharacterSheet({
       const snapSheet = sheetRef.current;
       const snapElements = elementsRef.current;
       try {
-        await persistCharacter(snapSheet, snapElements);
-        const supabase = createClient();
-        const { data } = await supabase
-          .from('character_elements')
-          .select('id, element')
-          .eq('character_id', character.id);
+        const data = await persistCharacter(snapSheet, snapElements);
         if (data) {
           // Só mescla IDs — não sobrescreve níveis/fragmentos locais (evita rollback)
-          setElements((prev) =>
-            prev.map((row) => {
-              const found = data.find((d) => d.element === row.element);
-              return found ? { ...row, id: found.id } : row;
-            })
-          );
+          const current = elementsRef.current;
+          const merged = current.map((row) => {
+            const found = data.find((d) => d.element === row.element);
+            return found && found.id !== row.id ? { ...row, id: found.id } : row;
+          });
+          // Array novo aqui religaria o efeito de save: só troca se algum id mudou,
+          // e id que veio do banco não é edição, então não agenda outro save.
+          if (merged.some((row, i) => row !== current[i])) {
+            if (lastSavedElementsRef.current === current) {
+              lastSavedElementsRef.current = merged;
+            }
+            remoteMergeRef.current = true;
+            setElements(merged);
+          }
         }
         setStatus('saved');
       } catch {
@@ -389,7 +419,7 @@ export function CharacterSheet({
       }
     }, 700);
     return () => clearTimeout(t);
-  }, [sheet, elements, ready, persistCharacter, character.id]);
+  }, [sheet, elements, ready, persistCharacter]);
 
   useEffect(() => {
     if (status !== 'saved') return;
@@ -397,9 +427,36 @@ export function CharacterSheet({
     return () => clearTimeout(t);
   }, [status]);
 
-  function patch(partial: Partial<SheetState>) {
-    setSheet((s) => ({ ...s, ...partial }));
-  }
+  // Estável: as seções memorizadas não renderizam de novo só por causa do callback.
+  const patch = useCallback<PatchSheet>((partial) => {
+    setSheet((s) => ({
+      ...s,
+      ...(typeof partial === 'function' ? partial(s) : partial),
+    }));
+  }, []);
+
+  const handlers = useMemo(
+    () => ({
+      arcana: (arcana: string) => patch({ arcana }),
+      subarcana: (subarcana: string) => patch({ subarcana }),
+      milestoneNote: (level: number, note: string) =>
+        patch((s) => ({
+          milestone_notes: { ...s.milestone_notes, [String(level)]: note },
+        })),
+      skills: (skills: Skill[]) => patch({ skills }),
+      elements: (next: CharacterElementRow[]) => setElements(next),
+      spells: (spells: Spell[]) => patch({ spells }),
+      weapons: (weapons: Weapon[]) => patch({ weapons }),
+      armor: (armor: ArmorPiece[]) => patch({ armor }),
+      money: (money: number) => patch({ money }),
+      inventory: (inventory: InventoryItem[]) => patch({ inventory }),
+      curses: (curses: Curse[]) => patch({ curses }),
+      feats: (historical_feats: HistoricalFeat[]) => patch({ historical_feats }),
+      notes: (notes: string) => patch({ notes }),
+      backstory: (backstory: string) => patch({ backstory }),
+    }),
+    [patch]
+  );
 
   const weight = getInventoryWeight(sheet.inventory);
   const limit = getCarryLimit(sheet.attributes);
@@ -407,13 +464,26 @@ export function CharacterSheet({
     totalLevel,
     sheet.attribute_points_spent
   );
-  const skillUpgradesAvailable = getSkillUpgradesAvailable(
-    totalLevel,
-    sheet.attributes.INT,
-    sheet.skills
+  const skillUpgradesAvailable = useMemo(
+    () =>
+      getSkillUpgradesAvailable(totalLevel, sheet.attributes.INT, sheet.skills),
+    [totalLevel, sheet.attributes.INT, sheet.skills]
   );
-  const imageValid =
-    !sheet.image_url || VALID_IMAGE_URL.test(sheet.image_url.split('#')[0]);
+
+  const spendSkillPoint = useCallback(
+    (i: number) => {
+      patch((s) => {
+        const skill = s.skills[i];
+        const upgradeKey = getUpgradeKeyForNext(skill.specialization);
+        if (!upgradeKey || skillUpgradesAvailable[upgradeKey] <= 0) return {};
+        const skills = [...s.skills];
+        skills[i] = { ...skill, specialization: upgradeKey };
+        // Gasto = especializações atuais; não depende mais do jsonb legado.
+        return { skills };
+      });
+    },
+    [patch, skillUpgradesAvailable]
+  );
 
   return (
     <div className="relative space-y-5 pb-20">
@@ -424,235 +494,51 @@ export function CharacterSheet({
         <SaveIndicator status={status} />
       </div>
 
-      {/* Cabeçalho */}
-      <SectionCard title="Cabeçalho">
-        <div className="grid gap-4 md:grid-cols-[140px_1fr]">
-          <CharacterImage
-            url={sheet.image_url}
-            name={sheet.name}
-            className="h-36 w-full rounded-md border border-ink-border md:h-40"
-          />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 sm:col-span-2">
-              <span className="label">URL da imagem</span>
-              <input
-                className="field"
-                value={sheet.image_url}
-                onChange={(e) => patch({ image_url: e.target.value })}
-                placeholder="https://…/retrato.png"
-              />
-              {!imageValid && (
-                <span className="text-xs text-crimson-soft">
-                  URL deve terminar em .png, .jpg, .jpeg, .gif, .webp ou .avif
-                </span>
-              )}
-            </label>
-            <label className="space-y-1">
-              <span className="label">Nome</span>
-              <input
-                className="field"
-                value={sheet.name}
-                onChange={(e) => patch({ name: e.target.value })}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="label">Ocupação</span>
-              <input
-                className="field"
-                value={sheet.occupation}
-                onChange={(e) => patch({ occupation: e.target.value })}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="label">Idade</span>
-              <input
-                className="field"
-                type="number"
-                value={sheet.age}
-                onChange={(e) => patch({ age: e.target.value })}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="label">Pronomes</span>
-              <input
-                className="field"
-                value={sheet.pronouns}
-                onChange={(e) => patch({ pronouns: e.target.value })}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="label">Naturalidade</span>
-              <input
-                className="field"
-                placeholder="Cidade, País"
-                value={sheet.birthplace}
-                onChange={(e) => patch({ birthplace: e.target.value })}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="label">Residência</span>
-              <input
-                className="field"
-                value={sheet.residence}
-                onChange={(e) => patch({ residence: e.target.value })}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="label">Patente na Ordem</span>
-              <select
-                className="field"
-                value={sheet.order_rank}
-                onChange={(e) => patch({ order_rank: e.target.value })}
-                disabled={!sheet.is_order_agent}
-              >
-                {ORDER_RANKS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 pt-6">
-              <input
-                type="checkbox"
-                checked={sheet.is_order_agent}
-                onChange={(e) => patch({ is_order_agent: e.target.checked })}
-                className="h-4 w-4 accent-crimson"
-              />
-              <span className="text-sm text-parchment">Agente da Ordem Carmesim</span>
-            </label>
-          </div>
-        </div>
-      </SectionCard>
+      <HeaderSection
+        imageUrl={sheet.image_url}
+        name={sheet.name}
+        occupation={sheet.occupation}
+        age={sheet.age}
+        pronouns={sheet.pronouns}
+        birthplace={sheet.birthplace}
+        residence={sheet.residence}
+        orderRank={sheet.order_rank}
+        isOrderAgent={sheet.is_order_agent}
+        patch={patch}
+      />
 
-      <LevelProgression
+      <MemoLevelProgression
         elements={elements}
         isOrderAgent={sheet.is_order_agent}
         arcana={sheet.arcana}
         subarcana={sheet.subarcana}
         milestoneNotes={sheet.milestone_notes}
-        onArcanaChange={(arcana) => patch({ arcana })}
-        onSubarcanaChange={(subarcana) => patch({ subarcana })}
-        onMilestoneNoteChange={(level, note) =>
-          patch({
-            milestone_notes: { ...sheet.milestone_notes, [String(level)]: note },
-          })
-        }
+        onArcanaChange={handlers.arcana}
+        onSubarcanaChange={handlers.subarcana}
+        onMilestoneNoteChange={handlers.milestoneNote}
       />
 
-      {/* Atributos */}
-      <SectionCard
-        title="Atributos"
-        badge={
-          attrPointsAvailable > 0 ? (
-            <span className="animate-pulse rounded-md border border-crimson/50 bg-crimson/20 px-2 py-0.5 text-xs font-medium text-crimson-soft">
-              {attrPointsAvailable === 1
-                ? '1 ponto de atributo disponível'
-                : attrPointsAvailable + ' pontos de atributo disponíveis'}
-            </span>
-          ) : null
-        }
-      >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-          {ATTRIBUTE_KEYS.map((key) => {
-            const value = sheet.attributes[key];
-            const mod = getAttributeModifier(value);
-            return (
-              <div key={key} className="rounded-md border border-ink-border bg-ink-raised/50 p-3 text-center">
-                <span className="label block">{ATTRIBUTE_LABELS[key]}</span>
-                <span className="mt-0.5 block text-xs text-ink-muted">{key}</span>
-                <input
-                  type="number"
-                  className="field mt-2 text-center font-display text-2xl"
-                  value={value}
-                  onChange={(e) =>
-                    patch({
-                      attributes: {
-                        ...sheet.attributes,
-                        [key]: Number(e.target.value) || 0,
-                      },
-                    })
-                  }
-                />
-                <div className="mt-2 flex items-center justify-center gap-2">
-                  <span className="text-base text-crimson-soft">
-                    {mod >= 0 ? '+' + mod : mod}
-                  </span>
-                  <QuickRollButton bonus={mod} label={ATTRIBUTE_LABELS[key]} />
-                  {attrPointsAvailable > 0 && (
-                    <button
-                      type="button"
-                      className="btn-ghost px-2 py-1 text-xs text-crimson-soft"
-                      onClick={() =>
-                        patch({
-                          attributes: {
-                            ...sheet.attributes,
-                            [key]: value + 1,
-                          },
-                          attribute_points_spent: sheet.attribute_points_spent + 1,
-                        })
-                      }
-                      title="Gastar 1 ponto de atributo"
-                    >
-                      +1
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </SectionCard>
+      <AttributesSection
+        attributes={sheet.attributes}
+        attrPointsAvailable={attrPointsAvailable}
+        patch={patch}
+      />
 
-                  {/* Recursos */}
-      <SectionCard title="Recursos">
-        <div className="grid gap-4 md:grid-cols-3">
-          {(
-            [
-              ['HP', 'hp_current', 'hp', effectiveMaxes.hp, '#8B1E2D'],
-              ['Mana', 'mana_current', 'mana', effectiveMaxes.mana, '#3B6EA5'],
-              ['Sanidade', 'sanity_current', 'sanity', effectiveMaxes.sanity, '#7A6B9A'],
-            ] as const
-          ).map(([label, currentKey, modKey, max, color]) => {
-            const current = Math.min(sheet[currentKey], max);
-            const modVal = sheet.resource_mods[modKey] || 0;
-            return (
-              <ResourceBlock
-                key={currentKey}
-                label={label}
-                current={current}
-                max={max}
-                color={color}
-                mod={modVal}
-                onModChange={(v) =>
-                  patch({
-                    resource_mods: { ...sheet.resource_mods, [modKey]: v },
-                  })
-                }
-                onApply={(delta) => {
-                  const next = Math.max(0, Math.min(max, current + delta));
-                  patch({ [currentKey]: next } as Partial<SheetState>);
-                }}
-              />
-            );
-          })}
-        </div>
-      </SectionCard>
+      <ResourcesSection
+        hpCurrent={sheet.hp_current}
+        manaCurrent={sheet.mana_current}
+        sanityCurrent={sheet.sanity_current}
+        mods={sheet.resource_mods}
+        maxes={effectiveMaxes}
+        patch={patch}
+      />
 
-      <SkillsList
+      <MemoSkillsList
         skills={sheet.skills}
         attributes={sheet.attributes}
         skillUpgradesAvailable={skillUpgradesAvailable}
-        onChange={(skills) => patch({ skills })}
-        onSpendSkillPoint={(i) => {
-          const skill = sheet.skills[i];
-          const upgradeKey = getUpgradeKeyForNext(skill.specialization);
-          if (!upgradeKey || skillUpgradesAvailable[upgradeKey] <= 0) return;
-          const skills = [...sheet.skills];
-          skills[i] = { ...skill, specialization: upgradeKey };
-          // Gasto = especializações atuais; não depende mais do jsonb legado.
-          patch({ skills });
-        }}
+        onChange={handlers.skills}
+        onSpendSkillPoint={spendSkillPoint}
       />
 
       <section className="space-y-1">
@@ -663,9 +549,9 @@ export function CharacterSheet({
               id: "elementos",
               label: "Elementos e Fragmentos",
               content: (
-                <ElementsSection
+                <MemoElementsSection
                   elements={elements}
-                  onChange={(next) => setElements(next)}
+                  onChange={handlers.elements}
                 />
               ),
             },
@@ -673,9 +559,9 @@ export function CharacterSheet({
               id: "magias",
               label: "Magias e Poderes Passivos",
               content: (
-                <SpellsSection
+                <MemoSpellsSection
                   spells={sheet.spells}
-                  onChange={(spells) => patch({ spells })}
+                  onChange={handlers.spells}
                 />
               ),
             },
@@ -684,13 +570,13 @@ export function CharacterSheet({
               label: "Armas",
               content: (
                 <div className="space-y-5">
-                  <WeaponsSection
+                  <MemoWeaponsSection
                     weapons={sheet.weapons}
-                    onChange={(weapons) => patch({ weapons })}
+                    onChange={handlers.weapons}
                   />
-                  <ArmorSection
+                  <MemoArmorSection
                     armor={sheet.armor}
-                    onChange={(armor) => patch({ armor })}
+                    onChange={handlers.armor}
                   />
                 </div>
               ),
@@ -699,13 +585,13 @@ export function CharacterSheet({
               id: "inventario",
               label: "Inventário",
               content: (
-                <InventorySection
+                <MemoInventorySection
                   inventory={sheet.inventory}
                   weight={weight}
                   limit={limit}
                   money={sheet.money}
-                  onMoneyChange={(money) => patch({ money })}
-                  onChange={(inventory) => patch({ inventory })}
+                  onMoneyChange={handlers.money}
+                  onChange={handlers.inventory}
                 />
               ),
             },
@@ -713,9 +599,9 @@ export function CharacterSheet({
               id: "maldicoes",
               label: "Maldições",
               content: (
-                <CursesSection
+                <MemoCursesSection
                   curses={sheet.curses}
-                  onChange={(curses) => patch({ curses })}
+                  onChange={handlers.curses}
                 />
               ),
             },
@@ -723,10 +609,10 @@ export function CharacterSheet({
               id: "feitos",
               label: "Feitos Históricos",
               content: (
-                <HistoricalFeatsSection
+                <MemoHistoricalFeatsSection
                   feats={sheet.historical_feats}
                   totalLevel={totalLevel}
-                  onChange={(historical_feats) => patch({ historical_feats })}
+                  onChange={handlers.feats}
                 />
               ),
             },
@@ -734,9 +620,9 @@ export function CharacterSheet({
               id: "anotacoes",
               label: "Anotações",
               content: (
-                <NotesSection
+                <MemoNotesSection
                   notes={sheet.notes}
-                  onChange={(notes) => patch({ notes })}
+                  onChange={handlers.notes}
                 />
               ),
             },
@@ -744,9 +630,9 @@ export function CharacterSheet({
               id: "historia",
               label: "História do Personagem",
               content: (
-                <BackstorySection
+                <MemoBackstorySection
                   backstory={sheet.backstory}
-                  onChange={(backstory) => patch({ backstory })}
+                  onChange={handlers.backstory}
                 />
               ),
             },
@@ -754,17 +640,270 @@ export function CharacterSheet({
               id: "mosaico",
               label: "Mosaico",
               content: (
-                <MosaicFrame characterName={sheet.name} elements={elements} />
+                <MemoMosaicFrame characterName={sheet.name} elements={elements} />
               ),
             },
           ]}
         />
       </section>
 
-      <FloatingDiceButton />
+      <MemoFloatingDiceButton />
     </div>
   );
 }
+
+const HeaderSection = memo(function HeaderSection({
+  imageUrl,
+  name,
+  occupation,
+  age,
+  pronouns,
+  birthplace,
+  residence,
+  orderRank,
+  isOrderAgent,
+  patch,
+}: {
+  imageUrl: string;
+  name: string;
+  occupation: string;
+  age: string;
+  pronouns: string;
+  birthplace: string;
+  residence: string;
+  orderRank: string;
+  isOrderAgent: boolean;
+  patch: PatchSheet;
+}) {
+  const imageValid = !imageUrl || VALID_IMAGE_URL.test(imageUrl.split('#')[0]);
+
+  return (
+    <SectionCard title="Cabeçalho">
+      <div className="grid gap-4 md:grid-cols-[140px_1fr]">
+        <CharacterImage
+          url={imageUrl}
+          name={name}
+          className="h-36 w-full rounded-md border border-ink-border md:h-40"
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 sm:col-span-2">
+            <span className="label">URL da imagem</span>
+            <input
+              className="field"
+              value={imageUrl}
+              onChange={(e) => patch({ image_url: e.target.value })}
+              placeholder="https://…/retrato.png"
+            />
+            {!imageValid && (
+              <span className="text-xs text-crimson-soft">
+                URL deve terminar em .png, .jpg, .jpeg, .gif, .webp ou .avif
+              </span>
+            )}
+          </label>
+          <label className="space-y-1">
+            <span className="label">Nome</span>
+            <input
+              className="field"
+              value={name}
+              onChange={(e) => patch({ name: e.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="label">Ocupação</span>
+            <input
+              className="field"
+              value={occupation}
+              onChange={(e) => patch({ occupation: e.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="label">Idade</span>
+            <input
+              className="field"
+              type="number"
+              value={age}
+              onChange={(e) => patch({ age: e.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="label">Pronomes</span>
+            <input
+              className="field"
+              value={pronouns}
+              onChange={(e) => patch({ pronouns: e.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="label">Naturalidade</span>
+            <input
+              className="field"
+              placeholder="Cidade, País"
+              value={birthplace}
+              onChange={(e) => patch({ birthplace: e.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="label">Residência</span>
+            <input
+              className="field"
+              value={residence}
+              onChange={(e) => patch({ residence: e.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="label">Patente na Ordem</span>
+            <select
+              className="field"
+              value={orderRank}
+              onChange={(e) => patch({ order_rank: e.target.value })}
+              disabled={!isOrderAgent}
+            >
+              {ORDER_RANKS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 pt-6">
+            <input
+              type="checkbox"
+              checked={isOrderAgent}
+              onChange={(e) => patch({ is_order_agent: e.target.checked })}
+              className="h-4 w-4 accent-crimson"
+            />
+            <span className="text-sm text-parchment">Agente da Ordem Carmesim</span>
+          </label>
+        </div>
+      </div>
+    </SectionCard>
+  );
+});
+
+const AttributesSection = memo(function AttributesSection({
+  attributes,
+  attrPointsAvailable,
+  patch,
+}: {
+  attributes: Attributes;
+  attrPointsAvailable: number;
+  patch: PatchSheet;
+}) {
+  return (
+    <SectionCard
+      title="Atributos"
+      badge={
+        attrPointsAvailable > 0 ? (
+          <span className="animate-pulse rounded-md border border-crimson/50 bg-crimson/20 px-2 py-0.5 text-xs font-medium text-crimson-soft">
+            {attrPointsAvailable === 1
+              ? '1 ponto de atributo disponível'
+              : attrPointsAvailable + ' pontos de atributo disponíveis'}
+          </span>
+        ) : null
+      }
+    >
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
+        {ATTRIBUTE_KEYS.map((key) => {
+          const value = attributes[key];
+          const mod = getAttributeModifier(value);
+          return (
+            <div key={key} className="rounded-md border border-ink-border bg-ink-raised/50 p-3 text-center">
+              <span className="label block">{ATTRIBUTE_LABELS[key]}</span>
+              <span className="mt-0.5 block text-xs text-ink-muted">{key}</span>
+              <input
+                type="number"
+                className="field mt-2 text-center font-display text-2xl"
+                value={value}
+                onChange={(e) => {
+                  const next = Number(e.target.value) || 0;
+                  patch((s) => ({
+                    attributes: { ...s.attributes, [key]: next },
+                  }));
+                }}
+              />
+              <div className="mt-2 flex items-center justify-center gap-2">
+                <span className="text-base text-crimson-soft">
+                  {mod >= 0 ? '+' + mod : mod}
+                </span>
+                <QuickRollButton bonus={mod} label={ATTRIBUTE_LABELS[key]} />
+                {attrPointsAvailable > 0 && (
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 text-xs text-crimson-soft"
+                    onClick={() =>
+                      patch((s) => ({
+                        attributes: {
+                          ...s.attributes,
+                          [key]: s.attributes[key] + 1,
+                        },
+                        attribute_points_spent: s.attribute_points_spent + 1,
+                      }))
+                    }
+                    title="Gastar 1 ponto de atributo"
+                  >
+                    +1
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+});
+
+const ResourcesSection = memo(function ResourcesSection({
+  hpCurrent,
+  manaCurrent,
+  sanityCurrent,
+  mods,
+  maxes,
+  patch,
+}: {
+  hpCurrent: number;
+  manaCurrent: number;
+  sanityCurrent: number;
+  mods: ResourceMods;
+  maxes: { hp: number; mana: number; sanity: number };
+  patch: PatchSheet;
+}) {
+  return (
+    <SectionCard title="Recursos">
+      <div className="grid gap-4 md:grid-cols-3">
+        {(
+          [
+            ['HP', 'hp_current', 'hp', hpCurrent, maxes.hp, '#8B1E2D'],
+            ['Mana', 'mana_current', 'mana', manaCurrent, maxes.mana, '#3B6EA5'],
+            ['Sanidade', 'sanity_current', 'sanity', sanityCurrent, maxes.sanity, '#7A6B9A'],
+          ] as const
+        ).map(([label, currentKey, modKey, value, max, color]) => {
+          const current = Math.min(value, max);
+          const modVal = mods[modKey] || 0;
+          return (
+            <ResourceBlock
+              key={currentKey}
+              label={label}
+              current={current}
+              max={max}
+              color={color}
+              mod={modVal}
+              onModChange={(v) =>
+                patch((s) => ({
+                  resource_mods: { ...s.resource_mods, [modKey]: v },
+                }))
+              }
+              onApply={(delta) => {
+                const next = Math.max(0, Math.min(max, current + delta));
+                patch({ [currentKey]: next } as Partial<SheetState>);
+              }}
+            />
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+});
 
 function ResourceBlock({
   label,

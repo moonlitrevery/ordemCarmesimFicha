@@ -7,10 +7,13 @@ export function CharacterImage({
   url,
   name,
   className = '',
+  lazy = false,
 }: {
   url: string | null | undefined;
   name: string;
+  /** Precisa fixar a altura: é o que reserva o espaço enquanto a imagem carrega. */
   className?: string;
+  lazy?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const valid = !!url && VALID_IMAGE_URL.test(url.split('#')[0]);
@@ -34,6 +37,8 @@ export function CharacterImage({
       src={url!}
       alt={name}
       className={`object-cover ${className}`}
+      loading={lazy ? 'lazy' : undefined}
+      decoding="async"
       onError={() => setFailed(true)}
     />
   );
