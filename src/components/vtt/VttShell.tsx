@@ -21,7 +21,9 @@ import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
 import { ChatSync } from '@/lib/vtt/chat-sync';
 import { InitiativeSync } from '@/lib/vtt/initiative-sync';
+import { LibrarySync } from '@/lib/vtt/library-sync';
 import { NpcSync } from '@/lib/vtt/npc-sync';
+import { perfPanelOpened } from '@/lib/vtt/perf';
 import { SceneSync } from '@/lib/vtt/scene-sync';
 import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
@@ -166,6 +168,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     let sync: SceneSync | null = null;
     let initiative: InitiativeSync | null = null;
     let npcs: NpcSync | null = null;
+    let library: LibrarySync | null = null;
 
     const channel = joinTableChannel(supabase, tableId, {
       userId,
@@ -176,6 +179,8 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         void sync?.reload();
         void initiative?.reload();
         void npcs?.reload();
+        // A primeira carga é do `start`; aqui é só ao reconectar.
+        if (useVttStore.getState().library) void library?.load();
         if (isGm) void refreshPending(false);
       },
     });
@@ -193,7 +198,15 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       npcs.start();
       void npcs.reload();
     }
-    useVttStore.setState({ sync, chat, initiativeSync: initiative, npcSync: npcs });
+    library = new LibrarySync(supabase, channel, isGm);
+    library.start();
+    useVttStore.setState({
+      sync,
+      chat,
+      initiativeSync: initiative,
+      npcSync: npcs,
+      librarySync: library,
+    });
     void sync.reload();
 
     channel.on('session:state', () => void refresh());
@@ -234,7 +247,9 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       chat.stop();
       initiative?.stop();
       npcs?.stop();
+      library?.stop();
       useVttStore.setState({
+        librarySync: null,
         sync: null,
         chat: null,
         initiativeSync: null,
@@ -283,6 +298,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
   /** Um por lado com mouse; no touch a folha cobre a tela, então um só no total. */
   function togglePanel(side: RailSide, id: string) {
+    if (id === 'library') perfPanelOpened('painel da Biblioteca');
     setOpenPanels((current) => {
       const next = current[side] === id ? null : id;
       return isDesk

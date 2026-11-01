@@ -1,7 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Asset, AssetKind, AssetVisibility } from './rules';
+import {
+  isImageKind,
+  type Asset,
+  type AssetKind,
+  type AssetVisibility,
+} from './rules';
 
 const STATIC_LIST_URL = '/api/vtt/static';
+const STATIC_IN_USE_URL = '/api/vtt/static/in-use';
 
 /** Uma linha do manifest gerado por scripts/vtt-manifest.mjs. */
 export interface StaticManifestItem {
@@ -52,12 +58,8 @@ export function visibleStaticItems(
   );
 }
 
-/**
- * Sem cache: o que o jogador pode ver muda com a cena. Sem manifest (dev sem
- * `npm run vtt:manifest`), a biblioteca só mostra o Blob.
- */
-export function loadStaticAssets(): Promise<Asset[]> {
-  return fetch(STATIC_LIST_URL)
+function fetchStaticList(url: string): Promise<Asset[]> {
+  return fetch(url)
     .then((res) => {
       if (!res.ok) throw new Error(String(res.status));
       return res.json() as Promise<{ items: StaticManifestItem[] }>;
@@ -66,30 +68,58 @@ export function loadStaticAssets(): Promise<Asset[]> {
     .catch(() => []);
 }
 
-/** Os do Blob primeiro (mais novos no topo), depois os fixos por caminho. */
-export function mergeLibrary(
-  uploaded: Asset[],
-  fixed: Asset[],
-  kind: AssetKind
-): Asset[] {
-  return [...uploaded, ...fixed.filter((asset) => asset.kind === kind)];
+/**
+ * O que não depende da cena: o navegador guarda por 60 s, por papel. Sem manifest
+ * (dev sem `npm run vtt:manifest`), a biblioteca só mostra o Blob.
+ */
+export function loadStaticCatalog(): Promise<Asset[]> {
+  return fetchStaticList(STATIC_LIST_URL);
 }
 
+/** Sem cache: o que o jogador pode ver muda com a cena. */
+export function loadStaticInUse(): Promise<Asset[]> {
+  return fetchStaticList(STATIC_IN_USE_URL);
+}
+
+/** Os do Blob primeiro (mais novos no topo), depois os fixos por caminho. */
+export function mergeLibrary(uploaded: Asset[], ...fixed: Asset[][]): Asset[] {
+  const seen = new Set<string>();
+  return [...uploaded, ...fixed.flat()].filter((asset) => {
+    if (seen.has(asset.id)) return false;
+    seen.add(asset.id);
+    return true;
+  });
+}
+
+export function assetsOfKind(assets: Asset[], kind: AssetKind): Asset[] {
+  return assets.filter((asset) => asset.kind === kind);
+}
+
+/** Do Blob, imagem e sem miniatura. Fixo ganha a dele no build. */
+export function isBackfillCandidate(asset: Asset): boolean {
+  return (
+    isImageKind(asset.kind) &&
+    asset.thumb_url === null &&
+    !asset.url.startsWith('/vtt/')
+  );
+}
+
+/** Tudo de uma vez e em paralelo: trocar de aba depois não faz requisição. */
 export async function fetchLibraryAssets(
   supabase: SupabaseClient,
-  kind: AssetKind
+  isGm: boolean
 ): Promise<{ assets: Asset[]; error: string | null }> {
-  const [{ data, error }, fixed] = await Promise.all([
+  const [{ data, error }, catalog, inUse] = await Promise.all([
     supabase
       .from('assets')
       .select('*')
-      .eq('kind', kind)
       .eq('status', 'approved')
       .order('created_at', { ascending: false }),
-    loadStaticAssets(),
+    loadStaticCatalog(),
+    isGm ? Promise.resolve([]) : loadStaticInUse(),
   ]);
   return {
-    assets: mergeLibrary((data ?? []) as Asset[], fixed, kind),
+    assets: mergeLibrary((data ?? []) as Asset[], catalog, inUse),
     error: error?.message ?? null,
   };
 }

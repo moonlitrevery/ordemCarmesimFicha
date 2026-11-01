@@ -1,28 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { ChevronDown, ChevronUp, Map as MapIcon } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { libraryImageUrl, type Asset } from '@/lib/vtt/assets/rules';
-import { fetchLibraryAssets } from '@/lib/vtt/assets/static';
+import { assetsOfKind } from '@/lib/vtt/assets/static';
 import { membersInScene } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import type { VttMember, VttScene } from '@/lib/vtt/types';
 import { AssetThumb } from './AssetThumb';
 
 function useMapAssets(): Asset[] {
-  const libraryVersion = useVttStore((s) => s.libraryVersion);
-  const [maps, setMaps] = useState<Asset[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    void fetchLibraryAssets(createClient(), 'mapa').then(({ assets }) => {
-      if (!cancelled) setMaps(assets);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [libraryVersion]);
-  return maps;
+  const library = useVttStore((s) => s.library);
+  return useMemo(() => assetsOfKind(library ?? [], 'mapa'), [library]);
 }
 
 function MapPicker({

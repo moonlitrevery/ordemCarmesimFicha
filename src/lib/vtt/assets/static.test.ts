@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { isStaticAsset, libraryImageUrl, type Asset } from './rules';
 import {
+  assetsOfKind,
+  isBackfillCandidate,
   mergeLibrary,
   staticItemToAsset,
   visibleStaticItems,
@@ -63,12 +65,25 @@ describe('isStaticAsset', () => {
 });
 
 describe('mergeLibrary', () => {
-  it('põe os do Blob antes e filtra os fixos pelo tipo', () => {
+  it('põe os do Blob antes, tira repetidos, e o painel filtra pelo tipo', () => {
     const uploaded = { ...staticItemToAsset(ITEM), id: 'blob' } as Asset;
     const map = staticItemToAsset(ITEM);
     const token = staticItemToAsset({ ...ITEM, id: 't', kind: 'token' });
-    expect(
-      mergeLibrary([uploaded], [map, token], 'mapa').map((a) => a.id)
-    ).toEqual(['blob', ITEM.id]);
+    const merged = mergeLibrary([uploaded], [map, token], [map]);
+    expect(merged.map((a) => a.id)).toEqual(['blob', ITEM.id, token.id]);
+    expect(assetsOfKind(merged, 'token').map((a) => a.id)).toEqual([token.id]);
+  });
+
+  it('só asset do Blob, de imagem e sem miniatura entra na fila de miniaturas', () => {
+    const blob = {
+      ...staticItemToAsset(ITEM),
+      kind: 'token',
+      thumb_url: null,
+      url: 'https://x/a.webp',
+    } as Asset;
+    expect(isBackfillCandidate(blob)).toBe(true);
+    expect(isBackfillCandidate({ ...blob, thumb_url: 'https://x/thumbs/a.webp' })).toBe(false);
+    expect(isBackfillCandidate({ ...blob, kind: 'audio_sfx' })).toBe(false);
+    expect(isBackfillCandidate({ ...blob, url: '/vtt/_built/a.webp' })).toBe(false);
   });
 });

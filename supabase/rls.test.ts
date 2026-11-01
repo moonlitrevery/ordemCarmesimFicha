@@ -584,9 +584,96 @@ describe('migração 014', () => {
   });
 });
 
-describe('migração 016', () => {
-  it('roda de novo sobre o schema pronto e mantém o NPC fechado', async () => {
+describe('RLS da migração 017: o conjunto visível é o mesmo de can_view_scene', () => {
+  const addAsset = async (name: string, visibility: string) =>
+    (
+      await db.query<{ id: string }>(
+        `insert into public.assets (kind, name, storage_key, url, mime, size_bytes, status, visibility, uploaded_by)
+         values ('token', $1, $1, 'https://abc.public.blob.vercel-storage.com/' || $1, 'image/webp', 1, 'approved', $2, $3)
+         returning id`,
+        [name, visibility, GM]
+      )
+    ).rows[0].id;
+  const seen = async (user: string, id: string) =>
+    (await asUser(user, `select id from public.assets where id = $1`, [id])).length === 1;
+
+  it('asset da mestra: jogador só vê se estiver visível na cena dele', async () => {
+    const secret = await addAsset('perf-segredo', 'mestre');
+    const hidden = await addAsset('perf-oculto', 'mestre');
+    const elsewhere = await addAsset('perf-outra-cena', 'mestre');
+    const inScene = await addAsset('perf-em-cena', 'mestre');
+    await insertOne(GM, INSERT_OBJECT, [defaultScene, inScene, GM, false]);
+    await insertOne(GM, INSERT_OBJECT, [defaultScene, hidden, GM, true]);
+    await insertOne(GM, INSERT_OBJECT, [otherScene, elsewhere, GM, false]);
+
+    expect(await seen(PLAYER, secret)).toBe(false);
+    expect(await seen(PLAYER, hidden)).toBe(false);
+    expect(await seen(PLAYER, elsewhere)).toBe(false);
+    expect(await seen(PLAYER, inScene)).toBe(true);
+    expect(await seen(SPECTATOR, inScene)).toBe(true);
+    expect(await seen(OUTSIDER, inScene)).toBe(false);
+    expect(await seen(GM, secret)).toBe(true);
+  });
+
+  it('mapa da cena conta; sessão fechada e banido não veem', async () => {
+    const map = await addAsset('perf-mapa', 'mestre');
+    await db.query(`update public.scenes set map_asset_id = $1 where id = $2`, [map, defaultScene]);
+    expect(await seen(PLAYER, map)).toBe(true);
+
+    await db.query(`update public.tables set session_open = false where id = $1`, [openTable]);
+    expect(await seen(PLAYER, map)).toBe(false);
+    await db.query(`update public.tables set session_open = true where id = $1`, [openTable]);
+
+    await db.query(`update public.table_members set banned = true where user_id = $1`, [PLAYER]);
+    expect(await seen(PLAYER, map)).toBe(false);
+    await db.query(`update public.table_members set banned = false where user_id = $1`, [PLAYER]);
+    await db.query(`update public.scenes set map_asset_id = null where id = $1`, [defaultScene]);
+  });
+
+  it('jogador separado do grupo vê a cena dele, não a padrão', async () => {
+    const object = await insertOne(GM, INSERT_OBJECT, [otherScene, approvedToken, GM, false]);
+    const read = () =>
+      asUser(PLAYER, `select id from public.scene_objects where id = $1`, [object.id]);
+    expect(await read()).toEqual([]);
+    await db.query(`update public.table_members set scene_id = $1 where user_id = $2`, [otherScene, PLAYER]);
+    expect(await read()).toHaveLength(1);
+    await db.query(`update public.table_members set scene_id = null where user_id = $1`, [PLAYER]);
+  });
+
+  it('objeto oculto continua só da mestra, mesmo na cena do jogador', async () => {
+    const object = await insertOne(GM, INSERT_OBJECT, [defaultScene, approvedToken, GM, true]);
+    const sql = `select id from public.scene_objects where id = $1`;
+    expect(await asUser(PLAYER, sql, [object.id])).toEqual([]);
+    expect(await asUser(SPECTATOR, sql, [object.id])).toEqual([]);
+    expect(await asUser(GM, sql, [object.id])).toHaveLength(1);
+  });
+
+  it('fixo só conta em objeto da dona: jogador não libera adivinhando o id', async () => {
+    const guess = '82c0bfbf-6ed0-505a-977c-6b7782140c99';
+    await insertOne(PLAYER, INSERT_OBJECT, [defaultScene, guess, PLAYER, false]);
+    const ids = await asUser<{ id: string }>(
+      PLAYER,
+      `select id from public.my_scene_static_asset_ids() id`
+    );
+    expect(ids.map((row) => row.id)).not.toContain(guess);
+  });
+
+  it('as funções novas não abrem para anon', async () => {
+    await db.exec('set role anon');
+    try {
+      await expect(db.query('select * from public.my_visible_asset_ids()')).rejects.toMatchObject({
+        code: '42501',
+      });
+    } finally {
+      await db.exec('reset role');
+    }
+  });
+});
+
+describe('migrações 016 e 017', () => {
+  it('rodam de novo sobre o schema pronto e mantêm o NPC fechado', async () => {
     await db.exec(readSql('migrations', '016_vtt_npcs.sql'));
+    await db.exec(readSql('migrations', '017_vtt_library_perf.sql'));
     const npc = await insertOne(
       GM,
       `insert into public.npcs (table_id, name, plane, tier, nd)

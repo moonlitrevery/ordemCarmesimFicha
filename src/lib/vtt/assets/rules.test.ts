@@ -85,7 +85,9 @@ describe('miniatura', () => {
   it('só mapa e adereço têm arquivo próprio de miniatura', () => {
     expect(hasThumb('mapa')).toBe(true);
     expect(hasThumb('adereco')).toBe(true);
-    expect(hasThumb('token')).toBe(false);
+    expect(hasThumb('token')).toBe(true);
+    expect(hasThumb('addon')).toBe(true);
+    expect(hasThumb('audio_sfx')).toBe(false);
     expect(hasThumb('cutscene')).toBe(false);
   });
 
@@ -103,7 +105,8 @@ describe('miniatura', () => {
     const thumb = 'https://x/thumbs/t.webp';
     expect(libraryImageUrl({ kind: 'mapa', url: full, thumb_url: thumb })).toBe(thumb);
     expect(libraryImageUrl({ kind: 'mapa', url: full, thumb_url: null })).toBeNull();
-    expect(libraryImageUrl({ kind: 'token', url: full, thumb_url: null })).toBe(full);
+    expect(libraryImageUrl({ kind: 'token', url: full, thumb_url: null })).toBeNull();
+    expect(libraryImageUrl({ kind: 'token', url: full, thumb_url: thumb })).toBe(thumb);
     expect(libraryImageUrl({ kind: 'audio_sfx', url: full, thumb_url: null })).toBeNull();
   });
 });

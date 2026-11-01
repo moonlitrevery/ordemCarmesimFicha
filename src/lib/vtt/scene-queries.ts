@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { loadStaticAssets } from './assets/static';
+import { loadStaticCatalog, loadStaticInUse } from './assets/static';
 import type {
   Drawing,
   PendingPlacement,
@@ -55,12 +55,14 @@ export async function fetchAssets(
   );
   // Só baixa o manifest se a cena usa algo que não está no banco.
   if (ids.every((id) => found[id])) return found;
-  const fixed = await loadStaticAssets();
-  fixed
-    .filter((asset) => ids.includes(asset.id))
-    .forEach((asset) => {
-      found[asset.id] = asset;
-    });
+  const take = (assets: SceneAsset[]) =>
+    assets
+      .filter((asset) => ids.includes(asset.id))
+      .forEach((asset) => {
+        found[asset.id] = asset;
+      });
+  take(await loadStaticCatalog());
+  if (!ids.every((id) => found[id])) take(await loadStaticInUse());
   return found;
 }
 

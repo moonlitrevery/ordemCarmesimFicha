@@ -22,7 +22,7 @@ import {
   type Asset,
   type AssetKind,
 } from '@/lib/vtt/assets/rules';
-import { fetchLibraryAssets } from '@/lib/vtt/assets/static';
+import { assetsOfKind } from '@/lib/vtt/assets/static';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
 import { isPlaceableKind } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
@@ -340,7 +340,8 @@ function Approvals() {
 
 /** O único lugar para ver, colocar e gerenciar arquivos, para todos os papéis. */
 export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
-  const libraryVersion = useVttStore((s) => s.libraryVersion);
+  const library = useVttStore((s) => s.library);
+  const libraryError = useVttStore((s) => s.libraryError);
   const bumpLibrary = useVttStore((s) => s.bumpLibrary);
   const isGm = useVttStore((s) => s.me?.role === 'mestre');
   const canPlace = useVttStore((s) => s.me?.role !== 'espectador');
@@ -348,31 +349,15 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
 
   const kinds = isGm ? GM_KINDS : PLAYER_LIST_KINDS;
   const [kind, setKind] = useState<AssetKind>('token');
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const loading = library === null;
+  const error = libraryError?.includes('assets')
+    ? 'Tabela de arquivos não encontrada. Rode supabase/migrations/008_vtt_assets.sql no Supabase.'
+    : libraryError;
+  const assets = useMemo(() => assetsOfKind(library ?? [], kind), [library, kind]);
   const [search, setSearch] = useState('');
   const [managingId, setManagingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void fetchLibraryAssets(createClient(), kind).then((result) => {
-      if (cancelled) return;
-      setError(
-        result.error?.includes('assets')
-          ? 'Tabela de arquivos não encontrada. Rode supabase/migrations/008_vtt_assets.sql no Supabase.'
-          : result.error
-      );
-      setAssets(result.assets);
-      setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [kind, libraryVersion]);
 
   const stopPreview = () => {
     audioRef.current?.pause();
@@ -424,9 +409,7 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
         .showToast('Não foi possível mudar a visibilidade. Tente de novo.');
       return;
     }
-    setAssets((prev) =>
-      prev.map((a) => (a.id === asset.id ? { ...a, visibility } : a))
-    );
+    useVttStore.getState().librarySync?.patch(asset.id, { visibility });
     useVttStore.getState().sync?.notifyAssetResolved();
   }
 
@@ -527,14 +510,12 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
           asset={managing}
           onClose={() => setManagingId(null)}
           onSaved={(saved) =>
-            setAssets((prev) =>
-              prev.map((asset) => (asset.id === saved.id ? saved : asset))
-            )
+            useVttStore.getState().librarySync?.patch(saved.id, saved)
           }
           onDeleted={() => {
             if (managing.id === playingId) stopPreview();
             setManagingId(null);
-            setAssets((prev) => prev.filter((a) => a.id !== managing.id));
+            useVttStore.getState().librarySync?.remove(managing.id);
             useVttStore.getState().sync?.notifyAssetDeleted();
           }}
         />

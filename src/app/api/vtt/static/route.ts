@@ -1,37 +1,37 @@
-import { readFile } from 'fs/promises';
-import path from 'path';
-import { NextResponse } from 'next/server';
-import { getUploadAccess } from '@/lib/vtt/assets/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import {
-  visibleStaticItems,
-  type StaticManifestItem,
-} from '@/lib/vtt/assets/static';
+  catalogFor,
+  readStaticAccess,
+  takeColdStart,
+} from '@/lib/vtt/assets/manifest.server';
 
 export const dynamic = 'force-dynamic';
 
-async function readManifest(): Promise<StaticManifestItem[]> {
-  const file = path.join(process.cwd(), 'generated', 'vtt-manifest.json');
-  const raw = await readFile(file, 'utf8').catch(() => null);
-  if (!raw) return [];
-  return (JSON.parse(raw) as { items: StaticManifestItem[] }).items;
-}
-
-export async function GET() {
-  const access = await getUploadAccess();
+/**
+ * O catálogo por papel. `Vary: Cookie`: quem trocar de conta no mesmo navegador
+ * não pode receber do cache a lista da mestra.
+ */
+export async function GET(request: NextRequest) {
+  const start = performance.now();
+  const cold = takeColdStart();
+  const access = await readStaticAccess();
   if (!access) {
     return NextResponse.json({ error: 'Sessão expirada.' }, { status: 401 });
   }
-
-  const items = await readManifest();
-  let inUse: string[] = [];
-  if (!access.isMestre) {
-    // Erro aqui (migração não rodada) só esconde mais: nunca libera.
-    const { data } = await access.supabase.rpc('my_scene_static_asset_ids');
-    inUse = (data ?? []) as string[];
+  const authDone = performance.now();
+  const { body, etag } = await catalogFor(access.isMestre);
+  const headers = {
+    'Cache-Control': 'private, max-age=60',
+    ETag: etag,
+    Vary: 'Cookie',
+    'Server-Timing': `auth;dur=${(authDone - start).toFixed(1)}, manifest;dur=${(
+      performance.now() - authDone
+    ).toFixed(1)}${cold ? ', cold' : ''}`,
+  };
+  if (request.headers.get('if-none-match') === etag) {
+    return new NextResponse(null, { status: 304, headers });
   }
-
-  return NextResponse.json(
-    { items: visibleStaticItems(items, access.isMestre, inUse) },
-    { headers: { 'Cache-Control': 'private, no-store' } }
-  );
+  return new NextResponse(body, {
+    headers: { ...headers, 'Content-Type': 'application/json' },
+  });
 }

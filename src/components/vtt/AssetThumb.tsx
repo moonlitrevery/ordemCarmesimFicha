@@ -24,6 +24,8 @@ export function AssetThumb({
         loading="lazy"
         decoding="async"
         draggable={false}
+        width={size}
+        height={size}
         className="block shrink-0 bg-ink-raised object-contain"
         style={{ width: size, height: size }}
       />

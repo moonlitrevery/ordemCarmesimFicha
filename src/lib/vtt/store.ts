@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Asset } from './assets/rules';
 import type { ChatMessage } from './chat-rules';
 import type { ChatSync } from './chat-sync';
+import type { LibrarySync } from './library-sync';
 import { EMPTY_INITIATIVE, parseInitiative } from './initiative';
 import type { InitiativeSync } from './initiative-sync';
 import type { Npc } from './npc-rules';
@@ -39,8 +40,12 @@ interface VttState {
   audioUnlocked: boolean;
   connection: ConnectionStatus;
   pendingAssets: PendingAsset[];
-  /** Sobe a cada mudança na biblioteca: o painel aberto recarrega a lista. */
+  /** Sobe a cada mudança na biblioteca: o `LibrarySync` relê a lista. */
   libraryVersion: number;
+  /** `null` até a primeira carga. Abrir o painel só lê daqui. */
+  library: Asset[] | null;
+  libraryError: string | null;
+  librarySync: LibrarySync | null;
   /** Quem persiste e transmite as ações de cena. Existe enquanto a mesa está aberta. */
   sync: SceneSync | null;
   chat: ChatSync | null;
@@ -149,6 +154,9 @@ export const useVttStore = create<VttState>((set) => ({
   connection: 'connecting',
   pendingAssets: [],
   libraryVersion: 0,
+  library: null,
+  libraryError: null,
+  librarySync: null,
   sync: null,
   chat: null,
   initiativeSync: null,
@@ -197,6 +205,8 @@ export const useVttStore = create<VttState>((set) => ({
       audioUnlocked: false,
       connection: 'connecting',
       pendingAssets: [],
+      library: null,
+      libraryError: null,
       chatMessages: [],
       chatHasMore: false,
       chatError: null,

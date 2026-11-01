@@ -11,7 +11,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|vtt/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // A lista de fixos confere a sessão ela mesma: aqui pagaria uma ida a mais ao Supabase.
+    '/((?!_next/static|_next/image|vtt/|api/vtt/static|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     '/vtt/((?!_built/).*)',
   ],
 };

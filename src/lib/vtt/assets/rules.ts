@@ -57,9 +57,8 @@ const IMAGE_MAX_BYTES = 15 * MB;
 const AUDIO_MAX_BYTES = 8 * MB;
 const CUTSCENE_MAX_BYTES = 40 * MB;
 
-/** Tokens e addons já têm no máximo 512 px: o arquivo serve de miniatura. */
-const THUMB_KINDS: AssetKind[] = ['mapa', 'adereco'];
-export const THUMB_MAX_SIDE = 256;
+/** Toda imagem tem miniatura: a lista nunca baixa o arquivo cheio. */
+export const THUMB_MAX_SIDE = 96;
 export const THUMB_MAX_BYTES = 1 * MB;
 
 /** Acima disto a sugestão para imagem é mapa, não token. */
@@ -103,15 +102,14 @@ export function isAudioKind(kind: AssetKind): boolean {
 }
 
 export function hasThumb(kind: AssetKind): boolean {
-  return THUMB_KINDS.includes(kind);
+  return isImageKind(kind);
 }
 
 /** O que a biblioteca pode baixar. `null` = nunca carregar o arquivo cheio. */
 export function libraryImageUrl(
   asset: Pick<Asset, 'kind' | 'url' | 'thumb_url'>
 ): string | null {
-  if (!isImageKind(asset.kind)) return null;
-  return hasThumb(asset.kind) ? asset.thumb_url : asset.url;
+  return isImageKind(asset.kind) ? asset.thumb_url : null;
 }
 
 /** Arquivo do repositório, servido de /vtt/_built/: vem do manifest, sem linha em `assets`. */

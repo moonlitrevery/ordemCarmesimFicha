@@ -7,10 +7,10 @@ import {
 } from './rules';
 
 const WEBP_QUALITY = 0.85;
+const THUMB_QUALITY = 0.75;
 
 export interface PreparedImage {
   blob: Blob;
-  /** Só em tipos com miniatura própria (mapa e adereço). */
   thumb: Blob | null;
   width: number;
   height: number;
@@ -19,14 +19,15 @@ export interface PreparedImage {
 async function encode(
   bitmap: ImageBitmap,
   width: number,
-  height: number
+  height: number,
+  quality = WEBP_QUALITY
 ): Promise<Blob> {
   if (typeof OffscreenCanvas !== 'undefined') {
     const canvas = new OffscreenCanvas(width, height);
     const context = canvas.getContext('2d');
     if (context) {
       context.drawImage(bitmap, 0, 0, width, height);
-      return canvas.convertToBlob({ type: 'image/webp', quality: WEBP_QUALITY });
+      return canvas.convertToBlob({ type: 'image/webp', quality });
     }
   }
 
@@ -41,7 +42,7 @@ async function encode(
       (blob) =>
         blob ? resolve(blob) : reject(new Error('Falha ao comprimir a imagem.')),
       'image/webp',
-      WEBP_QUALITY
+      quality
     );
   });
 }
@@ -62,9 +63,20 @@ export async function prepareImage(
     let thumb: Blob | null = null;
     if (hasThumb(kind)) {
       const size = fitWithin(bitmap.width, bitmap.height, THUMB_MAX_SIDE);
-      thumb = await encode(bitmap, size.width, size.height);
+      thumb = await encode(bitmap, size.width, size.height, THUMB_QUALITY);
     }
     return { blob, thumb, width, height };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** Miniatura de um arquivo que já está no Blob (asset antigo). */
+export async function prepareThumb(file: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const size = fitWithin(bitmap.width, bitmap.height, THUMB_MAX_SIDE);
+    return await encode(bitmap, size.width, size.height, THUMB_QUALITY);
   } finally {
     bitmap.close();
   }

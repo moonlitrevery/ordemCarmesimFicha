@@ -10,9 +10,9 @@ const root = path.resolve(process.argv[2] ?? 'public/vtt');
 const manifestPath = path.resolve(process.argv[3] ?? 'generated/vtt-manifest.json');
 const BUILT_DIR = '_built';
 const PLAYER_DIR = 'jogadores';
-const THUMB_SIDE = 256;
+const THUMB_SIDE = 96;
 const IMAGE_QUALITY = 85;
-const THUMB_QUALITY = 80;
+const THUMB_QUALITY = 75;
 const MB = 1024 * 1024;
 
 const IMAGE_EXTENSIONS = ['.webp', '.png', '.jpg', '.jpeg'];
@@ -24,10 +24,10 @@ const AUDIO_MIMES = {
 
 // Espelha maxSideForKind e os limites de src/lib/vtt/assets/rules.ts.
 const FOLDERS = {
-  mapas: { kind: 'mapa', image: true, maxSide: 4096, thumb: true, maxBytes: 15 * MB },
-  tokens: { kind: 'token', image: true, maxSide: 512, thumb: false, maxBytes: 15 * MB },
-  addons: { kind: 'addon', image: true, maxSide: 512, thumb: false, maxBytes: 15 * MB },
-  'adereços': { kind: 'adereco', image: true, maxSide: 1024, thumb: true, maxBytes: 15 * MB },
+  mapas: { kind: 'mapa', image: true, maxSide: 4096, maxBytes: 15 * MB },
+  tokens: { kind: 'token', image: true, maxSide: 512, maxBytes: 15 * MB },
+  addons: { kind: 'addon', image: true, maxSide: 512, maxBytes: 15 * MB },
+  'adereços': { kind: 'adereco', image: true, maxSide: 1024, maxBytes: 15 * MB },
   'sons-ambiente': { kind: 'audio_ambiente', image: false, maxBytes: 8 * MB },
   sfx: { kind: 'audio_sfx', image: false, maxBytes: 8 * MB },
 };
@@ -106,11 +106,9 @@ async function buildImage(buffer, config, keep) {
   );
   const built = await sharp(target).metadata();
 
-  let thumb = null;
-  if (config.thumb) {
-    thumb = `${hash}-thumb.webp`;
-    await buildOnce(thumb, keep, () => encodeWebp(buffer, THUMB_SIDE, THUMB_QUALITY));
-  }
+  // O tamanho vai no nome: senão o build reaproveitaria a miniatura de outro tamanho.
+  const thumb = `${hash}-t${THUMB_SIDE}.webp`;
+  await buildOnce(thumb, keep, () => encodeWebp(buffer, THUMB_SIDE, THUMB_QUALITY));
   return {
     name,
     target,

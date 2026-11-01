@@ -58,6 +58,38 @@ function probeMedia(file: File, kind: AssetKind): Promise<MediaInfo> {
   });
 }
 
+/** Devolve a URL. Pequena o bastante para não precisar de barra de progresso. */
+export async function uploadThumb(kind: AssetKind, thumb: Blob): Promise<string> {
+  const { upload } = await import('@vercel/blob/client');
+  const uploaded = await upload(
+    buildThumbPathname(kind, crypto.randomUUID(), thumb.type),
+    thumb,
+    {
+      access: 'public',
+      handleUploadUrl: '/api/upload',
+      clientPayload: JSON.stringify({ kind, thumb: true }),
+      contentType: thumb.type,
+    }
+  ).catch((error: unknown) => {
+    throw new Error(uploadErrorMessage(error instanceof Error ? error.message : ''));
+  });
+  return uploaded.url;
+}
+
+/** Asset antigo: `null` se a mesa recusou. */
+export async function registerThumb(
+  id: string,
+  thumbUrl: string
+): Promise<string | null> {
+  const res = await fetch(`/api/assets/${id}/thumb`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ thumbUrl }),
+  });
+  if (!res.ok) return null;
+  return ((await res.json()) as { thumbUrl: string | null }).thumbUrl;
+}
+
 export async function uploadAsset(
   file: File,
   kind: AssetKind,
@@ -91,22 +123,7 @@ export async function uploadAsset(
     new Error(uploadErrorMessage(error instanceof Error ? error.message : ''));
 
   // Miniatura primeiro: é pequena, e a barra de progresso fica só para o arquivo cheio.
-  let thumbUrl: string | null = null;
-  if (thumb) {
-    const uploaded = await upload(
-      buildThumbPathname(kind, crypto.randomUUID(), thumb.type),
-      thumb,
-      {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
-        clientPayload: JSON.stringify({ kind, thumb: true }),
-        contentType: thumb.type,
-      }
-    ).catch((error: unknown) => {
-      throw toUploadError(error);
-    });
-    thumbUrl = uploaded.url;
-  }
+  const thumbUrl = thumb ? await uploadThumb(kind, thumb) : null;
 
   const blob = await upload(
     buildAssetPathname(kind, crypto.randomUUID(), body.type),
