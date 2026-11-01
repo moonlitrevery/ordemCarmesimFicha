@@ -40,6 +40,7 @@ function object(id: string, patch: Partial<SceneObject> = {}): SceneObject {
     parent_id: null,
     local: null,
     caption: null,
+    effects: [],
     conditions: [],
     character_id: null,
     npc_id: null,
@@ -317,6 +318,7 @@ describe('payloads do canal', () => {
     expect(isValidObject(null)).toBe(false);
     expect(isValidObject(object('a', { scale: 0 }))).toBe(false);
     expect(isValidObject(object('a', { conditions: 'queimando' as unknown as string[] }))).toBe(false);
+    expect(isValidObject(object('a', { effects: 'fogo' as unknown as unknown[] }))).toBe(false);
     expect(isValidObject({ ...object('a'), x: 'NaN' })).toBe(false);
     expect(
       isValidObject({ ...object('a'), local: { x: 1 } })

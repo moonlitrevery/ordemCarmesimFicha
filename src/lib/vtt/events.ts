@@ -3,7 +3,7 @@ import type { Drawing, SceneObject } from './types';
 /**
  * Eventos de broadcast do canal da mesa. Qualquer membro consegue enviar no
  * canal, então `session:state`, `member:changed`, `asset:*`, `scene:assign`,
- * `scene:refresh`, `initiative:refresh` e `npc:refresh` são só avisos: quem recebe relê o estado do banco. Os de
+ * `scene:refresh`, `initiative:refresh`, `npc:refresh` e `fx:weather` são só avisos: quem recebe relê o estado do banco. Os de
  * objeto e desenho levam a linha já gravada, validada na chegada.
  */
 export type VttEvent =
@@ -24,6 +24,8 @@ export type VttEvent =
   | { type: 'initiative:refresh' }
   /** Sem dado nenhum: só a outra aba da mestra consegue reler `npcs`. */
   | { type: 'npc:refresh' }
+  /** A mestra mudou o clima da cena: quem está nela relê `scenes.weather`. */
+  | { type: 'fx:weather'; sceneId: string }
   | { type: 'draw:add'; drawing: Drawing }
   /** `id` nulo: a mestra apagou todos os desenhos da cena. */
   | { type: 'draw:delete'; sceneId: string; id: string | null }

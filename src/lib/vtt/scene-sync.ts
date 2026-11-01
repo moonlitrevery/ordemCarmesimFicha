@@ -3,6 +3,7 @@ import type { Asset } from './assets/rules';
 import { checkUploadAvailable, uploadAsset } from './assets/upload';
 import type { VttEventOf } from './events';
 import { toggleCondition } from './conditions';
+import { setEffectColor, toggleEffect, type EffectEntry, type WeatherEntry } from './fx/rules';
 import { calibrate } from './geometry';
 import {
   HistoryStack,
@@ -53,6 +54,7 @@ const DRAG_THROTTLE_MS = 50;
 const RULER_THROTTLE_MS = 100;
 const PING_INTERVAL_MS = 1000;
 const REFRESH_DELAY_MS = 300;
+const WEATHER_SAVE_MS = 250;
 
 const SAVE_ERROR = 'Não foi possível salvar. Tente de novo.';
 const SKIPPED_STEP = 'Esse passo foi pulado: o que ele mudava já não existe.';
@@ -99,6 +101,11 @@ export class SceneSync {
   private history = new HistoryStack();
   private historyQueue: Promise<void> = Promise.resolve();
   private writes = new Set<Promise<unknown>>();
+  /** Clima ainda não gravado: releitura não pode passar por cima do que a mestra mexeu. */
+  private pendingWeather: { sceneId: string; weather: WeatherEntry[] } | null = null;
+  private weatherTimer: ReturnType<typeof setTimeout> | undefined;
+  private weatherTicket = 0;
+  private weatherSave: Promise<void> = Promise.resolve();
   /** Objeto na mão de quem está arrastando: evento de fora não o tira do lugar. */
   interactingId: string | null = null;
 
@@ -125,6 +132,7 @@ export class SceneSync {
       channel.on('draw:delete', (event) => this.onDrawDelete(event)),
       channel.on('ping', (event) => this.onPing(event)),
       channel.on('ruler', (event) => this.onRuler(event)),
+      channel.on('fx:weather', (event) => void this.onWeather(event)),
       // Sessão, cena padrão e separação chegam pelo snapshot: decidem a cena vista.
       useVttStore.subscribe((state, prev) => {
         if (
@@ -141,6 +149,7 @@ export class SceneSync {
   }
 
   stop() {
+    void this.flushWeather();
     this.stopped = true;
     clearTimeout(this.refreshTimer);
     this.unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -160,7 +169,14 @@ export class SceneSync {
     try {
       const scenes = await fetchScenes(this.supabase, this.tableId);
       if (this.stopped || ticket !== this.loadTicket) return;
-      useVttStore.setState({ scenes });
+      const pending = this.pendingWeather;
+      useVttStore.setState({
+        scenes: pending
+          ? scenes.map((scene) =>
+              scene.id === pending.sceneId ? { ...scene, weather: pending.weather } : scene
+            )
+          : scenes,
+      });
       await this.loadViewedScene(scenes, ticket);
     } catch {
       // Falha de rede: mantém o que está na tela; o próximo SUBSCRIBED recarrega.
@@ -699,6 +715,75 @@ export class SceneSync {
     void this.changeObject(id, {
       conditions: toggleCondition(object.conditions, key),
     });
+  }
+
+  /** Fica ligado até alguém desligar. Vários ao mesmo tempo no mesmo objeto. */
+  toggleEffect(id: string, entry: EffectEntry) {
+    const object = store().objects[id];
+    if (!object) return;
+    void this.changeObject(id, { effects: toggleEffect(object.effects, entry) });
+  }
+
+  setEffectColor(id: string, entry: EffectEntry, color: string) {
+    const object = store().objects[id];
+    if (!object) return;
+    void this.changeObject(id, {
+      effects: setEffectColor(object.effects, entry.type, entry.id, color),
+    });
+  }
+
+  // ---------- Clima ----------
+
+  /** Aparece na hora para a mestra; grava e avisa agrupado, porque o controle desliza. */
+  setWeather(sceneId: string, weather: WeatherEntry[]) {
+    if (this.pendingWeather && this.pendingWeather.sceneId !== sceneId) {
+      void this.flushWeather();
+    }
+    this.weatherTicket++;
+    this.pendingWeather = { sceneId, weather };
+    useVttStore.setState((s) => ({
+      scenes: s.scenes.map((scene) => (scene.id === sceneId ? { ...scene, weather } : scene)),
+    }));
+    clearTimeout(this.weatherTimer);
+    this.weatherTimer = setTimeout(() => void this.flushWeather(), WEATHER_SAVE_MS);
+  }
+
+  private async flushWeather() {
+    clearTimeout(this.weatherTimer);
+    const pending = this.pendingWeather;
+    if (!pending) return;
+    const ticket = this.weatherTicket;
+    // Uma gravação de cada vez: a mais antiga não pode chegar por último.
+    this.weatherSave = this.weatherSave.then(async () => {
+      const { error } = await this.supabase
+        .from('scenes')
+        .update({ weather: pending.weather })
+        .eq('id', pending.sceneId);
+      if (ticket === this.weatherTicket) this.pendingWeather = null;
+      if (error) {
+        store().showToast(SAVE_ERROR);
+        this.scheduleRefresh();
+        return;
+      }
+      this.channel.emit({ type: 'fx:weather', sceneId: pending.sceneId });
+    });
+    await this.weatherSave;
+  }
+
+  /** Só o aviso viaja: o RLS decide se este jogador pode ler o clima da cena. */
+  private async onWeather({ sceneId }: VttEventOf<'fx:weather'>) {
+    if (sceneId !== store().viewedSceneId || this.pendingWeather) return;
+    const { data, error } = await this.supabase
+      .from('scenes')
+      .select('weather')
+      .eq('id', sceneId)
+      .maybeSingle();
+    if (this.stopped || error || !data || this.pendingWeather) return;
+    useVttStore.setState((s) => ({
+      scenes: s.scenes.map((scene) =>
+        scene.id === sceneId ? { ...scene, weather: data.weather } : scene
+      ),
+    }));
   }
 
   // ---------- Desenhos ----------

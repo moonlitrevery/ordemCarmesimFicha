@@ -51,6 +51,7 @@ import { SceneViewBanner } from './SceneViewBanner';
 import { SettingsMenu } from './SettingsMenu';
 import { TokenContextMenu } from './TokenContextMenu';
 import { TopBar } from './TopBar';
+import { WeatherPanel } from './WeatherPanel';
 
 // ssr: false e import dinâmico: Pixi só existe no navegador e só nesta rota.
 const MapCanvas = dynamic(
@@ -84,12 +85,6 @@ const GM_PLACEHOLDER_ITEMS: RailItem[] = [
     icon: Volume2,
     content: <Placeholder text="O som chega na fase 7." />,
   },
-  {
-    id: 'fx',
-    label: 'Efeitos de tela',
-    icon: Sparkles,
-    content: <Placeholder text="Os efeitos de tela chegam na fase 6." />,
-  },
 ];
 
 export function VttShell({ initial }: { initial: TableSnapshot }) {
@@ -109,6 +104,8 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
   const chatUnread = useVttStore((s) => s.chatUnread);
   const conditionTip = useVttStore((s) => s.conditionTip);
+  const lightModePrompt = useVttStore((s) => s.lightModePrompt);
+  const setLightMode = useVttStore((s) => s.setLightMode);
   const isDesk = useIsDesk();
   const [openPanels, setOpenPanels] = useState<Record<RailSide, string | null>>({
     left: null,
@@ -377,6 +374,12 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           content: <InitiativePanel />,
         },
         ...GM_PLACEHOLDER_ITEMS,
+        {
+          id: 'fx',
+          label: 'Efeitos de tela',
+          icon: Sparkles,
+          content: <WeatherPanel />,
+        },
       ]
     : [];
 
@@ -479,6 +482,32 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         >
           {toast}
         </p>
+      )}
+
+      {lightModePrompt && (
+        <div
+          role="alertdialog"
+          aria-label="Ativar modo leve?"
+          className="absolute bottom-16 left-1/2 z-40 w-72 max-w-[calc(100vw-1rem)] -translate-x-1/2 space-y-2 rounded-md border border-ink-border bg-ink-raised p-3 text-xs text-parchment desk:bottom-4"
+        >
+          <p>O mapa está travando. Ativar modo leve? Dá para mudar depois em ⋯, no canto.</p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="btn-ghost min-h-11 px-3 py-1 text-xs desk:min-h-0"
+              onClick={() => useVttStore.setState({ lightModePrompt: false })}
+            >
+              Agora não
+            </button>
+            <button
+              type="button"
+              className="btn-primary min-h-11 px-3 py-1 text-xs desk:min-h-0"
+              onClick={() => setLightMode(true)}
+            >
+              Ativar
+            </button>
+          </div>
+        </div>
       )}
 
       {conditionTip && (

@@ -671,7 +671,30 @@ describe('RLS da migração 017: o conjunto visível é o mesmo de can_view_scen
 });
 
 describe('migrações 016 e 017', () => {
+  it('efeitos: jogador liga, mas a coluna tem formato e limite', async () => {
+    const object = await insertOne(PLAYER, INSERT_OBJECT, [defaultScene, approvedToken, PLAYER, false]);
+    const update = `update public.scene_objects set effects = $1::jsonb where id = $2 returning effects`;
+    const effects = [{ type: 'spell', id: 'covardia' }];
+    const [row] = await asUser<Record<string, unknown>>(PLAYER, update, [JSON.stringify(effects), object.id]);
+    expect(row.effects).toEqual(effects);
+    await expect(asUser(PLAYER, update, ['{"a":1}', object.id])).rejects.toThrow(/scene_objects_effects_check/);
+    await expect(
+      asUser(PLAYER, update, [JSON.stringify(Array.from({ length: 3000 }, (_, i) => `valor-${i}-${Math.sqrt(i)}`)), object.id])
+    ).rejects.toThrow(/scene_objects_effects_check/);
+  });
+
+  it('clima: só a mestra grava, e jogador lê o da própria cena', async () => {
+    const update = `update public.scenes set weather = $1::jsonb where id = $2 returning weather`;
+    const weather = [{ type: 'chuva', on: true, intensity: 70 }];
+    expect(await asUser(PLAYER, update, [JSON.stringify(weather), defaultScene])).toEqual([]);
+    const [row] = await asUser<Record<string, unknown>>(GM, update, [JSON.stringify(weather), defaultScene]);
+    expect(row.weather).toEqual(weather);
+    const [read] = await asUser<Record<string, unknown>>(PLAYER, `select weather from public.scenes where id = $1`, [defaultScene]);
+    expect(read.weather).toEqual(weather);
+  });
+
   it('rodam de novo sobre o schema pronto e mantêm o NPC fechado', async () => {
+    await db.exec(readSql('migrations', '018_vtt_effects.sql'));
     await db.exec(readSql('migrations', '016_vtt_npcs.sql'));
     await db.exec(readSql('migrations', '017_vtt_library_perf.sql'));
     const npc = await insertOne(

@@ -8,6 +8,8 @@ import {
   Ticker,
 } from 'pixi.js';
 import { conditionArc, resolveConditions, splitVisibleConditions } from '../conditions';
+import { FxManager } from '../fx/manager';
+import { FpsMonitor } from '../fx/rules';
 import { formatRulerDistance } from '../geometry';
 import { currentEntry } from '../initiative';
 import type { EngineBridge } from '../scene-sync';
@@ -35,6 +37,8 @@ import { TextureStore } from './textures';
 const EMPTY_MAP_SIZE = 2000;
 const FALLBACK_OBJECT_SIZE = 256;
 const PING_MS = 1500;
+const LIGHT_FRAME_MS = 30;
+const ANIMATION_FRAME_MS = 11;
 const OBFUSCATE_MS = 100;
 const OBFUSCATE_LIGHT_MS = 1000;
 const REMOTE_RULER_EXPIRES_MS = 5000;
@@ -65,6 +69,11 @@ interface ObjectNode {
   height: number;
   badge: Container | null;
   badgeKind: 'hidden' | 'pending' | null;
+  /** Posição guardada e o desvio do efeito Tremor, somados no container. */
+  baseX: number;
+  baseY: number;
+  shakeX: number;
+  shakeY: number;
 }
 
 interface CaptionNode {
@@ -146,6 +155,8 @@ export class VttEngine implements EngineBridge {
   private obfuscateInterval = 0;
   private unsubscribe: (() => void) | null = null;
   private input: EngineInput | null = null;
+  private fx: FxManager | null = null;
+  private fpsMonitor = new FpsMonitor();
 
   private constructor(private host: HTMLElement) {}
 
@@ -213,6 +224,17 @@ export class VttEngine implements EngineBridge {
     this.uiLayer.addChild(this.selection);
     this.propsLayer.sortableChildren = true;
     this.tokensLayer.sortableChildren = true;
+    this.fx = new FxManager(
+      {
+        renderer: this.app.renderer,
+        addAnimation: (animate) => this.addAnimation(animate),
+        invalidate: () => this.invalidate(),
+        viewWidth: () => this.viewWidth,
+        viewHeight: () => this.viewHeight,
+        lightMode: () => useVttStore.getState().lightMode,
+      },
+      this.app.stage
+    );
 
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(this.host);
@@ -251,6 +273,7 @@ export class VttEngine implements EngineBridge {
     this.rulers.forEach((ruler) => clearTimeout(ruler.expires));
     this.captions.forEach((node) => destroyCaptionArt(node.art));
     this.markerArt.destroy();
+    this.fx?.destroy();
     this.textures.destroy();
     this.app.destroy(
       { removeView: true },
@@ -274,12 +297,12 @@ export class VttEngine implements EngineBridge {
 
   private frame(now: number) {
     const animating = this.animations.size > 0;
-    // Modo leve: animação a 30 fps. Mudança avulsa desenha na hora.
-    if (
-      animating &&
-      useVttStore.getState().lightMode &&
-      now - this.lastFrame < 30
-    ) {
+    // Modo leve: animação a 30 fps; sem ele, monitor de 144 Hz não desenha 144 quadros
+    // de efeito (90 Hz, o tablet, passa inteiro). Mudança avulsa desenha na hora.
+    const interval = useVttStore.getState().lightMode
+      ? LIGHT_FRAME_MS
+      : ANIMATION_FRAME_MS;
+    if (animating && now - this.lastFrame < interval) {
       this.schedule();
       return;
     }
@@ -288,6 +311,9 @@ export class VttEngine implements EngineBridge {
     Ticker.system.update(now);
     this.app.render();
     this.frames++;
+    if (this.fx?.running && this.fpsMonitor.feed(now)) {
+      useVttStore.getState().askLightMode();
+    }
     if (this.animations.size > 0) this.schedule();
   }
 
@@ -296,22 +322,35 @@ export class VttEngine implements EngineBridge {
     return this.frames;
   }
 
+  /** Para o teste de desempenho: o rAF pedido e as partículas vivas agora. */
+  get fxStats() {
+    return {
+      scheduled: this.raf !== 0,
+      running: this.fx?.running ?? false,
+      particles: this.fx?.liveParticles ?? 0,
+    };
+  }
+
   private addAnimation(animate: (now: number) => void) {
     this.animations.add(animate);
     this.schedule();
-    return () => this.animations.delete(animate);
+    return () => {
+      this.animations.delete(animate);
+    };
   }
 
   private resize() {
     const width = Math.max(1, this.host.clientWidth);
     const height = Math.max(1, this.host.clientHeight);
     this.app.renderer.resize(width, height, this.resolution());
+    this.fx?.resize();
     this.invalidate();
   }
 
   private applyLightMode() {
     this.resize();
     this.updateObfuscationTimer();
+    this.fx?.applyLightMode();
   }
 
   // ---------- Câmera ----------
@@ -332,6 +371,7 @@ export class VttEngine implements EngineBridge {
     this.layoutMarkers();
     this.drawSelection();
     this.layoutTransient();
+    this.fx?.wake();
     this.invalidate();
   }
 
@@ -396,6 +436,8 @@ export class VttEngine implements EngineBridge {
     // Só depois de todos existirem: filho precisa do container do pai.
     for (const object of Object.values(objects)) this.placeNode(object, objects);
 
+    this.fx?.syncObjects(objects, this.nodes);
+    this.fx?.syncWeather(scene?.weather ?? []);
     this.syncCaptions(objects);
     this.syncMarkers(objects);
     this.drawSelection();
@@ -471,6 +513,10 @@ export class VttEngine implements EngineBridge {
         height: FALLBACK_OBJECT_SIZE,
         badge: null,
         badgeKind: null,
+        baseX: 0,
+        baseY: 0,
+        shakeX: 0,
+        shakeY: 0,
       };
       this.nodes.set(object.id, node);
     }
@@ -480,7 +526,9 @@ export class VttEngine implements EngineBridge {
 
     const own = ownTransform(object, objects);
     const { container } = node;
-    container.position.set(own.x, own.y);
+    node.baseX = own.x;
+    node.baseY = own.y;
+    container.position.set(own.x + node.shakeX, own.y + node.shakeY);
     container.rotation = own.rotation;
     container.scale.set(
       own.scale * (own.flipX ? -1 : 1),
@@ -510,6 +558,7 @@ export class VttEngine implements EngineBridge {
         node.sprite.texture = texture;
         node.width = texture.width;
         node.height = texture.height;
+        this.fx?.layoutObject(node.id);
         this.layoutCaptions();
         this.layoutMarkers();
         this.drawSelection();
@@ -539,6 +588,7 @@ export class VttEngine implements EngineBridge {
   }
 
   private removeNode(id: string, node: ObjectNode) {
+    this.fx?.detachObject(id);
     // Filhos saem antes: destruir o container do pai levaria os deles junto.
     node.container.children.slice().forEach((child) => {
       if (child !== node.sprite && child !== node.badge) {

@@ -66,6 +66,8 @@ export interface VttScene {
   sort: number;
   map_asset_id: string | null;
   meters_per_px: number | null;
+  /** Efeitos de tela salvos. Ler com `parseWeather`. */
+  weather: unknown;
   created_at: string;
 }
 
@@ -97,6 +99,8 @@ export interface SceneObject {
   /** Transformação relativa ao pai; só vale enquanto `parent_id` existe. */
   local: Transform | null;
   caption: Caption | null;
+  /** Magias e efeitos ligados. Qualquer jogador grava: ler com `parseEffects`. */
+  effects: unknown[];
   /** Ver `conditions.ts`: id da lista padrão ou `custom:{emoji}:{texto}`. */
   conditions: string[];
   character_id: string | null;

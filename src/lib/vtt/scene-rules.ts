@@ -180,6 +180,7 @@ export type ObjectPatch = Partial<
     | 'parent_id'
     | 'local'
     | 'caption'
+    | 'effects'
     | 'conditions'
     | 'npc_id'
     | 'hidden'
@@ -406,6 +407,7 @@ export function isValidObject(value: unknown): value is SceneObject {
     typeof o.updated_at === 'string' &&
     (o.local === null || isTransform(o.local)) &&
     (o.caption === null || isValidCaption(o.caption)) &&
+    Array.isArray(o.effects) &&
     isValidConditionList(o.conditions)
   );
 }
@@ -456,6 +458,7 @@ export function placementAsObject(placement: PendingPlacement): SceneObject {
     parent_id: null,
     local: null,
     caption: null,
+    effects: [],
     conditions: [],
     character_id: null,
     npc_id: null,

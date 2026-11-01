@@ -1777,3 +1777,14 @@ create index if not exists scenes_map_asset_id_idx on public.scenes (map_asset_i
 create index if not exists assets_visibility_status_kind_idx on public.assets (visibility, status, kind);
 
 notify pgrst, 'reload schema';
+
+-- ========== MESA (VTT) — ver migrations/018_vtt_effects.sql ==========
+alter table public.scene_objects drop constraint if exists scene_objects_effects_check;
+alter table public.scene_objects add constraint scene_objects_effects_check
+  check (jsonb_typeof(effects) = 'array' and pg_column_size(effects) <= 4096);
+
+alter table public.scenes drop constraint if exists scenes_weather_check;
+alter table public.scenes add constraint scenes_weather_check
+  check (jsonb_typeof(weather) = 'array' and pg_column_size(weather) <= 4096);
+
+notify pgrst, 'reload schema';

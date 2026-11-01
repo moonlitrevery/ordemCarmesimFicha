@@ -13,16 +13,20 @@ import {
   RotateCcw,
   RotateCw,
   Skull,
+  Sparkle,
   Swords,
   Trash2,
   Type,
   Undo,
+  WandSparkles,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { supportsEffects } from '@/lib/vtt/fx/rules';
 import { canDeleteObject } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import { ConditionsMenu } from './ConditionsMenu';
+import { SpellsMenu, TokenEffectsMenu } from './EffectsMenus';
 
 const QUARTER_TURN = Math.PI / 2;
 
@@ -73,7 +77,7 @@ export function TokenContextMenu() {
   const sync = useVttStore((s) => s.sync);
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
-  const [view, setView] = useState<'main' | 'conditions'>('main');
+  const [view, setView] = useState<'main' | 'conditions' | 'spells' | 'effects'>('main');
 
   const open = Boolean(menu && object);
 
@@ -115,22 +119,35 @@ export function TokenContextMenu() {
     useVttStore.setState({ contextMenu: null });
   };
 
-  if (view === 'conditions') {
+  const { kind } = object;
+  const backToMain = () => setView('main');
+
+  if (view !== 'main') {
     return (
       <div
         ref={ref}
         role="menu"
-        aria-label="Condições do token"
+        aria-label={
+          view === 'conditions'
+            ? 'Condições do token'
+            : view === 'spells'
+              ? 'Magias do token'
+              : 'Efeitos do token'
+        }
         className="fixed z-50 max-h-[85vh] w-64 overflow-y-auto rounded-xl border border-ink-border bg-ink-raised p-1 shadow-panel"
         style={position}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <ConditionsMenu object={object} onBack={() => setView('main')} />
+        {view === 'conditions' && <ConditionsMenu object={object} onBack={backToMain} />}
+        {view === 'spells' && supportsEffects(kind) && (
+          <SpellsMenu object={object} target={kind} onBack={backToMain} />
+        )}
+        {view === 'effects' && <TokenEffectsMenu object={object} onBack={backToMain} />}
       </div>
     );
   }
 
-  const isToken = object.kind === 'token';
+  const isToken = kind === 'token';
 
   return (
     <div
@@ -207,6 +224,22 @@ export function TokenContextMenu() {
           hint="▸"
           onClick={() => setView('conditions')}
         />
+      )}
+      {supportsEffects(kind) && (
+        <>
+          <Item
+            icon={WandSparkles}
+            label="Magias"
+            hint="▸"
+            onClick={() => setView('spells')}
+          />
+          <Item
+            icon={Sparkle}
+            label="Efeitos"
+            hint="▸"
+            onClick={() => setView('effects')}
+          />
+        </>
       )}
       {isGm && (
         <>

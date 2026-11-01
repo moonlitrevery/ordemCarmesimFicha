@@ -96,6 +96,9 @@ interface VttState {
   /** Fim do arraste de calibração: o guia pergunta quantos metros aquilo tem. */
   calibrationPixels: number | null;
   lightMode: boolean;
+  /** FPS baixo com efeito ligado: pergunta uma vez por visita (SPEC §7.4). */
+  lightModePrompt: boolean;
+  lightModeAsked: boolean;
   canUndo: boolean;
   canRedo: boolean;
 
@@ -110,6 +113,7 @@ interface VttState {
   bumpLibrary: () => void;
   showToast: (text: string) => void;
   setLightMode: (on: boolean) => void;
+  askLightMode: () => void;
   startCalibration: () => void;
   cancelCalibration: () => void;
 }
@@ -119,14 +123,19 @@ const LIGHT_MODE_KEY = 'vtt:light-mode';
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** SPEC §7.4: escolha salva vale mais; sem escolha, liga em aparelho fraco. */
-function initialLightMode(): boolean {
+function savedLightMode(): string | null {
   try {
-    const saved = window.localStorage.getItem(LIGHT_MODE_KEY);
-    if (saved !== null) return saved === '1';
+    return window.localStorage.getItem(LIGHT_MODE_KEY);
   } catch {
     // Sem localStorage (janela anônima): segue a detecção.
+    return null;
   }
+}
+
+/** SPEC §7.4: escolha salva vale mais; sem escolha, liga em aparelho fraco. */
+function initialLightMode(): boolean {
+  const saved = savedLightMode();
+  if (saved !== null) return saved === '1';
   const nav = navigator as Navigator & { deviceMemory?: number };
   return (
     (nav.hardwareConcurrency ?? 8) <= 4 || (nav.deviceMemory ?? 8) <= 4
@@ -193,6 +202,8 @@ export const useVttStore = create<VttState>((set) => ({
   calibrating: false,
   calibrationPixels: null,
   lightMode: false,
+  lightModePrompt: false,
+  lightModeAsked: false,
   canUndo: false,
   canRedo: false,
   enterTable: (snapshot) =>
@@ -234,6 +245,8 @@ export const useVttStore = create<VttState>((set) => ({
       calibrating: false,
       calibrationPixels: null,
       lightMode: initialLightMode(),
+      lightModePrompt: false,
+      lightModeAsked: false,
       canUndo: false,
       canRedo: false,
     }),
@@ -251,13 +264,20 @@ export const useVttStore = create<VttState>((set) => ({
     toastTimer = setTimeout(() => set({ toast: null }), TOAST_MS);
   },
   setLightMode: (lightMode) => {
-    set({ lightMode });
+    set({ lightMode, lightModePrompt: false });
     try {
       window.localStorage.setItem(LIGHT_MODE_KEY, lightMode ? '1' : '0');
     } catch {
       // Sem localStorage: vale só nesta visita.
     }
   },
+  // Quem já escolheu no menu não é perguntado de novo.
+  askLightMode: () =>
+    set((state) =>
+      state.lightMode || state.lightModeAsked || savedLightMode() !== null
+        ? state
+        : { lightModePrompt: true, lightModeAsked: true }
+    ),
   startCalibration: () =>
     set({
       calibrating: true,
