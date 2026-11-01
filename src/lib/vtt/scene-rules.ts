@@ -1,3 +1,4 @@
+import { isValidConditionList } from './conditions';
 import type {
   Caption,
   Drawing,
@@ -179,6 +180,8 @@ export type ObjectPatch = Partial<
     | 'parent_id'
     | 'local'
     | 'caption'
+    | 'conditions'
+    | 'npc_id'
     | 'hidden'
   >
 >;
@@ -402,7 +405,8 @@ export function isValidObject(value: unknown): value is SceneObject {
     isFiniteNumber(o.z) &&
     typeof o.updated_at === 'string' &&
     (o.local === null || isTransform(o.local)) &&
-    (o.caption === null || isValidCaption(o.caption))
+    (o.caption === null || isValidCaption(o.caption)) &&
+    isValidConditionList(o.conditions)
   );
 }
 
@@ -452,6 +456,9 @@ export function placementAsObject(placement: PendingPlacement): SceneObject {
     parent_id: null,
     local: null,
     caption: null,
+    conditions: [],
+    character_id: null,
+    npc_id: null,
     hidden: false,
     created_by: placement.created_by,
     updated_at: placement.created_at,

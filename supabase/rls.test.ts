@@ -429,10 +429,170 @@ describe('desfazer', () => {
   });
 });
 
+describe('npcs', () => {
+  const INSERT_NPC = `insert into public.npcs (table_id, name, plane, tier, nd)
+    values ($1, $2, 'tartaro', 't9', 1) returning id, name`;
+  const addNpc = (name: string) => insertOne(GM, INSERT_NPC, [openTable, name]);
+
+  it('mestra recebe o NPC novo e lê os dela', async () => {
+    const npc = await addNpc('Caranguejo');
+    const rows = await asUser(GM, `select id from public.npcs where id = $1`, [npc.id]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it.each([
+    ['jogador', () => PLAYER],
+    ['espectador', () => SPECTATOR],
+    ['quem não está na mesa', () => OUTSIDER],
+  ])('%s não lê, não cria, não muda e não apaga', async (_label, user) => {
+    const npc = await addNpc('Segredo');
+    const id = user();
+    expect(await asUser(id, `select * from public.npcs`)).toEqual([]);
+    await expect(asUser(id, INSERT_NPC, [openTable, 'Forjado'])).rejects.toMatchObject({
+      code: '42501',
+    });
+    expect(
+      await asUser(id, `update public.npcs set hp_current = 0 where id = $1 returning id`, [npc.id])
+    ).toEqual([]);
+    expect(
+      await asUser(id, `delete from public.npcs where id = $1 returning id`, [npc.id])
+    ).toEqual([]);
+  });
+
+  it('anon não tem privilégio nenhum', async () => {
+    await db.exec('set role anon');
+    try {
+      await expect(db.query('select * from public.npcs')).rejects.toMatchObject({
+        code: '42501',
+      });
+    } finally {
+      await db.exec('reset role');
+    }
+  });
+
+  it('mestra de outra mesa não lê', async () => {
+    const other = await db.query<{ id: string }>(
+      `insert into auth.users (id, email) values (gen_random_uuid(), 'outra@teste') returning id`
+    );
+    const otherGm = other.rows[0].id;
+    await db.query(`update public.profiles set role = 'mestre' where id = $1`, [otherGm]);
+    await addNpc('Da outra mesa');
+    expect(await asUser(otherGm, `select * from public.npcs`)).toEqual([]);
+  });
+
+  describe('vínculo com o token', () => {
+    const LINK = `update public.scene_objects set npc_id = $1 where id = $2 returning id, npc_id`;
+
+    it('só a mestra vincula', async () => {
+      const npc = await addNpc('Vinculado');
+      const object = await insertOne(PLAYER, INSERT_OBJECT, [defaultScene, approvedToken, PLAYER, false]);
+      await expect(asUser(PLAYER, LINK, [npc.id, object.id])).rejects.toBeTruthy();
+      expect(await asUser(GM, LINK, [npc.id, object.id])).toEqual([
+        { id: object.id, npc_id: npc.id },
+      ]);
+    });
+
+    it('apagar o NPC solta o token, que fica no mapa', async () => {
+      const npc = await addNpc('Apagado');
+      const object = await insertOne(GM, INSERT_OBJECT, [defaultScene, approvedToken, GM, false]);
+      await asUser(GM, LINK, [npc.id, object.id]);
+      await asUser(GM, `delete from public.npcs where id = $1`, [npc.id]);
+      const { rows } = await db.query<{ npc_id: string | null }>(
+        `select npc_id from public.scene_objects where id = $1`,
+        [object.id]
+      );
+      expect(rows).toEqual([{ npc_id: null }]);
+    });
+
+    it('não vincula a um NPC que não existe', async () => {
+      const object = await insertOne(GM, INSERT_OBJECT, [defaultScene, approvedToken, GM, false]);
+      await expect(
+        asUser(GM, LINK, ['99999999-9999-4999-8999-000000000abc', object.id])
+      ).rejects.toMatchObject({ code: '23503' });
+    });
+
+    const restorable = (id: string, npcId: string | null, createdBy: string) =>
+      JSON.stringify({
+        id,
+        scene_id: defaultScene,
+        asset_id: approvedToken,
+        kind: 'token',
+        x: 0,
+        y: 0,
+        npc_id: npcId,
+        created_by: createdBy,
+      });
+    const RESTORE = `select id, npc_id from public.restore_scene_object($1::jsonb)`;
+
+    it('mestra desfaz com o vínculo; NPC apagado volta sem vínculo', async () => {
+      const npc = await addNpc('Volta');
+      const a = '99999999-9999-4999-8999-000000000a01';
+      const b = '99999999-9999-4999-8999-000000000a02';
+      expect(await asUser(GM, RESTORE, [restorable(a, npc.id, GM)])).toEqual([
+        { id: a, npc_id: npc.id },
+      ]);
+      expect(
+        await asUser(GM, RESTORE, [restorable(b, '99999999-9999-4999-8999-000000000abc', GM)])
+      ).toEqual([{ id: b, npc_id: null }]);
+    });
+
+    it('jogador recupera o próprio token, sem o vínculo', async () => {
+      const npc = await addNpc('Do jogador');
+      const id = '99999999-9999-4999-8999-000000000a03';
+      expect(await asUser(PLAYER, RESTORE, [restorable(id, npc.id, PLAYER)])).toEqual([
+        { id, npc_id: null },
+      ]);
+    });
+  });
+});
+
+describe('iniciativa e condições', () => {
+  const UPDATE = `update public.tables set initiative = $1::jsonb where id = $2 returning id`;
+  const value = JSON.stringify({ entries: [], current: 0, round: 3, notation: '1d20' });
+
+  it('todos da mesa leem; só a mestra grava', async () => {
+    expect(await asUser(GM, UPDATE, [value, openTable])).toHaveLength(1);
+    for (const user of [PLAYER, SPECTATOR]) {
+      expect(await asUser(user, UPDATE, [value, openTable])).toEqual([]);
+      const rows = await asUser<{ initiative: { round: number } }>(
+        user,
+        `select initiative from public.tables where id = $1`,
+        [openTable]
+      );
+      expect(rows[0].initiative.round).toBe(3);
+    }
+    expect(
+      await asUser(OUTSIDER, `select initiative from public.tables where id = $1`, [openTable])
+    ).toEqual([]);
+  });
+
+  it('jogador muda condição; espectador não', async () => {
+    const object = await insertOne(GM, INSERT_OBJECT, [defaultScene, approvedToken, GM, false]);
+    const SET = `update public.scene_objects set conditions = $1 where id = $2 returning conditions`;
+    expect(await asUser(PLAYER, SET, [['queimando', 'custom:🔥:Marca'], object.id])).toEqual([
+      { conditions: ['queimando', 'custom:🔥:Marca'] },
+    ]);
+    expect(await asUser(SPECTATOR, SET, [[], object.id])).toEqual([]);
+  });
+});
+
 // Por último: as de cima precisam provar que o schema.sql já está certo sozinho.
 describe('migração 014', () => {
   it('roda sobre o schema pronto e mantém o insert da mestra', async () => {
     await db.exec(readSql('migrations', '014_vtt_scenes_select_fix.sql'));
     await insertOne(GM, INSERT_SCENE, [closedTable]);
+  });
+});
+
+describe('migração 016', () => {
+  it('roda de novo sobre o schema pronto e mantém o NPC fechado', async () => {
+    await db.exec(readSql('migrations', '016_vtt_npcs.sql'));
+    const npc = await insertOne(
+      GM,
+      `insert into public.npcs (table_id, name, plane, tier, nd)
+       values ($1, 'Depois', 'astral', 'hilico', 1) returning id`,
+      [openTable]
+    );
+    expect(await asUser(PLAYER, `select id from public.npcs where id = $1`, [npc.id])).toEqual([]);
   });
 });

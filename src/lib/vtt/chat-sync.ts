@@ -194,11 +194,14 @@ export class ChatSync {
     notation: string;
     label: string;
     hidden: boolean;
+    /** Quem age não é a ficha escolhida (NPC, entrada da iniciativa). */
+    actor?: string;
   }): Promise<ChatRoll | null> {
     const rolled = rollDiceExpression(input.notation);
     if (!rolled) return null;
     const roll: ChatRoll = { ...rolled, label: input.label };
-    const { rollCharacter, me } = store();
+    const { me } = store();
+    const rollCharacter = input.actor ? null : store().rollCharacter;
 
     const failure = await this.insert(
       {
@@ -215,7 +218,7 @@ export class ChatSync {
       rolled.groups.length === 1 && rolled.groups[0].results.length === 1;
     void logDiceRoll({
       characterId: rollCharacter?.id ?? null,
-      characterName: rollCharacter?.name ?? me?.name ?? 'Jogador',
+      characterName: input.actor ?? rollCharacter?.name ?? me?.name ?? 'Jogador',
       label: input.label || rolled.notation,
       notation: rolled.notation,
       dieResult: singleDie ? rolled.groups[0].results[0] : null,

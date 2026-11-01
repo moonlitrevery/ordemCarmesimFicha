@@ -12,13 +12,17 @@ import {
   Link2Off,
   RotateCcw,
   RotateCw,
+  Skull,
+  Swords,
   Trash2,
   Type,
   Undo,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { canDeleteObject } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
+import { ConditionsMenu } from './ConditionsMenu';
 
 const QUARTER_TURN = Math.PI / 2;
 
@@ -58,7 +62,7 @@ function Separator() {
 
 /**
  * Em DOM, não no canvas: precisa de foco, leitor de tela e alvo grande no touch.
- * O que ainda não existe (efeitos, condições, vínculos) só entra quando chegar.
+ * O que ainda não existe (efeitos, vínculo de ficha) só entra quando chegar.
  */
 export function TokenContextMenu() {
   const menu = useVttStore((s) => s.contextMenu);
@@ -69,8 +73,11 @@ export function TokenContextMenu() {
   const sync = useVttStore((s) => s.sync);
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
+  const [view, setView] = useState<'main' | 'conditions'>('main');
 
   const open = Boolean(menu && object);
+
+  useEffect(() => setView('main'), [menu]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,7 +104,7 @@ export function TokenContextMenu() {
       left: Math.max(8, Math.min(menu.x, window.innerWidth - offsetWidth - 8)),
       top: Math.max(8, Math.min(menu.y, window.innerHeight - offsetHeight - 8)),
     });
-  }, [menu]);
+  }, [menu, view]);
 
   if (!menu || !object || !me || !sync) return null;
 
@@ -107,6 +114,23 @@ export function TokenContextMenu() {
     action();
     useVttStore.setState({ contextMenu: null });
   };
+
+  if (view === 'conditions') {
+    return (
+      <div
+        ref={ref}
+        role="menu"
+        aria-label="Condições do token"
+        className="fixed z-50 max-h-[85vh] w-64 overflow-y-auto rounded-xl border border-ink-border bg-ink-raised p-1 shadow-panel"
+        style={position}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <ConditionsMenu object={object} onBack={() => setView('main')} />
+      </div>
+    );
+  }
+
+  const isToken = object.kind === 'token';
 
   return (
     <div
@@ -176,9 +200,33 @@ export function TokenContextMenu() {
         label="Mandar pra trás"
         onClick={run(() => sync.sendToBack(id))}
       />
+      {isToken && (
+        <Item
+          icon={Zap}
+          label="Condições"
+          hint="▸"
+          onClick={() => setView('conditions')}
+        />
+      )}
       {isGm && (
         <>
           <Separator />
+          {isToken && (
+            <>
+              <Item
+                icon={Skull}
+                label="Vincular NPC…"
+                onClick={run(() => useVttStore.setState({ npcLinkTargetId: id }))}
+              />
+              <Item
+                icon={Swords}
+                label="Adicionar à iniciativa"
+                onClick={run(
+                  () => void useVttStore.getState().initiativeSync?.addObjects([id])
+                )}
+              />
+            </>
+          )}
           <Item
             icon={object.hidden ? Eye : EyeOff}
             label={object.hidden ? 'Mostrar' : 'Ocultar'}

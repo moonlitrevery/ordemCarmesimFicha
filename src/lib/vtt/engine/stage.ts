@@ -7,7 +7,9 @@ import {
   Texture,
   Ticker,
 } from 'pixi.js';
+import { conditionArc, resolveConditions, splitVisibleConditions } from '../conditions';
 import { formatRulerDistance } from '../geometry';
+import { currentEntry } from '../initiative';
 import type { EngineBridge } from '../scene-sync';
 import {
   effectiveParent,
@@ -27,6 +29,7 @@ import {
 } from './caption-art';
 import { fitMap, screenToWorld, type Camera } from './camera';
 import { EngineInput } from './input';
+import { MARKER_ART_SIZE, MarkerArt, RING_ART_SIZE } from './marker-art';
 import { TextureStore } from './textures';
 
 const EMPTY_MAP_SIZE = 2000;
@@ -43,6 +46,13 @@ const HIDDEN_ALPHA = 0.4;
 const PENDING_ALPHA = 0.55;
 const CRIMSON = 0xc4374a;
 const BADGE_REFERENCE_SIZE = 180;
+const CONDITION_ICON_SIZE = 22;
+const CONDITION_SPACING = 24;
+const CONDITION_GAP = 16;
+const RING_MARGIN = 1.18;
+const HP_BAR_HEIGHT = 4;
+const HP_BAR_MIN_WIDTH = 28;
+const HP_BAR_MAX_WIDTH = 96;
 
 export type HandleId = 'nw' | 'ne' | 'se' | 'sw' | 'rotate';
 
@@ -63,6 +73,17 @@ interface CaptionNode {
   art: CaptionArt;
   frame: number;
   revealed: boolean;
+}
+
+interface ConditionNode {
+  key: string;
+  slots: { sprite: Sprite; text: string }[];
+}
+
+interface HpBarNode {
+  back: Sprite;
+  fill: Sprite;
+  ratio: number;
 }
 
 interface RulerNode {
@@ -89,6 +110,7 @@ export class VttEngine implements EngineBridge {
   private propsLayer = new Container();
   private tokensLayer = new Container();
   private captionsLayer = new Container();
+  private markersLayer = new Container();
   private drawingsLayer = new Container();
   private effectsLayer = new Container();
   private pingsLayer = new Container();
@@ -97,6 +119,11 @@ export class VttEngine implements EngineBridge {
   private textures = new TextureStore();
   private nodes = new Map<string, ObjectNode>();
   private captions = new Map<string, CaptionNode>();
+  private markerArt = new MarkerArt();
+  private conditionNodes = new Map<string, ConditionNode>();
+  private hpBars = new Map<string, HpBarNode>();
+  private turnRing: Sprite | null = null;
+  private turnObjectId: string | null = null;
   private strokes = new Map<string, Graphics>();
   private rulers = new Map<string, RulerNode>();
   private animations = new Set<(now: number) => void>();
@@ -174,6 +201,7 @@ export class VttEngine implements EngineBridge {
       this.propsLayer,
       this.tokensLayer,
       this.captionsLayer,
+      this.markersLayer,
       this.drawingsLayer,
       this.effectsLayer,
       this.pingsLayer,
@@ -197,7 +225,9 @@ export class VttEngine implements EngineBridge {
         state.sceneAssets !== prev.sceneAssets ||
         state.selectedId !== prev.selectedId ||
         state.viewedSceneId !== prev.viewedSceneId ||
-        state.scenes !== prev.scenes
+        state.scenes !== prev.scenes ||
+        state.initiative !== prev.initiative ||
+        state.npcs !== prev.npcs
       ) {
         this.syncScene();
       }
@@ -220,6 +250,7 @@ export class VttEngine implements EngineBridge {
     this.input?.destroy();
     this.rulers.forEach((ruler) => clearTimeout(ruler.expires));
     this.captions.forEach((node) => destroyCaptionArt(node.art));
+    this.markerArt.destroy();
     this.textures.destroy();
     this.app.destroy(
       { removeView: true },
@@ -298,6 +329,7 @@ export class VttEngine implements EngineBridge {
     this.world.position.set(camera.x, camera.y);
     this.world.scale.set(camera.zoom);
     this.layoutCaptions();
+    this.layoutMarkers();
     this.drawSelection();
     this.layoutTransient();
     this.invalidate();
@@ -365,6 +397,7 @@ export class VttEngine implements EngineBridge {
     for (const object of Object.values(objects)) this.placeNode(object, objects);
 
     this.syncCaptions(objects);
+    this.syncMarkers(objects);
     this.drawSelection();
     this.invalidate();
   }
@@ -478,6 +511,7 @@ export class VttEngine implements EngineBridge {
         node.width = texture.width;
         node.height = texture.height;
         this.layoutCaptions();
+        this.layoutMarkers();
         this.drawSelection();
         this.invalidate();
       },
@@ -599,18 +633,33 @@ export class VttEngine implements EngineBridge {
       const node = this.nodes.get(id);
       if (!object || !node) return;
       const world = worldTransform(object, objects);
-      // Meia altura do retângulo girado: a legenda sempre fica logo abaixo.
-      const extent =
-        ((Math.abs(Math.cos(world.rotation)) * node.height +
-          Math.abs(Math.sin(world.rotation)) * node.width) /
-          2) *
-        world.scale;
+      // A legenda sempre fica logo abaixo.
+      const extent = this.halfHeight(node, world);
       caption.sprite.position.set(
         world.x,
         world.y + extent + CAPTION_GAP / this.camera.zoom
       );
       caption.sprite.scale.set(scale);
     });
+  }
+
+  /** Meia altura do retângulo girado, em coordenadas do mundo. */
+  private halfHeight(node: ObjectNode, world: { rotation: number; scale: number }) {
+    return (
+      ((Math.abs(Math.cos(world.rotation)) * node.height +
+        Math.abs(Math.sin(world.rotation)) * node.width) /
+        2) *
+      world.scale
+    );
+  }
+
+  private halfWidth(node: ObjectNode, world: { rotation: number; scale: number }) {
+    return (
+      ((Math.abs(Math.sin(world.rotation)) * node.height +
+        Math.abs(Math.cos(world.rotation)) * node.width) /
+        2) *
+      world.scale
+    );
   }
 
   private updateObfuscationTimer() {
@@ -666,6 +715,161 @@ export class VttEngine implements EngineBridge {
         : node.art.scrambled[node.frame];
       this.invalidate();
     });
+  }
+
+  // ---------- Condições, turno e HP ----------
+
+  /** Como a legenda: fora do token, para não girar nem espelhar junto. */
+  private syncMarkers(objects: Record<string, SceneObject>) {
+    this.syncConditions(objects);
+    this.syncHpBars(objects);
+
+    const turn = currentEntry(useVttStore.getState().initiative)?.objectId ?? null;
+    this.turnObjectId = turn && objects[turn] ? turn : null;
+    if (this.turnObjectId && !this.turnRing) {
+      this.turnRing = new Sprite(this.markerArt.ring());
+      this.turnRing.anchor.set(0.5);
+      this.markersLayer.addChildAt(this.turnRing, 0);
+    }
+    if (this.turnRing) this.turnRing.visible = Boolean(this.turnObjectId);
+
+    this.layoutMarkers();
+  }
+
+  private syncConditions(objects: Record<string, SceneObject>) {
+    this.conditionNodes.forEach((node, id) => {
+      if (node.key !== objects[id]?.conditions.join('|')) {
+        node.slots.forEach((slot) => slot.sprite.destroy());
+        this.conditionNodes.delete(id);
+      }
+    });
+    for (const object of Object.values(objects)) {
+      if (object.conditions.length === 0 || this.conditionNodes.has(object.id)) continue;
+      const { visible, overflow } = splitVisibleConditions(
+        resolveConditions(object.conditions)
+      );
+      const slots = visible.map((condition) => ({
+        sprite: new Sprite(this.markerArt.condition(condition)),
+        text: condition.label,
+      }));
+      if (overflow.length > 0) {
+        slots.push({
+          sprite: new Sprite(this.markerArt.overflow(overflow.length)),
+          text: overflow.map((condition) => condition.label).join(', '),
+        });
+      }
+      slots.forEach(({ sprite }) => {
+        sprite.anchor.set(0.5);
+        this.markersLayer.addChild(sprite);
+      });
+      this.conditionNodes.set(object.id, {
+        key: object.conditions.join('|'),
+        slots,
+      });
+    }
+  }
+
+  /** O store só tem NPCs no navegador da mestra: para os outros, nenhuma barra existe. */
+  private syncHpBars(objects: Record<string, SceneObject>) {
+    const { npcs } = useVttStore.getState();
+    const ratios = new Map<string, number>();
+    for (const object of Object.values(objects)) {
+      const npc = object.npc_id ? npcs[object.npc_id] : undefined;
+      if (npc) {
+        ratios.set(
+          object.id,
+          npc.hp_max > 0 ? Math.min(1, npc.hp_current / npc.hp_max) : 0
+        );
+      }
+    }
+    this.hpBars.forEach((bar, id) => {
+      if (!ratios.has(id)) {
+        bar.back.destroy();
+        bar.fill.destroy();
+        this.hpBars.delete(id);
+      }
+    });
+    ratios.forEach((ratio, id) => {
+      let bar = this.hpBars.get(id);
+      if (!bar) {
+        const back = new Sprite(Texture.WHITE);
+        back.tint = 0x000000;
+        back.alpha = 0.7;
+        const fill = new Sprite(Texture.WHITE);
+        fill.tint = CRIMSON;
+        back.anchor.set(0, 1);
+        fill.anchor.set(0, 1);
+        this.markersLayer.addChild(back, fill);
+        bar = { back, fill, ratio };
+        this.hpBars.set(id, bar);
+      }
+      bar.ratio = ratio;
+    });
+  }
+
+  private layoutMarkers() {
+    const objects = this.renderedObjects();
+    const unit = 1 / this.camera.zoom;
+
+    if (this.turnRing && this.turnObjectId) {
+      const object = objects[this.turnObjectId];
+      const node = this.nodes.get(this.turnObjectId);
+      if (object && node) {
+        const world = worldTransform(object, objects);
+        const side = Math.max(node.width, node.height) * world.scale * RING_MARGIN;
+        this.turnRing.position.set(world.x, world.y);
+        this.turnRing.scale.set(side / RING_ART_SIZE);
+      }
+    }
+
+    this.conditionNodes.forEach((conditions, id) => {
+      const object = objects[id];
+      const node = this.nodes.get(id);
+      if (!object || !node) return;
+      const world = worldTransform(object, objects);
+      const radius = this.halfHeight(node, world) * this.camera.zoom + CONDITION_GAP;
+      const points = conditionArc(conditions.slots.length, radius, CONDITION_SPACING);
+      conditions.slots.forEach(({ sprite }, index) => {
+        sprite.position.set(
+          world.x + points[index].x * unit,
+          world.y + points[index].y * unit
+        );
+        sprite.scale.set((CONDITION_ICON_SIZE / MARKER_ART_SIZE) * unit);
+      });
+    });
+
+    this.hpBars.forEach((bar, id) => {
+      const object = objects[id];
+      const node = this.nodes.get(id);
+      if (!object || !node) return;
+      const world = worldTransform(object, objects);
+      const screenWidth = Math.max(
+        HP_BAR_MIN_WIDTH,
+        Math.min(HP_BAR_MAX_WIDTH, this.halfWidth(node, world) * 2 * this.camera.zoom)
+      );
+      const width = screenWidth * unit;
+      const x = world.x - width / 2;
+      const y = world.y + this.halfHeight(node, world);
+      bar.back.position.set(x, y);
+      bar.fill.position.set(x, y);
+      bar.back.width = width;
+      bar.back.height = HP_BAR_HEIGHT * unit;
+      bar.fill.width = width * bar.ratio;
+      bar.fill.height = HP_BAR_HEIGHT * unit;
+    });
+  }
+
+  /** Nome da condição neste ponto da tela. O "+N" devolve os que não couberam. */
+  conditionAt(sx: number, sy: number): string | null {
+    const reach = (CONDITION_ICON_SIZE / 2) * this.handleScale;
+    for (const node of Array.from(this.conditionNodes.values())) {
+      for (const { sprite, text } of node.slots) {
+        const x = sprite.position.x * this.camera.zoom + this.camera.x;
+        const y = sprite.position.y * this.camera.zoom + this.camera.y;
+        if (Math.hypot(x - sx, y - sy) <= reach) return text;
+      }
+    }
+    return null;
   }
 
   // ---------- Seleção ----------

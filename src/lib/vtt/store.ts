@@ -2,9 +2,14 @@ import { create } from 'zustand';
 import type { Asset } from './assets/rules';
 import type { ChatMessage } from './chat-rules';
 import type { ChatSync } from './chat-sync';
+import { EMPTY_INITIATIVE, parseInitiative } from './initiative';
+import type { InitiativeSync } from './initiative-sync';
+import type { Npc } from './npc-rules';
+import type { NpcSync } from './npc-sync';
 import type { SceneSync } from './scene-sync';
 import type {
   Drawing,
+  InitiativeState,
   PendingPlacement,
   SceneAsset,
   SceneObject,
@@ -39,7 +44,15 @@ interface VttState {
   /** Quem persiste e transmite as ações de cena. Existe enquanto a mesa está aberta. */
   sync: SceneSync | null;
   chat: ChatSync | null;
+  initiativeSync: InitiativeSync | null;
+  /** Só da mestra: para os outros fica nulo, e o RLS não devolveria nada. */
+  npcSync: NpcSync | null;
   toast: string | null;
+
+  /** Fora de `table`: quem escreve é só o `InitiativeSync`, não o snapshot da mesa. */
+  initiative: InitiativeState;
+  npcs: Record<string, Npc>;
+  npcError: string | null;
 
   chatMessages: ChatMessage[];
   chatHasMore: boolean;
@@ -67,6 +80,9 @@ interface VttState {
   selectedId: string | null;
   contextMenu: { id: string; x: number; y: number } | null;
   captionTargetId: string | null;
+  npcLinkTargetId: string | null;
+  /** Nome da condição sob o mouse ou o dedo, em coordenadas da janela. */
+  conditionTip: { text: string; x: number; y: number } | null;
   /** "Anexar a…": o próximo clique em um token escolhe o pai deste objeto. */
   attachingId: string | null;
   /** Toque na lista e depois no mapa: arrastar de DOM não funciona bem no touch. */
@@ -135,7 +151,12 @@ export const useVttStore = create<VttState>((set) => ({
   libraryVersion: 0,
   sync: null,
   chat: null,
+  initiativeSync: null,
+  npcSync: null,
   toast: null,
+  initiative: EMPTY_INITIATIVE,
+  npcs: {},
+  npcError: null,
   chatMessages: [],
   chatHasMore: false,
   chatError: null,
@@ -157,6 +178,8 @@ export const useVttStore = create<VttState>((set) => ({
   selectedId: null,
   contextMenu: null,
   captionTargetId: null,
+  npcLinkTargetId: null,
+  conditionTip: null,
   attachingId: null,
   armedAsset: null,
   calibrating: false,
@@ -167,6 +190,9 @@ export const useVttStore = create<VttState>((set) => ({
   enterTable: (snapshot) =>
     set({
       ...fromSnapshot(snapshot),
+      initiative: parseInitiative(snapshot.table.initiative),
+      npcs: {},
+      npcError: null,
       online: [],
       audioUnlocked: false,
       connection: 'connecting',
@@ -191,6 +217,8 @@ export const useVttStore = create<VttState>((set) => ({
       selectedId: null,
       contextMenu: null,
       captionTargetId: null,
+      npcLinkTargetId: null,
+      conditionTip: null,
       attachingId: null,
       armedAsset: null,
       calibrating: false,

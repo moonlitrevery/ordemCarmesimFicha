@@ -12,7 +12,7 @@ export const SCENE_COLUMNS =
   'id, table_id, name, folder, sort, map_asset_id, meters_per_px, created_at';
 
 export const OBJECT_COLUMNS =
-  'id, scene_id, asset_id, kind, x, y, rotation, scale, flip_x, flip_y, z, parent_id, local, caption, hidden, created_by, updated_at';
+  'id, scene_id, asset_id, kind, x, y, rotation, scale, flip_x, flip_y, z, parent_id, local, caption, conditions, character_id, npc_id, hidden, created_by, updated_at';
 
 export const DRAWING_COLUMNS =
   'id, scene_id, author_id, points, color, width, created_at';

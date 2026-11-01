@@ -20,6 +20,8 @@ import { unlockAudio } from '@/lib/vtt/audio/unlock';
 import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
 import { ChatSync } from '@/lib/vtt/chat-sync';
+import { InitiativeSync } from '@/lib/vtt/initiative-sync';
+import { NpcSync } from '@/lib/vtt/npc-sync';
 import { SceneSync } from '@/lib/vtt/scene-sync';
 import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
@@ -28,8 +30,11 @@ import { CalibrationGuide } from './CalibrationGuide';
 import { CaptionModal } from './CaptionModal';
 import { ChatPanel } from './ChatPanel';
 import { useIsDesk } from './hud';
+import { InitiativePanel } from './InitiativePanel';
 import { LibraryPanel } from './LibraryPanel';
 import { MapToolbar } from './MapToolbar';
+import { NpcLinkModal } from './NpcLinkModal';
+import { NpcPanel } from './NpcPanel';
 import {
   IconRail,
   PanelHost,
@@ -72,18 +77,6 @@ const DOCS_ITEMS: RailItem[] = [
 
 const GM_PLACEHOLDER_ITEMS: RailItem[] = [
   {
-    id: 'npcs',
-    label: 'NPCs',
-    icon: Skull,
-    content: <Placeholder text="Os NPCs chegam na fase 5." />,
-  },
-  {
-    id: 'initiative',
-    label: 'Iniciativa',
-    icon: Swords,
-    content: <Placeholder text="A iniciativa chega na fase 5." />,
-  },
-  {
     id: 'sound',
     label: 'Som',
     icon: Volume2,
@@ -113,6 +106,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const toast = useVttStore((s) => s.toast);
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
   const chatUnread = useVttStore((s) => s.chatUnread);
+  const conditionTip = useVttStore((s) => s.conditionTip);
   const isDesk = useIsDesk();
   const [openPanels, setOpenPanels] = useState<Record<RailSide, string | null>>({
     left: null,
@@ -170,6 +164,8 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     }
 
     let sync: SceneSync | null = null;
+    let initiative: InitiativeSync | null = null;
+    let npcs: NpcSync | null = null;
 
     const channel = joinTableChannel(supabase, tableId, {
       userId,
@@ -178,6 +174,8 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       onSubscribed: () => {
         void refresh();
         void sync?.reload();
+        void initiative?.reload();
+        void npcs?.reload();
         if (isGm) void refreshPending(false);
       },
     });
@@ -187,7 +185,15 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     sync.start();
     const chat = new ChatSync(supabase, tableId, userId);
     chat.start();
-    useVttStore.setState({ sync, chat });
+    initiative = new InitiativeSync(supabase, channel, tableId);
+    initiative.start();
+    // Jogador nem tenta: o RLS não devolveria nada.
+    if (isGm) {
+      npcs = new NpcSync(supabase, channel, tableId);
+      npcs.start();
+      void npcs.reload();
+    }
+    useVttStore.setState({ sync, chat, initiativeSync: initiative, npcSync: npcs });
     void sync.reload();
 
     channel.on('session:state', () => void refresh());
@@ -226,7 +232,14 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       unsubscribeMe();
       sync?.stop();
       chat.stop();
-      useVttStore.setState({ sync: null, chat: null });
+      initiative?.stop();
+      npcs?.stop();
+      useVttStore.setState({
+        sync: null,
+        chat: null,
+        initiativeSync: null,
+        npcSync: null,
+      });
       channel.leave();
       channelRef.current = null;
     };
@@ -313,6 +326,17 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
             badge: isGm ? pendingCount : 0,
           },
         ]),
+    // A mestra edita pelo trilho dela; aqui é só para ver.
+    ...(isGm
+      ? []
+      : [
+          {
+            id: 'initiative',
+            label: 'Iniciativa',
+            icon: Swords,
+            content: <InitiativePanel />,
+          },
+        ]),
     ...DOCS_ITEMS,
   ];
 
@@ -323,6 +347,18 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           label: 'Cenas',
           icon: MapIcon,
           content: <ScenesPanel />,
+        },
+        {
+          id: 'npcs',
+          label: 'NPCs',
+          icon: Skull,
+          content: <NpcPanel />,
+        },
+        {
+          id: 'initiative',
+          label: 'Iniciativa',
+          icon: Swords,
+          content: <InitiativePanel />,
         },
         ...GM_PLACEHOLDER_ITEMS,
       ]
@@ -370,6 +406,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           </div>
         )}
         <CaptionModal />
+        <NpcLinkModal />
       </main>
 
       <TopBar
@@ -425,6 +462,16 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           className="pointer-events-none absolute bottom-16 left-1/2 z-40 max-w-[calc(100vw-1rem)] -translate-x-1/2 rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-center text-xs text-parchment desk:bottom-4"
         >
           {toast}
+        </p>
+      )}
+
+      {conditionTip && (
+        <p
+          role="tooltip"
+          className="pointer-events-none fixed z-40 max-w-xs -translate-x-1/2 -translate-y-full rounded-md border border-ink-border bg-ink-raised px-2 py-1 text-xs text-parchment"
+          style={{ left: conditionTip.x, top: conditionTip.y - 12 }}
+        >
+          {conditionTip.text}
         </p>
       )}
 

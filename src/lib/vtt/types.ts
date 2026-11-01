@@ -5,10 +5,23 @@ export type TableMemberRole = 'jogador' | 'espectador';
 
 export type TableRole = 'mestre' | TableMemberRole;
 
+export interface InitiativeEntry {
+  id: string;
+  name: string;
+  /** Sem valor até rolar ou digitar. */
+  value: number | null;
+  objectId: string | null;
+  /** Criatura com mais de um turno por rodada aparece uma vez por turno. */
+  turn: number;
+  turns: number;
+}
+
 export interface InitiativeState {
-  entries: unknown[];
+  entries: InitiativeEntry[];
   current: number;
   round: number;
+  /** Notação da rolagem: a fórmula oficial ainda vai ser definida. */
+  notation: string;
 }
 
 /** Sem `code`: a coluna só é lida pela mestra, via get_my_table_codes. */
@@ -84,6 +97,10 @@ export interface SceneObject {
   /** Transformação relativa ao pai; só vale enquanto `parent_id` existe. */
   local: Transform | null;
   caption: Caption | null;
+  /** Ver `conditions.ts`: id da lista padrão ou `custom:{emoji}:{texto}`. */
+  conditions: string[];
+  character_id: string | null;
+  npc_id: string | null;
   hidden: boolean;
   created_by: string | null;
   updated_at: string;

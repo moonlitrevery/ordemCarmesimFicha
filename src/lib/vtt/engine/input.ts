@@ -25,6 +25,7 @@ const STROKE_EPSILON_PX = 1.5;
 const MAX_LIVE_POINTS = 12000;
 const ERASER_RADIUS_PX = 10;
 const MAX_STROKE_WIDTH = 200;
+const CONDITION_TIP_MS = 2500;
 
 type Gesture =
   | { kind: 'none' }
@@ -73,6 +74,7 @@ export class EngineInput {
   private lastTapAt = 0;
   private doubleTapPending = false;
   private cleanup: (() => void)[] = [];
+  private tipTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private engine: VttEngine,
@@ -98,7 +100,10 @@ export class EngineInput {
     listen('pointermove', (e) => this.onMove(e));
     listen('pointerup', (e) => this.onUp(e));
     listen('pointercancel', (e) => this.onCancel(e));
-    listen('pointerleave', () => engine.revealCaption(null));
+    listen('pointerleave', () => {
+      engine.revealCaption(null);
+      this.showConditionTip(null, { x: 0, y: 0 });
+    });
     listen('wheel', (e) => this.onWheel(e), { passive: false });
     listen('dblclick', (e) => this.onDoubleClick(e));
     listen('contextmenu', (e) => this.onContextMenu(e));
@@ -126,6 +131,7 @@ export class EngineInput {
 
   destroy() {
     this.clearTimers();
+    clearTimeout(this.tipTimer);
     this.cleanup.forEach((remove) => remove());
   }
 
@@ -380,9 +386,22 @@ export class EngineInput {
     }
   }
 
-  /** Só a mestra: passar o mouse revela a legenda ofuscada. */
+  private showConditionTip(text: string | null, at: Point) {
+    const current = store().conditionTip;
+    if (text === (current?.text ?? null)) return;
+    const rect = this.canvas.getBoundingClientRect();
+    useVttStore.setState({
+      conditionTip: text
+        ? { text, x: at.x + rect.left, y: at.y + rect.top }
+        : null,
+    });
+  }
+
   private hover(at: Point, event: PointerEvent) {
-    if (event.pointerType === 'touch' || store().me?.role !== 'mestre') return;
+    if (event.pointerType === 'touch') return;
+    this.showConditionTip(this.engine.conditionAt(at.x, at.y), at);
+    // Só a mestra: passar o mouse revela a legenda ofuscada.
+    if (store().me?.role !== 'mestre') return;
     const world = this.engine.toWorld(at.x, at.y);
     this.engine.revealCaption(this.engine.objectAt(world.x, world.y)?.id ?? null);
   }
@@ -549,6 +568,16 @@ export class EngineInput {
   private registerTap(at: Point) {
     if (Math.hypot(at.x - this.downAt.x, at.y - this.downAt.y) > TAP_SLOP_PX) {
       return;
+    }
+    // Sem mouse não há hover: o toque mostra o nome, que some sozinho.
+    const tip = this.engine.conditionAt(at.x, at.y);
+    this.showConditionTip(tip, at);
+    clearTimeout(this.tipTimer);
+    if (tip) {
+      this.tipTimer = setTimeout(
+        () => this.showConditionTip(null, at),
+        CONDITION_TIP_MS
+      );
     }
     const wasDoubleTap = this.doubleTapPending;
     this.doubleTapPending = false;

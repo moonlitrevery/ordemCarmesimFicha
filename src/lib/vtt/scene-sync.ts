@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Asset } from './assets/rules';
 import { checkUploadAvailable, uploadAsset } from './assets/upload';
 import type { VttEventOf } from './events';
+import { toggleCondition } from './conditions';
 import { calibrate } from './geometry';
 import {
   HistoryStack,
@@ -690,6 +691,14 @@ export class SceneSync {
   detach(id: string) {
     const { objects } = store();
     if (objects[id]) void this.changeObject(id, detachPatch(objects[id], objects));
+  }
+
+  toggleCondition(id: string, key: string) {
+    const object = store().objects[id];
+    if (!object) return;
+    void this.changeObject(id, {
+      conditions: toggleCondition(object.conditions, key),
+    });
   }
 
   // ---------- Desenhos ----------
