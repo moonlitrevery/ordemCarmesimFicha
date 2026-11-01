@@ -52,6 +52,22 @@ function nameFromFile(fileName) {
   return (base || 'Sem nome').slice(0, 120);
 }
 
+// Espelha audioTagFromFolder, de src/lib/vtt/audio/rules.ts.
+function audioTags(relativePath, folder) {
+  const parts = relativePath.split('/');
+  return parts
+    .slice(parts.indexOf(folder) + 1, -1)
+    .map((part) =>
+      part
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+    )
+    .filter(Boolean);
+}
+
 function relativeTo(base, file) {
   return path.relative(base, file).split(path.sep).join('/').normalize('NFC');
 }
@@ -172,6 +188,7 @@ async function readEntry(file, folder, config, visibility, keep) {
         width: built.width,
         height: built.height,
         duration_s: built.duration_s,
+        ...(config.image ? {} : { tags: audioTags(relativePath, folder) }),
       },
     };
   } catch (error) {

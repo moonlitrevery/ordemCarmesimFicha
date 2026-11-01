@@ -3,7 +3,7 @@ import type { Drawing, SceneObject } from './types';
 /**
  * Eventos de broadcast do canal da mesa. Qualquer membro consegue enviar no
  * canal, então `session:state`, `member:changed`, `table:refresh`, `asset:*`, `scene:assign`,
- * `scene:refresh`, `initiative:refresh`, `npc:refresh` e `fx:weather` são só avisos: quem recebe relê o estado do banco. Os de
+ * `scene:refresh`, `initiative:refresh`, `npc:refresh`, `fx:weather` e `audio:*` são só avisos: quem recebe relê o estado do banco. Os de
  * objeto e desenho levam a linha já gravada, validada na chegada.
  */
 export type VttEvent =
@@ -28,6 +28,12 @@ export type VttEvent =
   | { type: 'npc:refresh' }
   /** A mestra mudou clima ou iluminação: quem está na cena relê `weather` e `lighting`. */
   | { type: 'fx:weather'; sceneId: string }
+  /** A mestra mudou o ambiente: quem está na cena relê pela RPC, que filtra as camadas. */
+  | { type: 'audio:ambient'; sceneId: string }
+  /** Volume geral, fade ou "parar SFX": todos relêem `tables.audio`. */
+  | { type: 'audio:settings' }
+  /** Sem som nem alvo: quem recebe lê `audio_cues`, e o RLS só devolve o que é para ele. */
+  | { type: 'audio:sfx' }
   | { type: 'draw:add'; drawing: Drawing }
   /** `id` nulo: a mestra apagou todos os desenhos da cena. */
   | { type: 'draw:delete'; sceneId: string; id: string | null }

@@ -1,5 +1,13 @@
 import { create } from 'zustand';
 import type { Asset } from './assets/rules';
+import type { AudioSync } from './audio/audio-sync';
+import {
+  DEFAULT_AUDIO_SETTINGS,
+  parseAudioPrefs,
+  type AmbientLayer,
+  type AudioPrefs,
+  type AudioSettings,
+} from './audio/rules';
 import type { ChatMessage } from './chat-rules';
 import type { ChatSync } from './chat-sync';
 import type { LibrarySync } from './library-sync';
@@ -44,6 +52,12 @@ interface VttState {
   online: VttPresence[];
   sessionOpen: boolean;
   audioUnlocked: boolean;
+  audioSync: AudioSync | null;
+  audioSettings: AudioSettings;
+  /** Da cena vista. O jogador só recebe as camadas que são para ele. */
+  ambientLayers: AmbientLayer[];
+  /** Volume e mudo de quem está usando: só neste navegador. */
+  audioPrefs: AudioPrefs;
   connection: ConnectionStatus;
   pendingAssets: PendingAsset[];
   /** Sobe a cada mudança na biblioteca: o `LibrarySync` relê a lista. */
@@ -113,6 +127,7 @@ interface VttState {
   setOnline: (online: VttPresence[]) => void;
   setSessionOpen: (open: boolean) => void;
   setAudioUnlocked: (unlocked: boolean) => void;
+  setAudioPrefs: (prefs: AudioPrefs) => void;
   setConnection: (connection: ConnectionStatus) => void;
   setPendingAssets: (pendingAssets: PendingAsset[]) => void;
   bumpLibrary: () => void;
@@ -125,6 +140,7 @@ interface VttState {
 
 const TOAST_MS = 4000;
 const LIGHT_MODE_KEY = 'vtt:light-mode';
+const AUDIO_PREFS_KEY = 'vtt:audio';
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -134,6 +150,14 @@ function savedLightMode(): string | null {
   } catch {
     // Sem localStorage (janela anônima): segue a detecção.
     return null;
+  }
+}
+
+function savedAudioPrefs(): AudioPrefs {
+  try {
+    return parseAudioPrefs(window.localStorage.getItem(AUDIO_PREFS_KEY));
+  } catch {
+    return parseAudioPrefs(null);
   }
 }
 
@@ -177,6 +201,10 @@ export const useVttStore = create<VttState>((set) => ({
   online: [],
   sessionOpen: false,
   audioUnlocked: false,
+  audioSync: null,
+  audioSettings: DEFAULT_AUDIO_SETTINGS,
+  ambientLayers: [],
+  audioPrefs: parseAudioPrefs(null),
   connection: 'connecting',
   pendingAssets: [],
   libraryVersion: 0,
@@ -231,6 +259,9 @@ export const useVttStore = create<VttState>((set) => ({
       npcError: null,
       online: [],
       audioUnlocked: false,
+      audioSettings: DEFAULT_AUDIO_SETTINGS,
+      ambientLayers: [],
+      audioPrefs: savedAudioPrefs(),
       connection: 'connecting',
       pendingAssets: [],
       library: null,
@@ -270,6 +301,14 @@ export const useVttStore = create<VttState>((set) => ({
   setOnline: (online) => set({ online }),
   setSessionOpen: (sessionOpen) => set({ sessionOpen }),
   setAudioUnlocked: (audioUnlocked) => set({ audioUnlocked }),
+  setAudioPrefs: (audioPrefs) => {
+    set({ audioPrefs });
+    try {
+      window.localStorage.setItem(AUDIO_PREFS_KEY, JSON.stringify(audioPrefs));
+    } catch {
+      // Sem localStorage: vale só nesta visita.
+    }
+  },
   setConnection: (connection) => set({ connection }),
   setPendingAssets: (pendingAssets) => set({ pendingAssets }),
   bumpLibrary: () =>

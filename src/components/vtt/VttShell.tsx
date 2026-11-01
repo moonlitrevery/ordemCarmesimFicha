@@ -16,6 +16,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { AudioSync } from '@/lib/vtt/audio/audio-sync';
 import { unlockAudio } from '@/lib/vtt/audio/unlock';
 import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
@@ -50,6 +51,7 @@ import { ScenesPanel } from './ScenesPanel';
 import { SceneTransitionOverlay } from './SceneTransitionOverlay';
 import { SceneViewBanner } from './SceneViewBanner';
 import { SettingsMenu } from './SettingsMenu';
+import { SoundPanel } from './SoundPanel';
 import { TokenContextMenu } from './TokenContextMenu';
 import { TopBar } from './TopBar';
 import { WeatherPanel } from './WeatherPanel';
@@ -76,15 +78,6 @@ const DOCS_ITEMS: RailItem[] = [
     label: 'Relatórios',
     icon: ScrollText,
     content: <Placeholder text="Os relatórios chegam na fase 8." />,
-  },
-];
-
-const GM_PLACEHOLDER_ITEMS: RailItem[] = [
-  {
-    id: 'sound',
-    label: 'Som',
-    icon: Volume2,
-    content: <Placeholder text="O som chega na fase 7." />,
   },
 ];
 
@@ -167,6 +160,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     let initiative: InitiativeSync | null = null;
     let npcs: NpcSync | null = null;
     let library: LibrarySync | null = null;
+    let audio: AudioSync | null = null;
 
     const channel = joinTableChannel(supabase, tableId, {
       userId,
@@ -176,6 +170,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         void refresh().then(() => sync?.reload());
         void initiative?.reload();
         void npcs?.reload();
+        void audio?.reload();
         // A primeira carga é do `start`; aqui é só ao reconectar.
         if (useVttStore.getState().library) void library?.load();
         if (isGm) void refreshPending(false);
@@ -197,7 +192,10 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     }
     library = new LibrarySync(supabase, channel, isGm);
     library.start();
+    audio = new AudioSync(supabase, channel, tableId, userId);
+    audio.start();
     useVttStore.setState({
+      audioSync: audio,
       sync,
       chat,
       initiativeSync: initiative,
@@ -250,7 +248,9 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       initiative?.stop();
       npcs?.stop();
       library?.stop();
+      audio?.stop();
       useVttStore.setState({
+        audioSync: null,
         librarySync: null,
         sync: null,
         chat: null,
@@ -295,6 +295,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
   function enterSession() {
     unlockAudio();
+    useVttStore.getState().audioSync?.unlock();
     setAudioUnlocked(true);
   }
 
@@ -378,7 +379,12 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
           icon: Swords,
           content: <InitiativePanel />,
         },
-        ...GM_PLACEHOLDER_ITEMS,
+        {
+          id: 'sound',
+          label: 'Som',
+          icon: Volume2,
+          content: <SoundPanel />,
+        },
         {
           id: 'fx',
           label: 'Efeitos de tela',

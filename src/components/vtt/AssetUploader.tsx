@@ -45,11 +45,14 @@ function hasFiles(event: DragEvent): boolean {
 /** O painel inteiro (`children`) aceita soltar arquivos. */
 export function AssetUploader({
   allowedKinds,
+  preferredKind,
   doneMessage,
   onUploaded,
   children,
 }: {
   allowedKinds: AssetKind[];
+  /** O filtro aberto vale para o lote: não dá para trocar 30 arquivos um a um. */
+  preferredKind?: AssetKind;
   doneMessage: (count: number) => string;
   onUploaded: (asset: Asset) => void;
   children: ReactNode;
@@ -80,7 +83,11 @@ export function AssetUploader({
           : null;
         const suggested = suggestKind(file.type, width);
         const kind =
-          suggested && kinds.includes(suggested) ? suggested : (kinds[0] ?? null);
+          preferredKind && kinds.includes(preferredKind)
+            ? preferredKind
+            : suggested && kinds.includes(suggested)
+              ? suggested
+              : (kinds[0] ?? null);
         return {
           id: crypto.randomUUID(),
           file,

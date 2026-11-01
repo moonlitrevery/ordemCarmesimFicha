@@ -63,6 +63,8 @@ function ColorPicker() {
 export function SettingsMenu() {
   const lightMode = useVttStore((s) => s.lightMode);
   const setLightMode = useVttStore((s) => s.setLightMode);
+  const audioPrefs = useVttStore((s) => s.audioPrefs);
+  const setAudioPrefs = useVttStore((s) => s.setAudioPrefs);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -101,16 +103,38 @@ export function SettingsMenu() {
               </span>
             </span>
           </label>
-          <label className="block text-ink-muted" title="Chega na fase 7">
-            Volume
-            <input
-              type="range"
-              disabled
-              className="mt-1 block w-full cursor-not-allowed"
-              aria-label="Volume (chega na fase 7)"
-            />
-            <span className="text-xs">Chega junto com o som, na fase 7.</span>
-          </label>
+          <div className="space-y-1">
+            <label className="block">
+              <span className="flex justify-between">
+                Volume
+                <span className="text-xs tabular-nums text-ink-muted">{audioPrefs.volume}%</span>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                className="block min-h-11 w-full accent-crimson desk:min-h-0"
+                aria-label="Seu volume"
+                value={audioPrefs.volume}
+                onChange={(e) =>
+                  setAudioPrefs({ ...audioPrefs, volume: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label className="flex min-h-11 items-center gap-2 desk:min-h-0">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-crimson"
+                checked={audioPrefs.muted}
+                onChange={(e) => setAudioPrefs({ ...audioPrefs, muted: e.target.checked })}
+              />
+              Sem som
+            </label>
+            <span className="block text-xs text-ink-muted">
+              Só neste aparelho. Não muda o som dos outros.
+            </span>
+          </div>
         </div>
       )}
     </div>

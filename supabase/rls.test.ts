@@ -577,6 +577,131 @@ describe('iniciativa e condições', () => {
 });
 
 // Por último: as de cima precisam provar que o schema.sql já está certo sozinho.
+describe('som', () => {
+  const SECRET_ASSET = '55555555-5555-4555-8555-555555555555';
+  const SHARED_ASSET = '66666666-6666-4666-8666-666666666666';
+  const CUE_ASSET = '77777777-7777-4777-8777-777777777777';
+
+  const addAudio = async (id: string) =>
+    db.query(
+      `insert into public.assets (id, kind, name, storage_key, url, mime, size_bytes, status, visibility, uploaded_by)
+       values ($1::uuid, 'audio_sfx', $2, $2, 'https://abc.public.blob.vercel-storage.com/' || $2, 'audio/ogg', 1, 'approved', 'mestre', $3)`,
+      [id, id, GM]
+    );
+
+  const canRead = async (userId: string, id: string) =>
+    (await asUser(userId, `select id from public.assets where id = $1`, [id])).length === 1;
+
+  beforeAll(async () => {
+    await Promise.all([SECRET_ASSET, SHARED_ASSET, CUE_ASSET].map(addAudio));
+    await asUser(GM, `update public.scenes set ambient = $1 where id = $2`, [
+      JSON.stringify([
+        { id: 'a', assetId: SHARED_ASSET, volume: 50, target: null },
+        { id: 'b', assetId: SECRET_ASSET, volume: 50, target: SPECTATOR },
+      ]),
+      defaultScene,
+    ]);
+  });
+
+  it('ninguém lê a coluna ambient direto, nem a mestra', async () => {
+    await expect(
+      asUser(PLAYER, `select ambient from public.scenes where id = $1`, [defaultScene])
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(GM, `select ambient from public.scenes where id = $1`, [defaultScene])
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('a RPC tira a camada de outra pessoa e a mestra vê tudo', async () => {
+    const ambient = async (userId: string) =>
+      (
+        await asUser<{ ambient: { id: string }[] | null }>(
+          userId,
+          `select public.my_scene_ambient($1) as ambient`,
+          [defaultScene]
+        )
+      )[0].ambient;
+    expect((await ambient(GM))?.map((layer) => layer.id)).toEqual(['a', 'b']);
+    expect((await ambient(PLAYER))?.map((layer) => layer.id)).toEqual(['a']);
+    expect((await ambient(SPECTATOR))?.map((layer) => layer.id)).toEqual(['a', 'b']);
+    expect(await ambient(OUTSIDER)).toBeNull();
+  });
+
+  it('o arquivo só fica legível para quem vai ouvir', async () => {
+    expect(await canRead(PLAYER, SHARED_ASSET)).toBe(true);
+    expect(await canRead(PLAYER, SECRET_ASSET)).toBe(false);
+    expect(await canRead(SPECTATOR, SECRET_ASSET)).toBe(true);
+    expect(await canRead(OUTSIDER, SHARED_ASSET)).toBe(false);
+  });
+
+  it('só a mestra grava ambient, e com a forma certa', async () => {
+    await asUser(PLAYER, `update public.scenes set ambient = '[]' where id = $1`, [defaultScene]);
+    const layers = await asUser<{ ambient: unknown[] }>(
+      GM,
+      `select public.my_scene_ambient($1) as ambient`,
+      [defaultScene]
+    );
+    expect(layers[0].ambient).toHaveLength(2);
+    await expect(
+      asUser(GM, `update public.scenes set ambient = $1 where id = $2`, [
+        JSON.stringify([{ id: 'x', assetId: 'nope', volume: 50 }]),
+        otherScene,
+      ])
+    ).rejects.toThrow(/scenes_ambient_check/);
+  });
+
+  it('SFX com alvo só aparece para o alvo e a mestra', async () => {
+    const cue = await insertOne(
+      GM,
+      `insert into public.audio_cues (table_id, asset_id, target_user) values ($1, $2, $3) returning id`,
+      [openTable, CUE_ASSET, SPECTATOR]
+    );
+    const sees = async (userId: string) =>
+      (await asUser(userId, `select id from public.audio_cues where id = $1`, [cue.id])).length === 1;
+    expect(await sees(GM)).toBe(true);
+    expect(await sees(SPECTATOR)).toBe(true);
+    expect(await sees(PLAYER)).toBe(false);
+    expect(await sees(OUTSIDER)).toBe(false);
+    expect(await canRead(SPECTATOR, CUE_ASSET)).toBe(true);
+    expect(await canRead(PLAYER, CUE_ASSET)).toBe(false);
+  });
+
+  it('jogador não dispara SFX, e a data não é escolhida', async () => {
+    await expect(
+      asUser(PLAYER, `insert into public.audio_cues (table_id, asset_id) values ($1, $2)`, [
+        openTable,
+        CUE_ASSET,
+      ])
+    ).rejects.toThrow(/row-level security/);
+    await expect(
+      asUser(GM, `insert into public.audio_cues (table_id, asset_id, created_at) values ($1, $2, now())`, [
+        openTable,
+        CUE_ASSET,
+      ])
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('só a mestra grava tables.audio', async () => {
+    await asUser(PLAYER, `update public.tables set audio = '{"volume":1}' where id = $1`, [openTable]);
+    const rows = await asUser<{ audio: { volume: number } }>(
+      PLAYER,
+      `select audio from public.tables where id = $1`,
+      [openTable]
+    );
+    expect(rows[0].audio.volume).toBe(100);
+  });
+
+  it('apagar o arquivo o tira do ambiente e dos SFX', async () => {
+    await asUser(GM, `delete from public.assets where id = $1`, [SHARED_ASSET]);
+    const rows = await asUser<{ ambient: { id: string }[] }>(
+      GM,
+      `select public.my_scene_ambient($1) as ambient`,
+      [defaultScene]
+    );
+    expect(rows[0].ambient.map((layer) => layer.id)).toEqual(['b']);
+  });
+});
+
 describe('migração 014', () => {
   it('roda sobre o schema pronto e mantém o insert da mestra', async () => {
     await db.exec(readSql('migrations', '014_vtt_scenes_select_fix.sql'));

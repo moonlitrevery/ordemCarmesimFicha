@@ -24,6 +24,7 @@ import {
 } from '@/lib/vtt/assets/rules';
 import { assetsOfKind } from '@/lib/vtt/assets/static';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
+import { AUDIO_CATEGORIES, matchesCategory } from '@/lib/vtt/audio/rules';
 import { isPlaceableKind } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import { visibleRange } from '@/lib/vtt/virtual-grid';
@@ -355,6 +356,7 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
     : libraryError;
   const assets = useMemo(() => assetsOfKind(library ?? [], kind), [library, kind]);
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -388,7 +390,22 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
   function changeKind(next: AssetKind) {
     stopPreview();
     setManagingId(null);
+    setCategory(null);
     setKind(next);
+  }
+
+  /** O lote entra na categoria escolhida no filtro, sem editar um a um. */
+  async function tagUpload(asset: Asset) {
+    if (!category || !isAudioKind(asset.kind)) return;
+    const { error: err } = await createClient()
+      .from('assets')
+      .update({ tags: [category] })
+      .eq('id', asset.id);
+    if (err) {
+      useVttStore
+        .getState()
+        .showToast(`${asset.name} foi enviado, mas ficou sem categoria.`);
+    }
   }
 
   function arm(asset: Asset) {
@@ -414,14 +431,21 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
   }
 
   const filtered = useMemo(
-    () => assets.filter((asset) => matchesSearch(asset, search)),
-    [assets, search]
+    () =>
+      assets.filter(
+        (asset) =>
+          matchesSearch(asset, search) &&
+          (!isAudioKind(kind) || matchesCategory(asset.tags, category))
+      ),
+    [assets, search, kind, category]
   );
   const managing = assets.find((asset) => asset.id === managingId) ?? null;
 
   return (
     <AssetUploader
       allowedKinds={isGm ? [...ASSET_KINDS] : PLAYER_KINDS}
+      // Só som: imagem larga solta na aba Tokens ainda precisa virar mapa sozinha.
+      preferredKind={isAudioKind(kind) ? kind : undefined}
       doneMessage={(count) => {
         if (isGm) {
           return count === 1
@@ -432,8 +456,8 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
           ? 'Enviada! Aguardando aprovação da mestra.'
           : `${count} imagens enviadas. Aguardando aprovação da mestra.`;
       }}
-      onUploaded={() => {
-        bumpLibrary();
+      onUploaded={(asset) => {
+        void tagUpload(asset).then(bumpLibrary);
         if (!isGm) useVttStore.getState().sync?.notifyAssetPending();
       }}
     >
@@ -467,6 +491,33 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
         onChange={(e) => setSearch(e.target.value)}
       />
 
+      {isAudioKind(kind) && (
+        <div className="max-h-28 shrink-0 space-y-1 overflow-y-auto">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Categoria">
+            {AUDIO_CATEGORIES.map(({ tag, label }) => (
+              <button
+                key={tag}
+                type="button"
+                aria-pressed={category === tag}
+                onClick={() => setCategory(category === tag ? null : tag)}
+                className={
+                  'min-h-11 rounded-full px-2 text-xs transition desk:min-h-0 desk:py-0.5 ' +
+                  (category === tag
+                    ? 'bg-crimson/25 text-parchment'
+                    : 'text-ink-muted hover:bg-ink-raised hover:text-parchment')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {category && (
+            <p className="text-xs text-ink-muted">
+              O que você enviar agora entra nesta categoria.
+            </p>
+          )}
+        </div>
+      )}
       {kind === 'mapa' && (
         <p className="shrink-0 text-xs text-ink-muted">
           Mapas entram em jogo pelo painel Cenas, da mestra.

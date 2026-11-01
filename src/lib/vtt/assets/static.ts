@@ -22,6 +22,8 @@ export interface StaticManifestItem {
   width: number | null;
   height: number | null;
   duration_s: number | null;
+  /** Só áudio: as subpastas. Manifest antigo não tem. */
+  tags?: string[];
 }
 
 export function staticItemToAsset(item: StaticManifestItem): Asset {
@@ -37,7 +39,7 @@ export function staticItemToAsset(item: StaticManifestItem): Asset {
     width: item.width,
     height: item.height,
     duration_s: item.duration_s,
-    tags: [],
+    tags: item.tags ?? [],
     status: 'approved',
     visibility: item.visibility,
     uploaded_by: null,
