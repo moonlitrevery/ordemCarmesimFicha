@@ -9,6 +9,9 @@ export interface StoredFile {
   pathname: string;
 }
 
+/** A mensagem pode ir para a tela; o erro do provedor fica em `cause`, para o log. */
+export class StorageError extends Error {}
+
 /** Troca de provedor = nova implementação desta interface. */
 export interface StorageProvider {
   isConfigured: () => boolean;

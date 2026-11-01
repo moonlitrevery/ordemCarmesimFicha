@@ -1,9 +1,10 @@
-import { libraryImageUrl, type Asset } from '@/lib/vtt/assets/rules';
+import { Film, Image as ImageIcon, Music } from 'lucide-react';
+import { isAudioKind, libraryImageUrl, type Asset } from '@/lib/vtt/assets/rules';
 
-function placeholderIcon(kind: Asset['kind']): string {
-  if (kind === 'cutscene') return '🎬';
-  if (kind === 'audio_ambiente' || kind === 'audio_sfx') return '♪';
-  return '🖼';
+function placeholderIcon(kind: Asset['kind']) {
+  if (kind === 'cutscene') return Film;
+  if (isAudioKind(kind)) return Music;
+  return ImageIcon;
 }
 
 export function AssetThumb({
@@ -23,20 +24,21 @@ export function AssetThumb({
         loading="lazy"
         decoding="async"
         draggable={false}
-        className="block bg-ink-raised object-contain"
+        className="block shrink-0 bg-ink-raised object-contain"
         style={{ width: size, height: size }}
       />
     );
   }
 
   // Sem <video>/<audio> na grade: miniatura de cutscene baixaria o vídeo inteiro.
+  const Icon = placeholderIcon(asset.kind);
   return (
     <span
       aria-hidden
-      className="flex items-center justify-center bg-ink-raised text-3xl text-ink-muted"
+      className="flex shrink-0 items-center justify-center bg-ink-raised text-ink-muted"
       style={{ width: size, height: size }}
     >
-      {placeholderIcon(asset.kind)}
+      <Icon size={Math.round(size / 2)} />
     </span>
   );
 }

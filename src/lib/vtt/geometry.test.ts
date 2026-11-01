@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatScale,
   calibrate,
   distanceToStroke,
   formatRulerDistance,
@@ -71,5 +72,15 @@ describe('régua', () => {
     expect(parseMeters(' 12,5 ')).toBe(12.5);
     expect(parseMeters('abc')).toBeNull();
     expect(parseMeters('0')).toBeNull();
+  });
+});
+
+describe('formatScale', () => {
+  it('mostra quantos pixels dão um metro', () => {
+    expect(formatScale(0.02)).toBe('1 m ≈ 50 px');
+  });
+
+  it('usa vírgula e uma casa quando o número é pequeno', () => {
+    expect(formatScale(0.4)).toBe('1 m ≈ 2,5 px');
   });
 });

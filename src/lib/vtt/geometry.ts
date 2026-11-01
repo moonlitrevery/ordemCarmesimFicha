@@ -117,3 +117,10 @@ export function parseMeters(input: string): number | null {
   const value = Number(input.trim().replace(',', '.'));
   return Number.isFinite(value) && value > 0 ? value : null;
 }
+
+/** O chip de escala: quantos pixels do mapa dão um metro. */
+export function formatScale(metersPerPx: number): string {
+  const pixels = 1 / metersPerPx;
+  const shown = pixels >= 10 ? Math.round(pixels) : Math.round(pixels * 10) / 10;
+  return `1 m ≈ ${String(shown).replace('.', ',')} px`;
+}

@@ -7,6 +7,7 @@ import {
   worldTransform,
 } from '../scene-rules';
 import { useVttStore } from '../store';
+import type { SceneObject } from '../types';
 import { snapAngle, type Point } from '../transform';
 import { pinch, zoomAt } from './camera';
 import type { HandleId, VttEngine } from './stage';
@@ -29,9 +30,22 @@ type Gesture =
   | { kind: 'none' }
   | { kind: 'pan'; lastX: number; lastY: number }
   | { kind: 'pinch'; cx: number; cy: number; distance: number }
-  | { kind: 'drag'; id: string; offsetX: number; offsetY: number; moved: boolean }
-  | { kind: 'scale'; id: string; startDistance: number; startScale: number }
-  | { kind: 'rotate'; id: string }
+  | {
+      kind: 'drag';
+      id: string;
+      offsetX: number;
+      offsetY: number;
+      moved: boolean;
+      before: SceneObject;
+    }
+  | {
+      kind: 'scale';
+      id: string;
+      startDistance: number;
+      startScale: number;
+      before: SceneObject;
+    }
+  | { kind: 'rotate'; id: string; before: SceneObject }
   | { kind: 'stroke'; points: number[]; width: number }
   | { kind: 'erase' }
   | { kind: 'ruler'; x1: number; y1: number; x2: number; y2: number };
@@ -123,7 +137,7 @@ export class EngineInput {
   private updateCursor() {
     const { tool, attachingId, armedAsset, calibrating } = store();
     let cursor = 'default';
-    if (this.spaceDown) cursor = 'grab';
+    if (this.spaceDown || tool === 'pan') cursor = 'grab';
     else if (attachingId || armedAsset || calibrating || tool !== 'select') {
       cursor = 'crosshair';
     }
@@ -204,6 +218,10 @@ export class EngineInput {
     }
 
     switch (state.tool) {
+      case 'pan':
+        this.gesture = { kind: 'pan', lastX: at.x, lastY: at.y };
+        this.canvas.style.cursor = 'grabbing';
+        return;
       case 'ping':
         state.sync?.ping(world.x, world.y);
         return;
@@ -262,6 +280,7 @@ export class EngineInput {
       offsetX: current.x - world.x,
       offsetY: current.y - world.y,
       moved: false,
+      before: objects[hit.id],
     };
     if (sync) sync.interactingId = hit.id;
   }
@@ -270,7 +289,7 @@ export class EngineInput {
     const { objects, sync } = store();
     if (sync) sync.interactingId = id;
     if (handle === 'rotate') {
-      this.gesture = { kind: 'rotate', id };
+      this.gesture = { kind: 'rotate', id, before: objects[id] };
       return;
     }
     const current = worldTransform(objects[id], objects);
@@ -282,6 +301,7 @@ export class EngineInput {
         Math.hypot(world.x - current.x, world.y - current.y)
       ),
       startScale: current.scale,
+      before: objects[id],
     };
   }
 
@@ -487,14 +507,14 @@ export class EngineInput {
         return;
       case 'drag':
         if (gesture.moved) {
-          this.commit(gesture.id);
+          this.commit(gesture.id, gesture.before);
         } else if (sync) {
           sync.interactingId = null;
         }
         return;
       case 'scale':
       case 'rotate':
-        this.commit(gesture.id);
+        this.commit(gesture.id, gesture.before);
         return;
       case 'stroke': {
         this.engine.drawLiveStroke([], '#000000', 1);
@@ -539,12 +559,12 @@ export class EngineInput {
     }
   }
 
-  private commit(id: string) {
+  private commit(id: string, before: SceneObject) {
     const { objects, sync } = store();
     const object = objects[id];
     if (!object || !sync) return;
     // O `interactingId` só sai quando o banco responder: evento de fora não desfaz.
-    void sync.patchObject(
+    void sync.changeObject(
       id,
       effectiveParent(object, objects) && object.local
         ? { local: object.local }
@@ -555,7 +575,8 @@ export class EngineInput {
             scale: object.scale,
             flip_x: object.flip_x,
             flip_y: object.flip_y,
-          }
+          },
+      before
     );
   }
 
@@ -668,6 +689,7 @@ export class EngineInput {
       return;
     }
     const { selectedId, sync } = store();
+    if (this.onHistoryKey(event)) return;
     if (event.key === 'Escape') {
       useVttStore.setState({
         selectedId: null,
@@ -675,6 +697,7 @@ export class EngineInput {
         attachingId: null,
         armedAsset: null,
         calibrating: false,
+        calibrationPixels: null,
       });
       this.abortGesture();
       return;
@@ -687,5 +710,19 @@ export class EngineInput {
     } else if (event.key === 'e' || event.key === 'E') {
       sync.rotateBy(selectedId, QUARTER_TURN);
     }
+  }
+
+  /** Ctrl+Z desfaz; Ctrl+Shift+Z e Ctrl+Y refazem. Campo de texto nem chega aqui. */
+  private onHistoryKey(event: KeyboardEvent): boolean {
+    if (!event.ctrlKey && !event.metaKey) return false;
+    const key = event.key.toLowerCase();
+    if (key !== 'z' && key !== 'y') return false;
+    event.preventDefault();
+    const { sync } = store();
+    // Com um gesto em andamento, o objeto ainda nem foi gravado.
+    if (!sync || !this.canEdit() || this.gesture.kind !== 'none') return true;
+    if (key === 'z' && !event.shiftKey) void sync.undo();
+    else void sync.redo();
+    return true;
   }
 }

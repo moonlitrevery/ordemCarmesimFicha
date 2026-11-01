@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { ChevronDown, ChevronUp, Map as MapIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { libraryImageUrl, type Asset } from '@/lib/vtt/assets/rules';
 import { fetchLibraryAssets } from '@/lib/vtt/assets/static';
@@ -36,7 +37,7 @@ function MapPicker({
   if (maps.length === 0) {
     return (
       <p className="text-xs text-ink-muted">
-        Sem mapas na biblioteca ainda. Envie na aba Biblioteca.
+        Sem mapas ainda. Envie em Biblioteca, no filtro Mapas, e volte aqui.
       </p>
     );
   }
@@ -201,8 +202,8 @@ function SceneCard({
           {map && libraryImageUrl(map) ? (
             <AssetThumb asset={map} size={64} />
           ) : (
-            <span className="flex h-16 w-16 items-center justify-center bg-ink-raised text-xl text-ink-muted">
-              🗺
+            <span className="flex h-16 w-16 items-center justify-center bg-ink-raised text-ink-muted">
+              <MapIcon size={24} aria-hidden />
             </span>
           )}
         </button>
@@ -227,17 +228,19 @@ function SceneCard({
             type="button"
             className="btn-ghost px-1.5 py-0 text-xs"
             aria-label={`Subir ${scene.name}`}
+            title="Subir na lista"
             onClick={() => onMove(-1)}
           >
-            ↑
+            <ChevronUp size={14} aria-hidden />
           </button>
           <button
             type="button"
             className="btn-ghost px-1.5 py-0 text-xs"
             aria-label={`Descer ${scene.name}`}
+            title="Descer na lista"
             onClick={() => onMove(1)}
           >
-            ↓
+            <ChevronDown size={14} aria-hidden />
           </button>
         </div>
       </div>
@@ -350,7 +353,6 @@ export function ScenesPanel() {
   const online = useVttStore((s) => s.online);
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
   const defaultSceneId = useVttStore((s) => s.table?.default_scene_id ?? null);
-  const calibrating = useVttStore((s) => s.calibrating);
   const sync = useVttStore((s) => s.sync);
   const maps = useMapAssets();
   const [checked, setChecked] = useState<string[]>([]);
@@ -427,25 +429,6 @@ export function ScenesPanel() {
             Reagrupar todos na cena padrão
           </button>
         </section>
-      )}
-
-      {viewedSceneId && (
-        <button
-          type="button"
-          className="btn-ghost w-full px-2 py-1 text-xs"
-          aria-pressed={calibrating}
-          onClick={() =>
-            useVttStore.setState({
-              calibrating: !calibrating,
-              selectedId: null,
-              tool: 'select',
-            })
-          }
-        >
-          {calibrating
-            ? 'Arraste sobre um trecho conhecido do mapa…'
-            : 'Calibrar régua desta cena'}
-        </button>
       )}
 
       {folders.map(([folder, list]) => (

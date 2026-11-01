@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -51,6 +52,9 @@ export function useDiceToast() {
 
 export function DiceToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<DiceToastItem[]>([]);
+  // Só depois de montar: no servidor não há `document`, e o HTML precisa ser igual.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const rollContextRef = useRef<RollContext>(null);
 
   const dismiss = useCallback((id: string) => {
@@ -137,7 +141,7 @@ export function DiceToastProvider({ children }: { children: ReactNode }) {
   return (
     <DiceToastContext.Provider value={value}>
       {children}
-      {typeof document !== 'undefined' &&
+      {mounted &&
         createPortal(
           <div className="pointer-events-none fixed bottom-20 right-4 z-[9999] flex w-[min(100vw-1.5rem,16rem)] flex-col-reverse gap-2 md:bottom-24 md:right-6">
             <AnimatePresence initial={false}>

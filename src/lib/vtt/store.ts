@@ -18,7 +18,7 @@ import type {
 
 export type ConnectionStatus = 'connecting' | 'online' | 'offline';
 
-export type VttTool = 'select' | 'draw' | 'erase' | 'ruler' | 'ping';
+export type VttTool = 'select' | 'pan' | 'draw' | 'erase' | 'ruler' | 'ping';
 
 export interface PendingAsset extends Asset {
   profiles: { display_name: string } | null;
@@ -72,9 +72,11 @@ interface VttState {
   /** Toque na lista e depois no mapa: arrastar de DOM não funciona bem no touch. */
   armedAsset: SceneAsset | null;
   calibrating: boolean;
-  /** Fim do arraste de calibração: o modal pergunta quantos metros aquilo tem. */
+  /** Fim do arraste de calibração: o guia pergunta quantos metros aquilo tem. */
   calibrationPixels: number | null;
   lightMode: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
 
   /** Ao entrar na mesa: zera tudo o que é da mesa anterior. */
   enterTable: (snapshot: TableSnapshot) => void;
@@ -87,6 +89,8 @@ interface VttState {
   bumpLibrary: () => void;
   showToast: (text: string) => void;
   setLightMode: (on: boolean) => void;
+  startCalibration: () => void;
+  cancelCalibration: () => void;
 }
 
 const TOAST_MS = 4000;
@@ -158,6 +162,8 @@ export const useVttStore = create<VttState>((set) => ({
   calibrating: false,
   calibrationPixels: null,
   lightMode: false,
+  canUndo: false,
+  canRedo: false,
   enterTable: (snapshot) =>
     set({
       ...fromSnapshot(snapshot),
@@ -180,7 +186,8 @@ export const useVttStore = create<VttState>((set) => ({
       drawings: {},
       sceneAssets: {},
       placements: [],
-      tool: 'select',
+      // Espectador não seleciona nada: o que sobra para arrastar é o mapa.
+      tool: snapshot.me.role === 'espectador' ? 'pan' : 'select',
       selectedId: null,
       contextMenu: null,
       captionTargetId: null,
@@ -189,6 +196,8 @@ export const useVttStore = create<VttState>((set) => ({
       calibrating: false,
       calibrationPixels: null,
       lightMode: initialLightMode(),
+      canUndo: false,
+      canRedo: false,
     }),
   applySnapshot: (snapshot) => set(fromSnapshot(snapshot)),
   setOnline: (online) => set({ online }),
@@ -211,4 +220,14 @@ export const useVttStore = create<VttState>((set) => ({
       // Sem localStorage: vale só nesta visita.
     }
   },
+  startCalibration: () =>
+    set({
+      calibrating: true,
+      calibrationPixels: null,
+      selectedId: null,
+      armedAsset: null,
+      attachingId: null,
+      tool: 'select',
+    }),
+  cancelCalibration: () => set({ calibrating: false, calibrationPixels: null }),
 }));

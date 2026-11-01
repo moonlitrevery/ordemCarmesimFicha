@@ -67,6 +67,6 @@ Neste ambiente, o build do Next.js pode falhar no `realpath` nativo. O script `s
 1. Na Vercel, abra o projeto → **Storage** → **Create** → **Blob**, com acesso **público**, e conecte ao projeto. Isso cria `BLOB_READ_WRITE_TOKEN`.
 2. Faça um novo deploy para a variável valer em produção.
 3. Para testar local, rode `vercel env pull .env.local` ou copie o token para o `.env.local` e reinicie o `npm run dev`.
-4. Rode `supabase/migrations/008_vtt_assets.sql`, `009_vtt_asset_thumbs.sql` e `010_vtt_scenes.sql` e `011_vtt_chat.sql` no SQL Editor, nesta ordem.
+4. Rode `supabase/migrations/008_vtt_assets.sql`, `009_vtt_asset_thumbs.sql` e `010_vtt_scenes.sql`, `011_vtt_chat.sql`, `012_vtt_static_assets.sql`, `013_vtt_asset_visibility.sql`, `014_vtt_scenes_select_fix.sql` e `015_vtt_undo.sql` no SQL Editor, nesta ordem.
 
 Se a cota do plano Hobby (1 GB armazenado, 10 GB de transferência por mês) estourar, o Blob bloqueia até o mês virar, sem cobrança.

@@ -1,6 +1,7 @@
 'use client';
 
-import { useRef, useState, type DragEvent } from 'react';
+import { useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { Upload, X } from 'lucide-react';
 import { readImageWidth } from '@/lib/vtt/assets/prepare-image';
 import {
   ASSET_KIND_LABELS,
@@ -36,14 +37,22 @@ const PHASE_LABELS: Record<UploadPhase, string> = {
   saving: 'Salvando…',
 };
 
+/** Arrastar um item da própria lista não é soltar arquivo: só `Files` conta. */
+function hasFiles(event: DragEvent): boolean {
+  return event.dataTransfer.types.includes('Files');
+}
+
+/** O painel inteiro (`children`) aceita soltar arquivos. */
 export function AssetUploader({
   allowedKinds,
   doneMessage,
   onUploaded,
+  children,
 }: {
   allowedKinds: AssetKind[];
   doneMessage: (count: number) => string;
   onUploaded: (asset: Asset) => void;
+  children: ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -127,59 +136,65 @@ export function AssetUploader({
   }
 
   function onDrop(e: DragEvent) {
-    e.preventDefault();
     setDragging(false);
+    if (!hasFiles(e)) return;
+    e.preventDefault();
     if (!busy) void addFiles(Array.from(e.dataTransfer.files));
   }
 
   const readyCount = items.filter((item) => item.state === 'ready').length;
 
   return (
-    <div className="space-y-2">
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={
-          'rounded-md border border-dashed p-3 text-center text-sm transition ' +
-          (dragging
-            ? 'border-crimson bg-crimson/10 text-parchment'
-            : 'border-ink-border text-ink-muted')
+    <div
+      onDragOver={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setDragging(false);
         }
+      }}
+      onDrop={onDrop}
+      className={
+        'flex min-h-0 flex-1 flex-col gap-2 rounded-md ' +
+        (dragging ? 'outline outline-2 outline-offset-2 outline-crimson' : '')
+      }
+    >
+      <button
+        type="button"
+        className="btn-ghost min-h-11 w-full shrink-0 gap-2 px-2 py-1 text-xs desk:min-h-0"
+        disabled={busy}
+        title="Também dá para soltar os arquivos neste painel"
+        onClick={() => inputRef.current?.click()}
       >
-        <p className="mb-2">Solte os arquivos aqui</p>
-        <button
-          type="button"
-          className="btn-ghost px-2 py-1 text-xs"
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-        >
-          Escolher arquivos
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => {
-            void addFiles(Array.from(e.target.files ?? []));
-            e.target.value = '';
-          }}
-        />
-      </div>
+        <Upload size={14} aria-hidden />
+        Enviar arquivos
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          void addFiles(Array.from(e.target.files ?? []));
+          e.target.value = '';
+        }}
+      />
 
       {items.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="max-h-48 shrink-0 space-y-2 overflow-y-auto">
           {items.map((item) => (
             <li
               key={item.id}
               className="space-y-1 rounded-md border border-ink-border p-2 text-xs"
             >
               <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-parchment">
+                <span
+                  className="min-w-0 flex-1 truncate text-parchment"
+                  title={item.file.name}
+                >
                   {item.file.name}
                 </span>
                 {!busy && (
@@ -187,11 +202,12 @@ export function AssetUploader({
                     type="button"
                     className="shrink-0 text-ink-muted hover:text-parchment"
                     aria-label={`Tirar ${item.file.name} da lista`}
+                    title="Tirar da lista"
                     onClick={() =>
                       setItems((prev) => prev.filter((i) => i.id !== item.id))
                     }
                   >
-                    ✕
+                    <X size={14} aria-hidden />
                   </button>
                 )}
               </div>
@@ -238,7 +254,7 @@ export function AssetUploader({
       {readyCount > 0 && (
         <button
           type="button"
-          className="btn-primary w-full px-2 py-1 text-sm"
+          className="btn-primary min-h-11 w-full shrink-0 px-2 py-1 text-sm desk:min-h-0"
           disabled={busy}
           onClick={() => void sendAll()}
         >
@@ -247,8 +263,10 @@ export function AssetUploader({
             : `Enviar ${readyCount} ${readyCount === 1 ? 'arquivo' : 'arquivos'}`}
         </button>
       )}
-      {notice && <p className="text-xs text-emerald-400">{notice}</p>}
-      {error && <p className="text-xs text-crimson-soft">{error}</p>}
+      {notice && <p className="shrink-0 text-xs text-emerald-400">{notice}</p>}
+      {error && <p className="shrink-0 text-xs text-crimson-soft">{error}</p>}
+
+      {children}
     </div>
   );
 }

@@ -3,6 +3,13 @@ import type { Asset } from './assets/rules';
 import { checkUploadAvailable, uploadAsset } from './assets/upload';
 import type { VttEventOf } from './events';
 import { calibrate } from './geometry';
+import {
+  HistoryStack,
+  invertCommand,
+  isNoopPatch,
+  patchBefore,
+  type HistoryCommand,
+} from './history';
 import type { TableChannel } from './realtime';
 import {
   DRAWING_COLUMNS,
@@ -47,6 +54,10 @@ const PING_INTERVAL_MS = 1000;
 const REFRESH_DELAY_MS = 300;
 
 const SAVE_ERROR = 'Não foi possível salvar. Tente de novo.';
+const SKIPPED_STEP = 'Esse passo foi pulado: o que ele mudava já não existe.';
+
+/** `skipped`: sumiu por ação de outra pessoa, e não há o que desfazer. */
+type ApplyResult = 'applied' | 'skipped' | 'failed';
 
 /** O que a sync pede ao canvas: só o transitório, que não passa pelo store. */
 export interface EngineBridge {
@@ -84,6 +95,9 @@ export class SceneSync {
   private pingLimits = new Map<string, number>();
   private unsubscribers: (() => void)[] = [];
   private stopped = false;
+  private history = new HistoryStack();
+  private historyQueue: Promise<void> = Promise.resolve();
+  private writes = new Set<Promise<unknown>>();
   /** Objeto na mão de quem está arrastando: evento de fora não o tira do lugar. */
   interactingId: string | null = null;
 
@@ -130,6 +144,7 @@ export class SceneSync {
     clearTimeout(this.refreshTimer);
     this.unsubscribers.forEach((unsubscribe) => unsubscribe());
     this.unsubscribers = [];
+    this.clearHistory();
   }
 
   attachEngine(engine: EngineBridge | null) {
@@ -165,6 +180,7 @@ export class SceneSync {
     const scene = scenes.find((s) => s.id === viewedSceneId);
 
     if (!scene) {
+      this.clearHistory();
       useVttStore.setState({
         viewedSceneId: null,
         objects: {},
@@ -185,6 +201,7 @@ export class SceneSync {
     if (this.stopped || ticket !== this.loadTicket) return;
 
     const changedScene = store().viewedSceneId !== scene.id;
+    if (changedScene) this.clearHistory();
     const held = this.interactingId;
     const current = store().objects[held ?? ''];
     useVttStore.setState((s) => ({
@@ -362,6 +379,24 @@ export class SceneSync {
     });
   }
 
+  /**
+   * Como `patchObject`, mas vira um passo de desfazer. Quem já mudou o objeto na
+   * tela (arraste) passa como ele era antes do gesto.
+   */
+  changeObject(id: string, patch: ObjectPatch, previous?: SceneObject): Promise<boolean> {
+    const object = previous ?? store().objects[id];
+    if (!object) return Promise.resolve(false);
+    const before = patchBefore(object, patch);
+    return this.track(
+      this.patchObject(id, patch).then((saved) => {
+        if (saved && !isNoopPatch(before, patch)) {
+          this.record({ type: 'patch', id, before, after: patch });
+        }
+        return saved;
+      })
+    );
+  }
+
   /** Aplica na tela, grava e transmite a linha que o banco devolveu. */
   async patchObject(id: string, patch: ObjectPatch): Promise<boolean> {
     this.setLocal(id, patch);
@@ -418,6 +453,7 @@ export class SceneSync {
     }));
     this.applyRow(row);
     this.broadcastObject(row);
+    this.record({ type: 'create', row });
   }
 
   /** Arquivo solto no mapa: da mestra entra direto, de jogador espera aprovação. */
@@ -488,21 +524,38 @@ export class SceneSync {
       store().showToast('Você só pode apagar o que criou.');
       return;
     }
+    const removal = await this.track(this.removeObject(id));
+    if (removal) this.record(removal);
+  }
+
+  /** Apaga sem virar passo; devolve o comando que descreve o que aconteceu. */
+  private async removeObject(id: string): Promise<HistoryCommand | null> {
+    const { objects } = store();
+    const object = objects[id];
+    if (!object) return null;
+
     // Os filhos ficam: viram objetos soltos no mesmo lugar.
-    await Promise.all(
-      Object.values(state.objects)
+    const detached = await Promise.all(
+      Object.values(objects)
         .filter((child) => child.parent_id === id)
-        .map((child) => this.patchObject(child.id, detachPatch(child, state.objects)))
+        .map(async (child): Promise<HistoryCommand | null> => {
+          const after = detachPatch(child, objects);
+          const saved = await this.patchObject(child.id, after);
+          return saved
+            ? { type: 'patch', id: child.id, before: patchBefore(child, after), after }
+            : null;
+        })
     );
+
     const { data, error } = await this.supabase
       .from('scene_objects')
       .delete()
       .eq('id', id)
-      .select('id');
+      .select('*');
     if (error || !data || data.length === 0) {
       store().showToast('Não foi possível apagar. Tente de novo.');
       this.scheduleRefresh();
-      return;
+      return null;
     }
     this.removeLocal(id);
     if (object.hidden || !this.sceneIsLive(object.scene_id)) {
@@ -510,13 +563,45 @@ export class SceneSync {
     } else {
       this.channel.emit({ type: 'obj:delete', sceneId: object.scene_id, id });
     }
+
+    // Anexado guarda também onde está no mundo: se o pai sumir, volta solto ali.
+    const world = detachPatch(object, objects);
+    const row: SceneObject = {
+      ...(data[0] as unknown as SceneObject),
+      ...world,
+      parent_id: object.parent_id,
+      local: object.local,
+    };
+    return {
+      type: 'batch',
+      commands: [
+        ...detached.filter((step): step is HistoryCommand => step !== null),
+        { type: 'remove', row },
+      ],
+    };
+  }
+
+  /** Devolve o objeto com o mesmo id, anexo, legenda, efeitos e condições. */
+  private async restoreObject(row: SceneObject): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .rpc('restore_scene_object', { p_object: row })
+      .select(OBJECT_COLUMNS)
+      .single();
+    if (error || !data) {
+      store().showToast('Não foi possível restaurar. Tente de novo.');
+      return false;
+    }
+    const restored = data as unknown as SceneObject;
+    this.applyRow(restored);
+    this.broadcastObject(restored);
+    return true;
   }
 
   private ownPatch(id: string, change: (own: ReturnType<typeof ownTransform>) => ReturnType<typeof ownTransform>) {
     const { objects } = store();
     const object = objects[id];
     if (!object) return;
-    void this.patchObject(
+    void this.changeObject(
       id,
       patchFromOwn(object, objects, change(ownTransform(object, objects)))
     );
@@ -569,8 +654,20 @@ export class SceneSync {
   /** Anexado some junto com o pai: esconder só o pai deixaria o filho solto no mapa. */
   async setHidden(id: string, hidden: boolean) {
     const { objects } = store();
-    const family = [id, ...descendantsOf(id, objects).map((o) => o.id)];
-    await Promise.all(family.map((target) => this.patchObject(target, { hidden })));
+    const family = [objects[id], ...descendantsOf(id, objects)].filter(Boolean);
+    const changes = await this.track(
+      Promise.all(
+        family.map(async (object): Promise<HistoryCommand | null> => {
+          const after = { hidden };
+          const saved = await this.patchObject(object.id, after);
+          return saved
+            ? { type: 'patch', id: object.id, before: patchBefore(object, after), after }
+            : null;
+        })
+      )
+    );
+    const commands = changes.filter((step): step is HistoryCommand => step !== null);
+    if (commands.length > 0) this.record({ type: 'batch', commands });
   }
 
   attach(childId: string, parentId: string) {
@@ -584,7 +681,7 @@ export class SceneSync {
     }
     // Ocultar segue a família: um filho visível de pai oculto ficaria sem pai para o jogador.
     const patch = attachPatch(child, parent, objects);
-    void this.patchObject(
+    void this.changeObject(
       childId,
       parent.hidden && !child.hidden ? { ...patch, hidden: true } : patch
     );
@@ -592,7 +689,7 @@ export class SceneSync {
 
   detach(id: string) {
     const { objects } = store();
-    if (objects[id]) void this.patchObject(id, detachPatch(objects[id], objects));
+    if (objects[id]) void this.changeObject(id, detachPatch(objects[id], objects));
   }
 
   // ---------- Desenhos ----------
@@ -600,37 +697,62 @@ export class SceneSync {
   async addDrawing(points: number[], color: string, width: number) {
     const sceneId = store().viewedSceneId;
     if (!sceneId || !this.canEdit()) return;
+    const drawing = await this.track(
+      this.insertDrawing({ scene_id: sceneId, author_id: this.userId, points, color, width })
+    );
+    if (drawing) this.record({ type: 'draw-add', drawing });
+  }
+
+  private async insertDrawing(
+    row: Pick<Drawing, 'scene_id' | 'author_id' | 'points' | 'color' | 'width'> & {
+      id?: string;
+    }
+  ): Promise<Drawing | null> {
     const { data, error } = await this.supabase
       .from('drawings')
-      .insert({ scene_id: sceneId, author_id: this.userId, points, color, width })
+      .insert(row)
       .select(DRAWING_COLUMNS)
       .single();
     if (error || !data) {
       store().showToast('Não foi possível salvar o desenho.');
-      return;
+      return null;
     }
     const drawing = data as Drawing;
     useVttStore.setState((s) => ({
       drawings: { ...s.drawings, [drawing.id]: drawing },
     }));
-    if (this.sceneIsLive(sceneId)) {
+    if (this.sceneIsLive(row.scene_id)) {
       this.channel.emit({ type: 'draw:add', drawing });
     } else {
-      this.channel.emit({ type: 'scene:refresh', sceneId });
+      this.channel.emit({ type: 'scene:refresh', sceneId: row.scene_id });
     }
+    return drawing;
   }
 
   async deleteDrawing(id: string) {
     const drawing = store().drawings[id];
     if (!drawing) return;
-    useVttStore.setState({ drawings: without(store().drawings, id) });
-    const { error } = await this.supabase.from('drawings').delete().eq('id', id);
+    const removed = await this.track(this.removeDrawing(drawing));
+    if (removed) this.record({ type: 'draw-remove', drawing });
+  }
+
+  private async removeDrawing(drawing: Drawing): Promise<boolean> {
+    useVttStore.setState({ drawings: without(store().drawings, drawing.id) });
+    const { error } = await this.supabase
+      .from('drawings')
+      .delete()
+      .eq('id', drawing.id);
     if (error) {
       store().showToast('Não foi possível apagar o desenho.');
       this.scheduleRefresh();
-      return;
+      return false;
     }
-    this.channel.emit({ type: 'draw:delete', sceneId: drawing.scene_id, id });
+    this.channel.emit({
+      type: 'draw:delete',
+      sceneId: drawing.scene_id,
+      id: drawing.id,
+    });
+    return true;
   }
 
   async clearDrawings() {
@@ -646,6 +768,108 @@ export class SceneSync {
     }
     useVttStore.setState({ drawings: {} });
     this.channel.emit({ type: 'draw:delete', sceneId, id: null });
+  }
+
+  // ---------- Desfazer ----------
+
+  private record(command: HistoryCommand) {
+    if (this.stopped) return;
+    this.history.record(command);
+    this.publishHistory();
+  }
+
+  private publishHistory() {
+    useVttStore.setState({
+      canUndo: this.history.canUndo,
+      canRedo: this.history.canRedo,
+    });
+  }
+
+  private clearHistory() {
+    this.history.clear();
+    this.publishHistory();
+  }
+
+  /** Ctrl+Z logo depois de soltar o token precisa esperar o passo ser gravado. */
+  private track<T>(write: Promise<T>): Promise<T> {
+    this.writes.add(write);
+    void write.finally(() => this.writes.delete(write));
+    return write;
+  }
+
+  /** Uma de cada vez: apertar Ctrl+Z várias vezes segue a ordem da pilha. */
+  private enqueueHistory(step: () => Promise<void>) {
+    this.historyQueue = this.historyQueue
+      .then(() => Promise.allSettled(Array.from(this.writes)))
+      .then(step)
+      .catch(() => undefined)
+      .then(() => this.publishHistory());
+    return this.historyQueue;
+  }
+
+  undo() {
+    return this.enqueueHistory(async () => {
+      const command = this.history.popUndo();
+      if (!command) return;
+      const result = await this.applyCommand(invertCommand(command));
+      if (result === 'applied') this.history.pushRedo(command);
+      if (result === 'skipped') store().showToast(SKIPPED_STEP);
+    });
+  }
+
+  redo() {
+    return this.enqueueHistory(async () => {
+      const command = this.history.popRedo();
+      if (!command) return;
+      const result = await this.applyCommand(command);
+      if (result === 'applied') this.history.pushUndo(command);
+      if (result === 'skipped') store().showToast(SKIPPED_STEP);
+    });
+  }
+
+  /** Pela mesma via de sempre: grava e transmite, e os outros veem. */
+  private async applyCommand(command: HistoryCommand): Promise<ApplyResult> {
+    const state = store();
+    switch (command.type) {
+      case 'patch': {
+        if (!state.objects[command.id]) return 'skipped';
+        return (await this.patchObject(command.id, command.after))
+          ? 'applied'
+          : 'failed';
+      }
+      case 'create':
+        return (await this.restoreObject(command.row)) ? 'applied' : 'failed';
+      case 'remove': {
+        if (!state.objects[command.row.id]) return 'skipped';
+        return (await this.removeObject(command.row.id)) ? 'applied' : 'failed';
+      }
+      case 'draw-add': {
+        if (state.drawings[command.drawing.id]) return 'skipped';
+        const { id, scene_id, author_id, points, color, width } = command.drawing;
+        const drawing = await this.insertDrawing({
+          id,
+          scene_id,
+          author_id,
+          points,
+          color,
+          width,
+        });
+        return drawing ? 'applied' : 'failed';
+      }
+      case 'draw-remove': {
+        if (!state.drawings[command.drawing.id]) return 'skipped';
+        return (await this.removeDrawing(command.drawing)) ? 'applied' : 'failed';
+      }
+      case 'batch': {
+        let result: ApplyResult = 'skipped';
+        for (const step of command.commands) {
+          const stepResult = await this.applyCommand(step);
+          if (stepResult === 'failed') return 'failed';
+          if (stepResult === 'applied') result = 'applied';
+        }
+        return result;
+      }
+    }
   }
 
   // ---------- Transitórios ----------
@@ -832,6 +1056,11 @@ export class SceneSync {
     }
     this.channel.emit({ type: 'asset:resolved' });
     await this.reload();
+  }
+
+  /** Jogador enviou algo: a mestra relê a fila de aprovação. */
+  notifyAssetPending() {
+    this.channel.emit({ type: 'asset:pending' });
   }
 
   notifyAssetResolved() {

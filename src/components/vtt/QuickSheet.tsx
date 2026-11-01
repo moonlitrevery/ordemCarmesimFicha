@@ -177,7 +177,8 @@ function SkillRow({
   );
 }
 
-function QuickSheetBody({ onClose }: { onClose: () => void }) {
+/** Painel do trilho: só monta depois de aberto uma vez, e aí acompanha a ficha. */
+export function QuickSheet() {
   const me = useVttStore((s) => s.me);
   const chat = useVttStore((s) => s.chat);
   const rollCharacter = useVttStore((s) => s.rollCharacter);
@@ -369,14 +370,10 @@ function QuickSheetBody({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      role="dialog"
-      aria-label="Ficha Rápida"
-      className="absolute inset-x-0 bottom-0 z-20 flex max-h-[75%] flex-col rounded-t-lg border border-ink-border bg-ink-panel desk:inset-x-auto desk:bottom-4 desk:right-4 desk:max-h-[80%] desk:w-96 desk:rounded-lg"
-    >
-      <div className="flex shrink-0 items-center gap-2 border-b border-ink-border p-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="shrink-0">
         <select
-          className="field min-h-11 min-w-0 flex-1 px-2 py-1 text-sm desk:min-h-8"
+          className="field min-h-11 min-w-0 px-2 py-1 text-sm desk:min-h-8"
           aria-label="Personagem"
           value={selectedId ?? ''}
           disabled={!characters?.length}
@@ -396,20 +393,14 @@ function QuickSheetBody({ onClose }: { onClose: () => void }) {
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          className={ROW_BUTTON + ' w-11 shrink-0 desk:w-8'}
-          aria-label="Fechar Ficha Rápida"
-          onClick={onClose}
-        >
-          ✕
-        </button>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         {error && <p className="text-xs text-crimson-soft">{error}</p>}
         {characters && characters.length === 0 && !error && (
-          <p className="text-sm text-ink-muted">Nenhuma ficha ainda.</p>
+          <p className="text-sm text-ink-muted">
+            Nenhuma ficha ainda. Crie a sua em Fichas, no menu do site.
+          </p>
         )}
 
         {character && resources && maxes && (
@@ -492,25 +483,5 @@ function QuickSheetBody({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </div>
-  );
-}
-
-/** Só existe aberta: fechada não consulta fichas nem assina nada. */
-export function QuickSheet() {
-  const role = useVttStore((s) => s.me?.role);
-  const [open, setOpen] = useState(false);
-
-  if (!role || role === 'espectador') return null;
-
-  return open ? (
-    <QuickSheetBody onClose={() => setOpen(false)} />
-  ) : (
-    <button
-      type="button"
-      className="btn-ghost absolute bottom-16 right-2 z-10 min-h-11 bg-ink-raised/95 px-3 text-sm desk:bottom-4 desk:right-4 desk:min-h-0 desk:py-2"
-      onClick={() => setOpen(true)}
-    >
-      Ficha Rápida
-    </button>
   );
 }

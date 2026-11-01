@@ -1,39 +1,53 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Eye,
+  EyeOff,
+  FlipHorizontal2,
+  FlipVertical2,
+  Link2,
+  Link2Off,
+  RotateCcw,
+  RotateCw,
+  Trash2,
+  Type,
+  Undo,
+  type LucideIcon,
+} from 'lucide-react';
 import { canDeleteObject } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 
 const QUARTER_TURN = Math.PI / 2;
 
 function Item({
+  icon: Icon,
   label,
-  disabled,
   danger,
   hint,
   onClick,
 }: {
+  icon: LucideIcon;
   label: string;
-  disabled?: boolean;
   danger?: boolean;
   hint?: string;
-  onClick?: () => void;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
-      disabled={disabled}
       onClick={onClick}
       className={
-        'flex min-h-11 w-full items-center justify-between gap-4 rounded px-2 text-left text-sm desk:min-h-8 ' +
-        (disabled
-          ? 'cursor-not-allowed text-ink-muted/60'
-          : (danger ? 'text-crimson-soft ' : 'text-parchment ') + 'hover:bg-ink')
+        'flex min-h-11 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-ink desk:min-h-8 ' +
+        (danger ? 'text-crimson-soft' : 'text-parchment')
       }
     >
-      {label}
-      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
+      <Icon size={15} aria-hidden className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {hint && <span className="shrink-0 text-xs text-ink-muted">{hint}</span>}
     </button>
   );
 }
@@ -42,7 +56,10 @@ function Separator() {
   return <hr className="my-1 border-ink-border" />;
 }
 
-/** Em DOM, não no canvas: precisa de foco, leitor de tela e alvo grande no touch. */
+/**
+ * Em DOM, não no canvas: precisa de foco, leitor de tela e alvo grande no touch.
+ * O que ainda não existe (efeitos, condições, vínculos) só entra quando chegar.
+ */
 export function TokenContextMenu() {
   const menu = useVttStore((s) => s.contextMenu);
   const object = useVttStore((s) =>
@@ -96,62 +113,84 @@ export function TokenContextMenu() {
       ref={ref}
       role="menu"
       aria-label="Ações do token"
-      className="fixed z-50 max-h-[85vh] w-60 overflow-y-auto rounded-md border border-ink-border bg-ink-raised p-1 shadow-xl"
+      className="fixed z-50 max-h-[85vh] w-56 overflow-y-auto rounded-xl border border-ink-border bg-ink-raised p-1 shadow-panel"
       style={position}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <Item label="Espelhar horizontal" onClick={run(() => sync.flipX(id))} />
-      <Item label="Espelhar vertical" onClick={run(() => sync.flipY(id))} />
       <Item
-        label="Girar 90° à esquerda"
+        icon={FlipHorizontal2}
+        label="Espelhar na horizontal"
+        onClick={run(() => sync.flipX(id))}
+      />
+      <Item
+        icon={FlipVertical2}
+        label="Espelhar na vertical"
+        onClick={run(() => sync.flipY(id))}
+      />
+      <Item
+        icon={RotateCcw}
+        label="Girar à esquerda"
         hint="Q"
         onClick={run(() => sync.rotateBy(id, -QUARTER_TURN))}
       />
       <Item
-        label="Girar 90° à direita"
+        icon={RotateCw}
+        label="Girar à direita"
         hint="E"
         onClick={run(() => sync.rotateBy(id, QUARTER_TURN))}
       />
       <Item
-        label="Resetar rotação/tamanho"
+        icon={Undo}
+        label="Tamanho original"
         onClick={run(() => sync.resetTransform(id))}
       />
       <Separator />
       <Item
+        icon={Type}
         label="Legenda…"
         onClick={run(() => useVttStore.setState({ captionTargetId: id }))}
       />
-      <Item label="Efeitos ▸" disabled hint="fase 6" />
-      <Item label="Magias ▸" disabled hint="fase 6" />
-      <Item label="Condições ▸" disabled hint="fase 5" />
-      <Separator />
       {object.parent_id ? (
-        <Item label="Desanexar" onClick={run(() => sync.detach(id))} />
+        <Item
+          icon={Link2Off}
+          label="Desanexar"
+          onClick={run(() => sync.detach(id))}
+        />
       ) : (
         <Item
+          icon={Link2}
           label="Anexar a…"
           onClick={run(() =>
             useVttStore.setState({ attachingId: id, tool: 'select' })
           )}
         />
       )}
-      <Item label="Trazer pra frente" onClick={run(() => sync.bringToFront(id))} />
-      <Item label="Mandar pra trás" onClick={run(() => sync.sendToBack(id))} />
+      <Separator />
+      <Item
+        icon={ArrowUpToLine}
+        label="Trazer pra frente"
+        onClick={run(() => sync.bringToFront(id))}
+      />
+      <Item
+        icon={ArrowDownToLine}
+        label="Mandar pra trás"
+        onClick={run(() => sync.sendToBack(id))}
+      />
       {isGm && (
         <>
           <Separator />
           <Item
+            icon={object.hidden ? Eye : EyeOff}
             label={object.hidden ? 'Mostrar' : 'Ocultar'}
             onClick={run(() => void sync.setHidden(id, !object.hidden))}
           />
-          <Item label="Vincular ficha…" disabled hint="fase 5" />
-          <Item label="Vincular NPC…" disabled hint="fase 5" />
         </>
       )}
       {canDeleteObject(object, me.role, me.userId) && (
         <>
           <Separator />
           <Item
+            icon={Trash2}
             label="Apagar"
             danger
             hint="Del"

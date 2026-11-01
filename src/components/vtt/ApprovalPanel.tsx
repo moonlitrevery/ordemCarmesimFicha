@@ -46,7 +46,7 @@ function PendingRow({
     <li className="space-y-2 rounded-md border border-ink-border p-2">
       <div className="flex gap-2">
         <div className="shrink-0 overflow-hidden rounded">
-          <AssetThumb asset={asset} size={64} />
+          <AssetThumb asset={asset} size={40} />
         </div>
         <div className="min-w-0 flex-1 text-xs">
           <p className="truncate text-sm text-parchment" title={asset.name}>

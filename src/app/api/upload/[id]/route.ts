@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { storage } from '@/lib/storage';
+import { storage, StorageError } from '@/lib/storage';
 import { canDeleteAsset, type Asset } from '@/lib/vtt/assets/rules';
 import { getUploadAccess } from '@/lib/vtt/assets/server';
 
@@ -39,9 +39,15 @@ export async function DELETE(
     await storage.delete(
       asset.thumb_url ? [asset.url, asset.thumb_url] : [asset.url]
     );
-  } catch {
+  } catch (error) {
+    console.error('[upload] falha ao apagar no storage', error);
     return NextResponse.json(
-      { error: 'Não foi possível apagar o arquivo. Tente de novo.' },
+      {
+        error:
+          error instanceof StorageError
+            ? error.message
+            : 'Não foi possível apagar o arquivo. Tente de novo.',
+      },
       { status: 502 }
     );
   }
@@ -51,6 +57,7 @@ export async function DELETE(
     .delete()
     .eq('id', params.id);
   if (error) {
+    console.error('[upload] falha ao apagar o registro', error);
     return NextResponse.json(
       { error: 'Não foi possível apagar o registro. Tente de novo.' },
       { status: 500 }

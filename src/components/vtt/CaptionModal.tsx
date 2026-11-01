@@ -19,7 +19,7 @@ function CaptionForm({ id, initial }: { id: string; initial: Caption }) {
     event.preventDefault();
     void useVttStore
       .getState()
-      .sync?.patchObject(id, { caption: sanitizeCaption(caption) });
+      .sync?.changeObject(id, { caption: sanitizeCaption(caption) });
     close();
   }
 

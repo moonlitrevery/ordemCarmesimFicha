@@ -2,8 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import {
+  FileText,
+  Images,
+  Map as MapIcon,
+  MessageSquare,
+  ScrollText,
+  Skull,
+  Sparkles,
+  Swords,
+  UserRound,
+  Volume2,
+} from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { unlockAudio } from '@/lib/vtt/audio/unlock';
 import { fetchTableSnapshot } from '@/lib/vtt/queries';
@@ -13,20 +24,26 @@ import { SceneSync } from '@/lib/vtt/scene-sync';
 import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
-import { ApprovalPanel } from './ApprovalPanel';
-import { CalibrationModal } from './CalibrationModal';
+import { CalibrationGuide } from './CalibrationGuide';
 import { CaptionModal } from './CaptionModal';
 import { ChatPanel } from './ChatPanel';
+import { useIsDesk } from './hud';
 import { LibraryPanel } from './LibraryPanel';
 import { MapToolbar } from './MapToolbar';
-import { MembersPanel } from './MembersPanel';
-import { PlacePanel } from './PlacePanel';
-import { PlayerUploadPanel } from './PlayerUploadPanel';
+import {
+  IconRail,
+  PanelHost,
+  RailBottomBar,
+  type RailItem,
+  type RailSide,
+} from './PanelRail';
 import { QuickSheet } from './QuickSheet';
+import { ScaleChip } from './ScaleChip';
 import { ScenesPanel } from './ScenesPanel';
 import { SceneViewBanner } from './SceneViewBanner';
-import { SidePanel, type SidePanelTab } from './SidePanel';
+import { SettingsMenu } from './SettingsMenu';
 import { TokenContextMenu } from './TokenContextMenu';
+import { TopBar } from './TopBar';
 
 // ssr: false e import dinâmico: Pixi só existe no navegador e só nesta rota.
 const MapCanvas = dynamic(
@@ -34,24 +51,50 @@ const MapCanvas = dynamic(
   { ssr: false }
 );
 
-function Placeholder({ title }: { title: string }) {
-  return (
-    <p className="text-sm text-ink-muted">{title} chega em uma próxima fase.</p>
-  );
+function Placeholder({ text }: { text: string }) {
+  return <p className="text-sm text-ink-muted">{text}</p>;
 }
 
-const PLAYER_TABS: SidePanelTab[] = [
-  { id: 'docs', label: 'Docs', content: <Placeholder title="Os documentos" /> },
+const DOCS_ITEMS: RailItem[] = [
+  {
+    id: 'docs',
+    label: 'Documentos',
+    icon: FileText,
+    content: <Placeholder text="Os documentos da mesa chegam na fase 8." />,
+  },
   {
     id: 'reports',
     label: 'Relatórios',
-    content: <Placeholder title="Os relatórios" />,
+    icon: ScrollText,
+    content: <Placeholder text="Os relatórios chegam na fase 8." />,
   },
 ];
 
-const GM_PLACEHOLDER_TABS: SidePanelTab[] = [
-  { id: 'sound', label: 'Som', content: <Placeholder title="O som" /> },
-  { id: 'fx', label: 'Efeitos', content: <Placeholder title="Os efeitos" /> },
+const GM_PLACEHOLDER_ITEMS: RailItem[] = [
+  {
+    id: 'npcs',
+    label: 'NPCs',
+    icon: Skull,
+    content: <Placeholder text="Os NPCs chegam na fase 5." />,
+  },
+  {
+    id: 'initiative',
+    label: 'Iniciativa',
+    icon: Swords,
+    content: <Placeholder text="A iniciativa chega na fase 5." />,
+  },
+  {
+    id: 'sound',
+    label: 'Som',
+    icon: Volume2,
+    content: <Placeholder text="O som chega na fase 7." />,
+  },
+  {
+    id: 'fx',
+    label: 'Efeitos de tela',
+    icon: Sparkles,
+    content: <Placeholder text="Os efeitos de tela chegam na fase 6." />,
+  },
 ];
 
 export function VttShell({ initial }: { initial: TableSnapshot }) {
@@ -61,8 +104,6 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
 
   const sessionOpen = useVttStore((s) => s.sessionOpen);
-  const online = useVttStore((s) => s.online);
-  const connection = useVttStore((s) => s.connection);
   const audioUnlocked = useVttStore((s) => s.audioUnlocked);
   const setAudioUnlocked = useVttStore((s) => s.setAudioUnlocked);
   const setSessionOpen = useVttStore((s) => s.setSessionOpen);
@@ -72,11 +113,12 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const toast = useVttStore((s) => s.toast);
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
   const chatUnread = useVttStore((s) => s.chatUnread);
-  const [leftOpen, setLeftOpen] = useState(false);
-  const [rightOpen, setRightOpen] = useState(false);
-  const [rightTab, setRightTab] = useState('chat');
+  const isDesk = useIsDesk();
+  const [openPanels, setOpenPanels] = useState<Record<RailSide, string | null>>({
+    left: null,
+    right: null,
+  });
   const [sessionBusy, setSessionBusy] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
 
   const { table, me } = initial;
   const tableId = table.id;
@@ -190,7 +232,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     };
   }, [tableId, userId, isGm, router]);
 
-  const chatVisible = rightOpen && rightTab === 'chat';
+  const chatVisible = openPanels.right === 'chat';
   useEffect(() => {
     useVttStore.setState((s) => ({
       chatVisible,
@@ -206,14 +248,15 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   async function toggleSession() {
     const next = !sessionOpen;
     setSessionBusy(true);
-    setSessionError(null);
     const { error } = await createClient()
       .from('tables')
       .update({ session_open: next })
       .eq('id', tableId);
     setSessionBusy(false);
     if (error) {
-      setSessionError('Não foi possível alterar a sessão. Tente de novo.');
+      useVttStore
+        .getState()
+        .showToast('Não foi possível alterar a sessão. Tente de novo.');
       return;
     }
     setSessionOpen(next);
@@ -225,227 +268,170 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     setAudioUnlocked(true);
   }
 
-  const closeDrawers = () => {
-    // Na gaveta (touch) o painel cobre o mapa; com mouse fica aberto ao lado.
-    if (!window.matchMedia('(pointer: fine)').matches) {
-      setLeftOpen(false);
-      setRightOpen(false);
-    }
+  /** Um por lado com mouse; no touch a folha cobre a tela, então um só no total. */
+  function togglePanel(side: RailSide, id: string) {
+    setOpenPanels((current) => {
+      const next = current[side] === id ? null : id;
+      return isDesk
+        ? { ...current, [side]: next }
+        : { left: null, right: null, [side]: next };
+    });
+  }
+
+  const closePanel = (side: RailSide) =>
+    setOpenPanels((current) => ({ ...current, [side]: null }));
+
+  // No touch a folha cobre o mapa: sai da frente para o toque que coloca o token.
+  const onArmed = () => {
+    if (!isDesk) setOpenPanels({ left: null, right: null });
   };
 
-  const gmTabs: SidePanelTab[] = [
-    { id: 'scenes', label: 'Cenas', content: <ScenesPanel /> },
+  const rightItems: RailItem[] = [
     {
-      id: 'members',
-      label: 'Membros',
-      content: (
-        <MembersPanel tableId={tableId} onMemberChanged={notifyMemberChanged} />
-      ),
+      id: 'chat',
+      label: 'Chat',
+      icon: MessageSquare,
+      content: <ChatPanel />,
+      badge: chatUnread,
+      quietBadge: true,
     },
-    { id: 'library', label: 'Biblioteca', content: <LibraryPanel /> },
-    {
-      id: 'approval',
-      label: 'Aprovação',
-      badge: pendingCount,
-      content: <ApprovalPanel />,
-    },
-    ...GM_PLACEHOLDER_TABS,
+    // Espectador não tem ficha nem coloca nada no mapa.
+    ...(role === 'espectador'
+      ? []
+      : [
+          {
+            id: 'sheet',
+            label: 'Ficha Rápida',
+            icon: UserRound,
+            content: <QuickSheet />,
+          },
+          {
+            id: 'library',
+            label: 'Biblioteca',
+            icon: Images,
+            content: <LibraryPanel onArmed={onArmed} />,
+            badge: isGm ? pendingCount : 0,
+          },
+        ]),
+    ...DOCS_ITEMS,
   ];
 
-  const chatTab: SidePanelTab = {
-    id: 'chat',
-    label: 'Chat',
-    content: <ChatPanel />,
-    badge: chatUnread,
-    quietBadge: true,
-  };
-  const sharedTabs = [chatTab, ...PLAYER_TABS];
-
-  const placeTab: SidePanelTab = {
-    id: 'place',
-    label: 'Colocar',
-    content: <PlacePanel onArmed={closeDrawers} />,
-  };
-
-  const rightTabs: SidePanelTab[] =
-    role === 'espectador'
-      ? sharedTabs
-      : role === 'mestre'
-        ? [...sharedTabs, placeTab]
-        : [
-          ...sharedTabs,
-          placeTab,
-          {
-            id: 'upload',
-            label: 'Enviar imagem',
-            content: (
-              <PlayerUploadPanel
-                onUploaded={() =>
-                  channelRef.current?.emit({ type: 'asset:pending' })
-                }
-              />
-            ),
-          },
-        ];
+  const leftItems: RailItem[] = isGm
+    ? [
+        {
+          id: 'scenes',
+          label: 'Cenas',
+          icon: MapIcon,
+          content: <ScenesPanel />,
+        },
+        ...GM_PLACEHOLDER_ITEMS,
+      ]
+    : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-ink text-parchment">
-      <header className="flex shrink-0 items-center gap-2 border-b border-ink-border bg-ink-raised px-2 py-1.5 sm:gap-3 sm:px-3">
-        <Link
-          href="/mesa"
-          className="btn-ghost shrink-0 px-2 py-1 text-xs"
-          aria-label="Voltar para Minhas mesas"
-        >
-          ←
-        </Link>
-        {isGm && (
-          <button
-            type="button"
-            className="btn-ghost shrink-0 px-2 py-1 text-xs"
-            aria-expanded={leftOpen}
-            onClick={() => setLeftOpen((v) => !v)}
-          >
-            Mestre
-            {pendingCount > 0 && (
-              <span className="rounded-full bg-crimson px-1.5 text-parchment">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-        )}
-        <h1 className="min-w-0 truncate font-display text-lg leading-tight">
-          {table.name}
-        </h1>
-        <span className="flex shrink-0 items-center gap-1.5 text-xs text-ink-muted">
-          <span
-            className={
-              'h-2 w-2 rounded-full ' +
-              (sessionOpen ? 'bg-emerald-400' : 'bg-ink-border')
-            }
-            aria-hidden
-          />
-          <span className="hidden sm:inline">
-            {sessionOpen ? 'Sessão aberta' : 'Sessão fechada'}
-          </span>
-        </span>
-        {connection === 'offline' && (
-          <span className="shrink-0 text-xs text-crimson-soft">Reconectando…</span>
-        )}
-        <ul
-          className="flex min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden"
-          aria-label={`${online.length} online`}
-        >
-          {online.map((person) => (
-            <li
-              key={person.userId}
-              title={person.name}
-              className="max-w-[7rem] shrink-0 truncate rounded-full border border-emerald-500/40 px-2 py-0.5 text-xs text-parchment"
-            >
-              {person.name}
-            </li>
-          ))}
-        </ul>
-        {isGm && (
-          <button
-            type="button"
-            className={(sessionOpen ? 'btn-ghost' : 'btn-primary') + ' shrink-0 px-2 py-1 text-xs'}
-            disabled={sessionBusy}
-            onClick={() => void toggleSession()}
-          >
-            {sessionOpen ? 'Encerrar sessão' : 'Abrir sessão'}
-          </button>
-        )}
-        <button
-          type="button"
-          className="btn-ghost shrink-0 px-2 py-1 text-xs"
-          aria-expanded={rightOpen}
-          onClick={() => setRightOpen((v) => !v)}
-        >
-          Painéis
-          {chatUnread > 0 && (
-            <span className="ml-1 text-ink-muted">{chatUnread}</span>
-          )}
-        </button>
-      </header>
-
-      {sessionError && (
-        <p className="shrink-0 bg-crimson/20 px-3 py-1 text-xs text-crimson-soft">
-          {sessionError}
-        </p>
-      )}
-
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        {(leftOpen || rightOpen) && (
-          <button
-            type="button"
-            aria-label="Fechar painéis"
-            className="absolute inset-0 z-20 bg-black/50 desk:hidden"
-            onClick={() => {
-              setLeftOpen(false);
-              setRightOpen(false);
-            }}
-          />
-        )}
-
-        {isGm && (
-          <SidePanel
-            side="left"
-            label="Painel da mestra"
-            open={leftOpen}
-            tabs={gmTabs}
-          />
-        )}
-
-        <main className="relative min-w-0 flex-1 overflow-hidden">
-          {viewedSceneId ? (
-            <>
-              <MapCanvas key={tableId} />
-              <SceneViewBanner />
-              <MapToolbar />
-            </>
-          ) : (
-            <div className="flex h-full items-center justify-center p-4 text-center">
-              {isGm ? (
+    <div className="fixed inset-0 z-50 overflow-hidden bg-ink text-parchment">
+      <main className="absolute inset-0">
+        {viewedSceneId ? (
+          <>
+            <MapCanvas key={tableId} />
+            <SceneViewBanner />
+            <MapToolbar />
+            <ScaleChip />
+            <CalibrationGuide />
+          </>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-4 pb-20 text-center">
+            {isGm ? (
+              <>
                 <p className="max-w-sm text-sm text-ink-muted">
-                  Nenhuma cena ainda. Abra o painel Mestre e crie a primeira na aba
-                  Cenas.
+                  Nenhuma cena ainda — crie uma em Cenas,{' '}
+                  {isDesk ? 'no trilho esquerdo' : 'na barra inferior'}.
                 </p>
-              ) : (
+                <button
+                  type="button"
+                  className="btn-primary min-h-11 px-3 py-1 text-sm desk:min-h-0"
+                  onClick={() => togglePanel('left', 'scenes')}
+                >
+                  Abrir Cenas
+                </button>
+              </>
+            ) : (
+              <>
                 <p className="font-display text-2xl text-ink-muted">
                   {sessionOpen
                     ? 'A mestra ainda não abriu uma cena'
                     : 'A sessão ainda não começou'}
                 </p>
-              )}
-            </div>
-          )}
-          <QuickSheet />
-          <CaptionModal />
-          <CalibrationModal />
-        </main>
-
-        <SidePanel
-          side="right"
-          label="Chat, documentos e relatórios"
-          open={rightOpen}
-          tabs={rightTabs}
-          onActiveChange={setRightTab}
-        />
-
-        {toast && (
-          <p
-            role="status"
-            className="pointer-events-none absolute bottom-4 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-xs text-parchment"
-          >
-            {toast}
-          </p>
+                <p className="max-w-sm text-sm text-ink-muted">
+                  O mapa aparece aqui sozinho. Enquanto isso, o chat já funciona.
+                </p>
+              </>
+            )}
+          </div>
         )}
-      </div>
+        <CaptionModal />
+      </main>
+
+      <TopBar
+        tableId={tableId}
+        tableName={table.name}
+        isGm={isGm}
+        sessionBusy={sessionBusy}
+        onToggleSession={() => void toggleSession()}
+        onMemberChanged={notifyMemberChanged}
+      />
+
+      <SettingsMenu />
+
+      {isGm && (
+        <>
+          <IconRail
+            side="left"
+            items={leftItems}
+            activeId={openPanels.left}
+            onToggle={(id) => togglePanel('left', id)}
+          />
+          <PanelHost
+            side="left"
+            items={leftItems}
+            activeId={openPanels.left}
+            onClose={() => closePanel('left')}
+          />
+        </>
+      )}
+      <IconRail
+        side="right"
+        items={rightItems}
+        activeId={openPanels.right}
+        onToggle={(id) => togglePanel('right', id)}
+      />
+      <PanelHost
+        side="right"
+        items={rightItems}
+        activeId={openPanels.right}
+        onClose={() => closePanel('right')}
+      />
+      <RailBottomBar
+        left={leftItems}
+        right={rightItems}
+        activeLeft={openPanels.left}
+        activeRight={openPanels.right}
+        onToggle={togglePanel}
+      />
+
+      {toast && (
+        <p
+          role="status"
+          className="pointer-events-none absolute bottom-16 left-1/2 z-40 max-w-[calc(100vw-1rem)] -translate-x-1/2 rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-center text-xs text-parchment desk:bottom-4"
+        >
+          {toast}
+        </p>
+      )}
 
       <TokenContextMenu />
 
       {!audioUnlocked && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-ink/95 p-4">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-ink/95 p-4">
           <div className="space-y-4 text-center">
             <h2 className="font-display text-4xl text-parchment">{table.name}</h2>
             <p className="text-sm text-ink-muted">

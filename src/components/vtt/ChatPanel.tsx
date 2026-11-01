@@ -11,6 +11,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
+import { Ear, EyeOff, X } from 'lucide-react';
 import { d20Outcome } from '@/lib/dice';
 import {
   buildWhisperTargets,
@@ -26,8 +27,8 @@ import { useVttStore } from '@/lib/vtt/store';
 import { variableRange } from '@/lib/vtt/virtual-grid';
 import { DiceIcon } from './DiceIcon';
 
-const TEXT_ROW_ESTIMATE = 52;
-const ROLL_ROW_ESTIMATE = 112;
+const TEXT_ROW_ESTIMATE = 60;
+const ROLL_ROW_ESTIMATE = 124;
 const STICK_TO_BOTTOM_PX = 40;
 const LOAD_MORE_AT_PX = 80;
 
@@ -37,24 +38,74 @@ function estimateHeight(message: ChatMessage): number {
     : TEXT_ROW_ESTIMATE;
 }
 
-function RollBody({ roll }: { roll: ChatRoll }) {
+function RollCard({
+  roll,
+  outcome,
+  hidden,
+}: {
+  roll: ChatRoll;
+  outcome: ReturnType<typeof d20Outcome>;
+  hidden: boolean;
+}) {
   return (
-    <div className="space-y-1">
-      {roll.label && <p className="text-sm text-parchment">{roll.label}</p>}
-      <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-parchment">
-        {roll.groups.map((group, index) => (
-          <li key={index} className="flex items-center gap-1">
-            <DiceIcon sides={group.sides} />
-            <span className="break-all">{group.results.join(' ')}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="flex flex-wrap items-baseline gap-2">
-        <span className="break-all text-xs text-ink-muted">{roll.math} =</span>
-        <strong className="text-2xl font-bold leading-none text-crimson-soft">
-          {roll.total}
-        </strong>
-      </p>
+    <div
+      className={
+        'mt-1 space-y-1 rounded-md border p-2 ' +
+        (hidden
+          ? 'border-dashed border-ink-border text-ink-muted'
+          : outcome === 'critical'
+            ? 'border-amber-400/50 bg-ink-raised/70'
+            : outcome === 'disaster'
+              ? 'border-crimson/70 bg-ink-raised/70'
+              : 'border-ink-border bg-ink-raised/70')
+      }
+    >
+      {roll.label && (
+        <p
+          className={
+            'text-sm font-semibold ' + (hidden ? 'text-ink-muted' : 'text-parchment')
+          }
+        >
+          {roll.label}
+        </p>
+      )}
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-parchment">
+            {roll.groups.map((group, index) => (
+              <li key={index} className="flex items-center gap-1">
+                <DiceIcon sides={group.sides} />
+                <span className="break-all">{group.results.join(' ')}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="break-all text-xs text-ink-muted">{roll.math}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <strong
+            className={
+              'block font-display text-3xl font-bold leading-none ' +
+              (hidden
+                ? 'text-ink-muted'
+                : outcome === 'critical'
+                  ? 'text-amber-300'
+                  : 'text-crimson-soft')
+            }
+          >
+            {roll.total}
+          </strong>
+          {outcome && (
+            <span
+              className={
+                'text-[10px] uppercase tracking-wide ' +
+                (outcome === 'critical' ? 'text-amber-300' : 'text-crimson-soft')
+              }
+            >
+              {outcome === 'critical' ? '20 natural' : '1 natural'}
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -73,28 +124,15 @@ const MessageRow = memo(function MessageRow({
   const roll =
     !message.deleted && isChatRoll(message.roll) ? message.roll : null;
   const outcome = roll ? d20Outcome(roll.groups) : null;
-  const isWhisper = message.kind === 'whisper';
+  const isWhisper = message.kind === 'whisper' && !message.deleted;
+  const name = message.character_name ?? message.author_name;
 
   return (
-    <div
-      className={
-        'group rounded-md border px-2 py-1.5 ' +
-        (outcome === 'critical'
-          ? 'border-amber-400/70 '
-          : outcome === 'disaster'
-            ? 'border-crimson '
-            : 'border-transparent ') +
-        (isWhisper && !message.deleted ? 'bg-ink-raised/60 italic' : '')
-      }
-    >
+    <div className="group border-b border-ink-border/60 px-1 py-2">
       <div className="flex items-baseline gap-2">
         <p className="min-w-0 flex-1 truncate text-xs text-ink-muted">
-          <span className="font-semibold text-parchment">
-            {message.character_name ?? message.author_name}
-          </span>
+          <span className="text-sm font-semibold text-parchment">{name}</span>
           {message.character_name && ` · ${message.author_name}`}
-          {isWhisper && whisperName && ` 🤫 sussurrou pra ${whisperName}`}
-          {message.hidden && ' · 🙈 escondida'}
         </p>
         <time
           className="shrink-0 text-[10px] text-ink-muted"
@@ -108,20 +146,41 @@ const MessageRow = memo(function MessageRow({
         {canDelete && (
           <button
             type="button"
-            className="shrink-0 px-1 text-xs text-ink-muted hover:text-crimson-soft"
+            className="shrink-0 self-center text-ink-muted hover:text-crimson-soft focus:opacity-100 desk:opacity-0 desk:group-hover:opacity-100"
             aria-label="Apagar mensagem"
+            title="Apagar mensagem"
             onClick={() => onDelete(message.id)}
           >
-            ✕
+            <X size={14} aria-hidden />
           </button>
         )}
       </div>
+      {(isWhisper || (message.hidden && !message.deleted)) && (
+        <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
+          {isWhisper ? (
+            <>
+              <Ear size={12} aria-hidden className="shrink-0" />
+              <span className="truncate">Sussurro pra {whisperName ?? 'alguém'}</span>
+            </>
+          ) : (
+            <>
+              <EyeOff size={12} aria-hidden className="shrink-0" />
+              Rolagem escondida
+            </>
+          )}
+        </p>
+      )}
       {message.deleted ? (
         <p className="text-sm italic text-ink-muted">mensagem apagada</p>
       ) : roll ? (
-        <RollBody roll={roll} />
+        <RollCard roll={roll} outcome={outcome} hidden={message.hidden} />
       ) : (
-        <p className="whitespace-pre-wrap break-words text-sm text-parchment">
+        <p
+          className={
+            'whitespace-pre-wrap break-words text-sm ' +
+            (isWhisper ? 'italic text-ink-muted' : 'text-parchment')
+          }
+        >
           {message.body}
         </p>
       )}
@@ -256,6 +315,11 @@ function MessageList() {
       role="log"
       aria-label="Mensagens"
     >
+      {messages.length === 0 && (
+        <p className="p-1 text-sm text-ink-muted">
+          Nada por aqui ainda. Escreva abaixo, ou role com /r 1d20.
+        </p>
+      )}
       {hasMore && (
         <button
           type="button"
