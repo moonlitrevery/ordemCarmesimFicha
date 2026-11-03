@@ -1,0 +1,4 @@
+CT-01 — Exibir a página inicial
+Status: OK
+Resultado: Home em / com título Ordem Carmesim, texto do compêndio, botões Entrar e Criar conta. Sem menu Fichas/Lore/Regras.
+Obs: overlay “1 error” do Next no canto; não esconde o conteúdo esperado.

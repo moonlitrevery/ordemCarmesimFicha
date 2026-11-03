@@ -1,0 +1,3 @@
+CT-02 — Navegar da home para login e cadastro
+Status: OK
+Resultado: Entrar abriu /login com formulário. Criar conta abriu /cadastro com Nome de exibição, E-mail, Senha e Cadastrar.
