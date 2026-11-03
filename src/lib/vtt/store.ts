@@ -10,6 +10,8 @@ import {
 } from './audio/rules';
 import type { ChatMessage } from './chat-rules';
 import type { ChatSync } from './chat-sync';
+import type { DocSync } from './docs/doc-sync';
+import type { TableDocument, TableReport, ViewerTarget } from './docs/rules';
 import type { LibrarySync } from './library-sync';
 import { EMPTY_INITIATIVE, parseInitiative } from './initiative';
 import type { InitiativeSync } from './initiative-sync';
@@ -66,6 +68,13 @@ interface VttState {
   library: Asset[] | null;
   libraryError: string | null;
   librarySync: LibrarySync | null;
+  /** `null` até a primeira carga. O RLS só devolve o que a pessoa pode ver. */
+  documents: TableDocument[] | null;
+  reports: TableReport[] | null;
+  docsError: string | null;
+  docSync: DocSync | null;
+  /** O arquivo aberto no visualizador, por cima da mesa. */
+  docViewer: ViewerTarget | null;
   /** Quem persiste e transmite as ações de cena. Existe enquanto a mesa está aberta. */
   sync: SceneSync | null;
   chat: ChatSync | null;
@@ -211,6 +220,11 @@ export const useVttStore = create<VttState>((set) => ({
   library: null,
   libraryError: null,
   librarySync: null,
+  documents: null,
+  reports: null,
+  docsError: null,
+  docSync: null,
+  docViewer: null,
   sync: null,
   chat: null,
   initiativeSync: null,
@@ -266,6 +280,10 @@ export const useVttStore = create<VttState>((set) => ({
       pendingAssets: [],
       library: null,
       libraryError: null,
+      documents: null,
+      reports: null,
+      docsError: null,
+      docViewer: null,
       chatMessages: [],
       chatHasMore: false,
       chatError: null,

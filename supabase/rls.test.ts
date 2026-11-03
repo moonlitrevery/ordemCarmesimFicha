@@ -924,3 +924,144 @@ describe('migrações 016 e 017', () => {
     expect(await asUser(PLAYER, `select id from public.npcs where id = $1`, [npc.id])).toEqual([]);
   });
 });
+
+describe('documentos e relatórios', () => {
+  const blob = (folder: string) =>
+    `https://abc.public.blob.vercel-storage.com/${folder}/${crypto.randomUUID()}.pdf`;
+  const INSERT_DOCUMENT = `insert into public.table_documents
+      (table_id, category, title, storage_key, url, mime, size_bytes, status, uploaded_by)
+    values ($1, $2, 'Doc', 'k', $3, 'application/pdf', 1, $4, $5) returning id, status`;
+  const INSERT_REPORT = `insert into public.table_reports
+      (table_id, title, storage_key, url, mime, size_bytes, author_id, character_id)
+    values ($1, 'Rel', 'k', $2, 'application/pdf', 1, $3, $4) returning id, character_name`;
+  const titles = (userId: string, id: string) =>
+    asUser<{ id: string }>(userId, `select id from public.table_documents where id = $1`, [id]);
+
+  it('mestra envia aprovado em qualquer categoria, mesmo com a sessão fechada', async () => {
+    await insertOne(GM, INSERT_DOCUMENT, [closedTable, 'carta', blob('documento'), 'approved', GM]);
+  });
+
+  it('jogador só cria referência pendente', async () => {
+    await insertOne(PLAYER, INSERT_DOCUMENT, [openTable, 'referencia', blob('documento'), 'pending', PLAYER]);
+    await expect(
+      asUser(PLAYER, INSERT_DOCUMENT, [openTable, 'carta', blob('documento'), 'pending', PLAYER])
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      asUser(PLAYER, INSERT_DOCUMENT, [openTable, 'referencia', blob('documento'), 'approved', PLAYER])
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('espectador e quem está fora não enviam', async () => {
+    for (const user of [SPECTATOR, OUTSIDER]) {
+      await expect(
+        asUser(user, INSERT_DOCUMENT, [openTable, 'referencia', blob('documento'), 'pending', user])
+      ).rejects.toMatchObject({ code: '42501' });
+      await expect(
+        asUser(user, INSERT_REPORT, [openTable, blob('relatorio'), user, null])
+      ).rejects.toMatchObject({ code: '42501' });
+    }
+  });
+
+  it('pendente só aparece para quem enviou e a mestra, até ser aprovado', async () => {
+    const doc = await insertOne(PLAYER, INSERT_DOCUMENT, [
+      openTable, 'referencia', blob('documento'), 'pending', PLAYER,
+    ]);
+    expect(await titles(SPECTATOR, doc.id)).toEqual([]);
+    expect(await titles(PLAYER, doc.id)).toHaveLength(1);
+    expect(await titles(GM, doc.id)).toHaveLength(1);
+
+    await asUser(GM, `update public.table_documents set status = 'approved' where id = $1`, [doc.id]);
+    expect(await titles(SPECTATOR, doc.id)).toHaveLength(1);
+    expect(await titles(OUTSIDER, doc.id)).toEqual([]);
+  });
+
+  it('só a mestra aprova e mostra a todos', async () => {
+    const doc = await insertOne(PLAYER, INSERT_DOCUMENT, [
+      openTable, 'referencia', blob('documento'), 'pending', PLAYER,
+    ]);
+    await expect(
+      asUser(PLAYER, `update public.table_documents set status = 'approved' where id = $1 returning id`, [doc.id])
+    ).resolves.toEqual([]);
+    await expect(
+      asUser(GM, `update public.table_documents set shown_at = now() where id = $1`, [doc.id])
+    ).rejects.toThrow(/check/);
+    await asUser(GM, `update public.table_documents set status = 'approved', shown_at = now() where id = $1`, [doc.id]);
+    await expect(
+      asUser(PLAYER, `update public.table_documents set url = 'x' where id = $1`, [doc.id])
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('jogador apaga só o próprio, e a mestra apaga tudo', async () => {
+    const gmDoc = await insertOne(GM, INSERT_DOCUMENT, [openTable, 'pista', blob('documento'), 'approved', GM]);
+    const own = await insertOne(PLAYER, INSERT_DOCUMENT, [
+      openTable, 'referencia', blob('documento'), 'pending', PLAYER,
+    ]);
+    const remove = `delete from public.table_documents where id = $1 returning id`;
+    expect(await asUser(PLAYER, remove, [gmDoc.id])).toEqual([]);
+    expect(await asUser(PLAYER, remove, [own.id])).toHaveLength(1);
+    expect(await asUser(GM, remove, [gmDoc.id])).toHaveLength(1);
+  });
+
+  it('a linha não aponta para arquivo de outra pasta nem de outra linha', async () => {
+    await expect(
+      asUser(PLAYER, INSERT_DOCUMENT, [openTable, 'referencia', blob('mapa'), 'pending', PLAYER])
+    ).rejects.toThrow(/check/);
+    const url = blob('documento');
+    await insertOne(PLAYER, INSERT_DOCUMENT, [openTable, 'referencia', url, 'pending', PLAYER]);
+    await expect(
+      asUser(PLAYER, INSERT_DOCUMENT, [openTable, 'referencia', url, 'pending', PLAYER])
+    ).rejects.toMatchObject({ code: '23505' });
+  });
+
+  it('todos da mesa leem os relatórios, sem aprovação e com a sessão fechada', async () => {
+    await db.query(
+      `insert into public.table_members (table_id, user_id, role) values ($1, $2, 'jogador')
+       on conflict do nothing`,
+      [closedTable, PLAYER]
+    );
+    const report = await insertOne(PLAYER, INSERT_REPORT, [closedTable, blob('relatorio'), PLAYER, null]);
+    const read = `select id from public.table_reports where id = $1`;
+    expect(await asUser(PLAYER, read, [report.id])).toHaveLength(1);
+    expect(await asUser(GM, read, [report.id])).toHaveLength(1);
+    expect(await asUser(OUTSIDER, read, [report.id])).toEqual([]);
+    await db.query(`delete from public.table_members where table_id = $1 and user_id = $2`, [
+      closedTable,
+      PLAYER,
+    ]);
+  });
+
+  it('o nome do personagem vem do banco, e só de ficha própria', async () => {
+    const addCharacter = async (owner: string) =>
+      (
+        await db.query<{ id: string }>(
+          `insert into public.characters (owner_id, name) values ($1, 'Ficha') returning id`,
+          [owner]
+        )
+      ).rows[0].id;
+    const mine = await addCharacter(PLAYER);
+    const others = await addCharacter(SPECTATOR);
+
+    const rows = await asUser<{ character_name: string }>(PLAYER, INSERT_REPORT, [
+      openTable, blob('relatorio'), PLAYER, mine,
+    ]);
+    expect(rows[0].character_name).toBe('Ficha');
+
+    await expect(
+      asUser(PLAYER, INSERT_REPORT, [openTable, blob('relatorio'), PLAYER, others])
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      asUser(
+        PLAYER,
+        `insert into public.table_reports (table_id, title, storage_key, url, mime, size_bytes, author_id, character_name)
+         values ($1, 'x', 'k', $2, 'text/plain', 1, $3, 'Forjado')`,
+        [openTable, blob('relatorio'), PLAYER]
+      )
+    ).rejects.toMatchObject({ code: '42501' });
+
+    await insertOne(GM, INSERT_REPORT, [openTable, blob('relatorio'), GM, others]);
+  });
+
+  it('a migração roda de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '021_vtt_docs.sql'));
+  });
+});

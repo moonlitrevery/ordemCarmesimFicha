@@ -71,6 +71,20 @@ export async function prepareImage(
   }
 }
 
+/** Documento em imagem: a lista só mostra ícone, então não há miniatura. */
+export async function prepareImageWithin(
+  file: Blob,
+  maxSide: number
+): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const { width, height } = fitWithin(bitmap.width, bitmap.height, maxSide);
+    return await encode(bitmap, width, height);
+  } finally {
+    bitmap.close();
+  }
+}
+
 /** Miniatura de um arquivo que já está no Blob (asset antigo). */
 export async function prepareThumb(file: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(file);

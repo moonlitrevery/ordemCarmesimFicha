@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ASSET_KIND_LABELS } from '@/lib/vtt/assets/rules';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
 import { useVttStore, type PendingAsset } from '@/lib/vtt/store';
 import { AssetThumb } from './AssetThumb';
+import { PendingDocumentRow } from './docs/DocumentsPanel';
 
 function PendingRow({
   asset,
@@ -85,13 +86,21 @@ export function ApprovalPanel() {
   const pending = useVttStore((s) => s.pendingAssets);
   const setPendingAssets = useVttStore((s) => s.setPendingAssets);
   const bumpLibrary = useVttStore((s) => s.bumpLibrary);
+  const documents = useVttStore((s) => s.documents);
+  const pendingDocuments = useMemo(
+    () => (documents ?? []).filter((document) => document.status === 'pending'),
+    [documents]
+  );
 
-  if (pending.length === 0) {
+  if (pending.length === 0 && pendingDocuments.length === 0) {
     return <p className="text-sm text-ink-muted">Nada aguardando aprovação.</p>;
   }
 
   return (
     <ul className="space-y-2">
+      {pendingDocuments.map((document) => (
+        <PendingDocumentRow key={document.id} document={document} />
+      ))}
       {pending.map((asset) => (
         <PendingRow
           key={asset.id}

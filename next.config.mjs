@@ -27,6 +27,13 @@ const nextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex' },
         ],
       },
+      {
+        // A versão está no nome: scripts/copy-pdf-worker.mjs.
+        source: '/pdfjs/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
     ];
   },
   webpack: (config) => {

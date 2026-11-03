@@ -3,7 +3,7 @@ import type { Drawing, SceneObject } from './types';
 /**
  * Eventos de broadcast do canal da mesa. Qualquer membro consegue enviar no
  * canal, então `session:state`, `member:changed`, `table:refresh`, `asset:*`, `scene:assign`,
- * `scene:refresh`, `initiative:refresh`, `npc:refresh`, `fx:weather` e `audio:*` são só avisos: quem recebe relê o estado do banco. Os de
+ * `scene:refresh`, `initiative:refresh`, `npc:refresh`, `fx:weather`, `audio:*` e `doc:*` são só avisos: quem recebe relê o estado do banco. Os de
  * objeto e desenho levam a linha já gravada, validada na chegada.
  */
 export type VttEvent =
@@ -34,6 +34,10 @@ export type VttEvent =
   | { type: 'audio:settings' }
   /** Sem som nem alvo: quem recebe lê `audio_cues`, e o RLS só devolve o que é para ele. */
   | { type: 'audio:sfx' }
+  /** Documento ou relatório novo, aprovado ou apagado: todos relêem as listas. */
+  | { type: 'doc:refresh' }
+  /** "Mostrar a todos": só abre o que o banco confirmar (`table_documents.shown_at`). */
+  | { type: 'doc:show' }
   | { type: 'draw:add'; drawing: Drawing }
   /** `id` nulo: a mestra apagou todos os desenhos da cena. */
   | { type: 'draw:delete'; sceneId: string; id: string | null }

@@ -25,6 +25,7 @@ import {
 import { assetsOfKind } from '@/lib/vtt/assets/static';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
 import { AUDIO_CATEGORIES, matchesCategory } from '@/lib/vtt/audio/rules';
+import { countPendingDocuments } from '@/lib/vtt/docs/rules';
 import { isPlaceableKind } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import { visibleRange } from '@/lib/vtt/virtual-grid';
@@ -325,7 +326,9 @@ function AssetList({
 }
 
 function Approvals() {
-  const count = useVttStore((s) => s.pendingAssets.length);
+  const count = useVttStore(
+    (s) => s.pendingAssets.length + countPendingDocuments(s.documents)
+  );
   if (count === 0) return null;
   return (
     <details open className="shrink-0 rounded-md border border-ink-border">

@@ -16,7 +16,7 @@ function store() {
   return useVttStore.getState();
 }
 
-function whenIdle(run: () => void): () => void {
+export function whenIdle(run: () => void): () => void {
   if (typeof window.requestIdleCallback === 'function') {
     const id = window.requestIdleCallback(run, { timeout: 2000 });
     return () => window.cancelIdleCallback(id);

@@ -21,6 +21,8 @@ import { unlockAudio } from '@/lib/vtt/audio/unlock';
 import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
 import { ChatSync } from '@/lib/vtt/chat-sync';
+import { DocSync } from '@/lib/vtt/docs/doc-sync';
+import { countPendingDocuments } from '@/lib/vtt/docs/rules';
 import { InitiativeSync } from '@/lib/vtt/initiative-sync';
 import { LibrarySync } from '@/lib/vtt/library-sync';
 import { NpcSync } from '@/lib/vtt/npc-sync';
@@ -32,6 +34,8 @@ import type { TableSnapshot } from '@/lib/vtt/types';
 import { CalibrationGuide } from './CalibrationGuide';
 import { CaptionModal } from './CaptionModal';
 import { ChatPanel } from './ChatPanel';
+import { DocumentsPanel } from './docs/DocumentsPanel';
+import { ReportsPanel } from './docs/ReportsPanel';
 import { useIsDesk } from './hud';
 import { InitiativePanel } from './InitiativePanel';
 import { LibraryPanel } from './LibraryPanel';
@@ -62,22 +66,24 @@ const MapCanvas = dynamic(
   { ssr: false }
 );
 
-function Placeholder({ text }: { text: string }) {
-  return <p className="text-sm text-ink-muted">{text}</p>;
-}
+// Só baixa quando alguém abre um arquivo; as libs de cada formato vêm depois, por dentro.
+const DocumentViewer = dynamic(
+  () => import('./docs/DocumentViewer').then((module) => module.DocumentViewer),
+  { ssr: false }
+);
 
 const DOCS_ITEMS: RailItem[] = [
   {
     id: 'docs',
     label: 'Documentos',
     icon: FileText,
-    content: <Placeholder text="Os documentos da mesa chegam na fase 8." />,
+    content: <DocumentsPanel />,
   },
   {
     id: 'reports',
     label: 'Relatórios',
     icon: ScrollText,
-    content: <Placeholder text="Os relatórios chegam na fase 8." />,
+    content: <ReportsPanel />,
   },
 ];
 
@@ -91,7 +97,10 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const audioUnlocked = useVttStore((s) => s.audioUnlocked);
   const setAudioUnlocked = useVttStore((s) => s.setAudioUnlocked);
   const setSessionOpen = useVttStore((s) => s.setSessionOpen);
-  const pendingCount = useVttStore((s) => s.pendingAssets.length);
+  const pendingCount = useVttStore(
+    (s) => s.pendingAssets.length + countPendingDocuments(s.documents)
+  );
+  const docViewerOpen = useVttStore((s) => s.docViewer !== null);
   const role = useVttStore((s) => s.me?.role) ?? initial.me.role;
 
   const toast = useVttStore((s) => s.toast);
@@ -161,6 +170,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     let npcs: NpcSync | null = null;
     let library: LibrarySync | null = null;
     let audio: AudioSync | null = null;
+    let docs: DocSync | null = null;
 
     const channel = joinTableChannel(supabase, tableId, {
       userId,
@@ -173,6 +183,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         void audio?.reload();
         // A primeira carga é do `start`; aqui é só ao reconectar.
         if (useVttStore.getState().library) void library?.load();
+        if (useVttStore.getState().documents) void docs?.load(false);
         if (isGm) void refreshPending(false);
       },
     });
@@ -194,8 +205,11 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     library.start();
     audio = new AudioSync(supabase, channel, tableId, userId);
     audio.start();
+    docs = new DocSync(supabase, channel, tableId, isGm);
+    docs.start();
     useVttStore.setState({
       audioSync: audio,
+      docSync: docs,
       sync,
       chat,
       initiativeSync: initiative,
@@ -249,8 +263,11 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       npcs?.stop();
       library?.stop();
       audio?.stop();
+      docs?.stop();
       useVttStore.setState({
         audioSync: null,
+        docSync: null,
+        docViewer: null,
         librarySync: null,
         sync: null,
         chat: null,
@@ -533,6 +550,8 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       )}
 
       <TokenContextMenu />
+
+      {docViewerOpen && <DocumentViewer />}
 
       {!audioUnlocked && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-ink/95 p-4">
