@@ -1,0 +1,60 @@
+RELATÓRIO DA ORGANIZAÇÃO DA ENTREGA
+
+Pasta principal: P2_TQS_2026_TURMA_GRUPOXX_ORDEN-CARMESIM-FICHA
+Nota: turma/grupo/nome do sistema não foram informados, então usei o padrão com marcadores (TURMA, GRUPOXX, NOME-DO-SISTEMA). Renomeie conforme instrução 2.1 antes do upload final.
+
+Pastas criadas agora: 00_IDENTIFICACAO_E_README, 01_SISTEMA_ALVO, 02_REQUISITOS_ESCOPO_RISCOS, 03_PLANO_DE_TESTES, 04_CASOS_E_RASTREABILIDADE, 05_EXECUCAO_MANUAL, 06_DEFEITOS, 07_AUTOMACAO_UNITARIA, 08_INTEGRACAO_API, 09_SISTEMA_INTERFACE, 10_ACEITACAO_NAO_FUNCIONAIS, 11_METRICAS_E_QUALIDADE, 12_TDD_CICD_MELHORIA, 13_RELATORIO_FINAL, 14_APRESENTACAO_E_VIDEO_CONTINGENCIA, 15_DIARIO_DE_PARTICIPACAO, 16_BACKUP_ENTREGA (17 subpastas obrigatórias + backup)
+
+Arquivos copiados (resumo por pasta):
+- 00: README.md (origem raiz)
+- 01: src/ (excluindo node_modules/.next), public/, package.json, next.config.mjs, tsconfig.json, tailwind.config.ts, mdx-components.tsx, postcss.config.mjs
+- 03: .sdd/PLAN_testes.md
+- 04: docs/casos-teste-manuais.md, docs/casos-teste-manuais.odt
+- 05: tests/manual/ (24 subpastas ct-01 a ct-24, com resultados e capturas de tela)
+- 07: todos os *.test.ts de src/ (26 arquivos: dice, calculations, resource-sync, storage, profile-cache, geometry, chat-rules, transform, assets/static, route.test, etc.)
+- 09: tests/e2e/ completo (test_autenticacao.py, conftest, README)
+- 12: .github/workflows/supabase-keep-alive.yml
+- 16: cópia externa realizada (original duplicado em /tmp/ e dentro de 16_BACKUP_ENTREGA/ORIGINAL_DO_P2)
+
+Conflitos (arquivos já existentes não sobrescritos): nenhum — todas as subpastas eram novas.
+
+STATUS POR PASTA
+00_IDENTIFICACAO_E_README: INCOMPLETA — faltam: P01 (Ficha de identificação e aprovação do sistema), Apêndice M (Declaração final assinada), e o README ainda precisa ser completado com todos os itens obrigatórios (integrantes, versão, link repo, tecnologias, pré-requisitos, instalação, configuração, banco, execução, execução dos testes, acesso ao pipeline, localização dos documentos, credenciais fictícias, problemas conhecidos, contato).
+01_SISTEMA_ALVO: COMPLETA (cópia parcial/representativa do código-fonte — src/ + public/ + configs principais; node_modules, .git, .next excluídos conforme instrução).
+02_REQUISITOS_ESCOPO_RISCOS: INCOMPLETA — falta documento P02 completo. Nenhum arquivo de requisitos (Apêndice B), riscos (Apêndice C), escopo ou critérios de aceitação foi encontrado. Quantidade mínima exigida: 8 requisitos (pelo menos 6 funcionais + 2 não funcionais) e 8 riscos documentados. Atual: 0.
+03_PLANO_DE_TESTES: COMPLETA — arquivo .sdd/PLAN_testes.md copiado ( contém sistema, objetivo, escopo, níveis, técnicas, ambiente, dados, responsabilidades, critérios, cronograma, produtos e comunicação; verificar se todos os itens do Apêndice D estão presentes manualmente se necessário).
+04_CASOS_E_RASTREABILIDADE: INCOMPLETA — casos manuais existem (24 casos CT-01 a CT-24 no docs/casos-teste-manuais.md), cumprindo o mínimo de 24. FALTA: P05 Matriz de rastreabilidade (Apêndice H — requisito → risco → casos → execuções → defeitos → situação), normalmente em planilha XLSX. Também não há indicação organizada de candidatos à automação dentro do catálogo.
+05_EXECUCAO_MANUAL: COMPLETA (com ressalvas) — 24 execuções (ct-01 a ct-24) com resultado (resultado.txt) e evidências (.png) existem. FALTA verificación se há retestes/regressão após correções de defeitos; se houver defeitos corrigidos, precisam de evidências de reteste.
+06_DEFEITOS: INCOMPLETA — nenhum arquivo exportado de GitHub Issues ou Jira; nenhum relatório consolidado de defeitos (PDF/CSV). Nenhum Apêndice G preenchido. Defeitos precisam ser apenas reais; como não existem registros no repositório, fica pendente de exportação pelo usuário.
+07_AUTOMACAO_UNITARIA: COMPLETA — 26 arquivos *.test.ts copiados (excede mínimo de 6). Comando de execução está no package.json (verificar se há script de teste). Resultado das execuções precisa ser registrado como evidência (não inventado).
+08_INTEGRACAO_API: INCOMPLETA — nenhum arquivo encontrado. Faltam: coleção e ambiente Postman (JSON), pelo menos 5 testes de API, evidências de execução (positivo e negativo por operação crítica). Nenhum teste de integração/API automatizado separado foi localizado além de route.test.ts (que é unitário).
+09_SISTEMA_INTERFACE: INCOMPLETA — apenas 1 arquivo de interface (tests/e2e/test_autenticacao.py usando Playwright, não Selenium). Faltam 3 testes Selenium (mínimo 4) com verificações reais, capturas/logs de falhas. Se o projeto usa Playwright, pode ser aceitável apenas se o professor aprovar, mas o documento exige Selenium explicitamente.
+10_ACEITACAO_NAO_FUNCIONAIS: INCOMPLETA — faltam 4 cenários de aceitação (Apêndice I não localizado) e 6 testes não funcionais em pelo menos 3 categorias (desempenho básico, usabilidade, compatibilidade, confiabilidade, segurança básica). Nenhum registro encontrado.
+11_METRICAS_E_QUALIDADE: INCOMPLETA — faltam: P10 planilha de métricas (Apêndice K), pelo menos 8 indicadores com gráficos explicados, e evidências das 2 execuções do SonarQube (linha de base e posterior). Nenhum arquivo de métricas ou relatório SonarQube existe.
+12_TDD_CICD_MELHORIA: INCOMPLETA — pipeline CI/CD existe (.github/workflows/supabase-keep-alive.yml), mas falta evidência de execução com falha seguida de correção e execução aprovada. TDD: nenhuma evidência de RED, GREEN, REFACTOR com commits relacionados; nenhum arquivo/documento que prove evolução por TDD. Plano de melhoria contínua com prioridades, responsáveis e critérios de verificação também não existe.
+13_RELATORIO_FINAL: INCOMPLETA — não há relatório em DOCX editável nem PDF idêntico. Faltam todos os capítulos obrigatórios (Introdução, Caracterização, Escopo, Planejamento, Especificação, Execução, Automação, Integração, Aceitação, Métricas, TDD/CI/CD, Discussão, Conclusão, Referências, Apêndices).
+14_APRESENTACAO_E_VIDEO_CONTINGENCIA: INCOMPLETA — faltam PPTX + PDF, roteiro de demonstração e vídeo de contingência (MP4 ou link acessível) com demonstração curta dos principais testes.
+15_DIARIO_DE_PARTICIPACAO: INCOMPLETA — nenhum diário (Apêndice L) com data, atividade, responsável, colaboradores, tempo e evidência.
+16_BACKUP_ENTREGA: COMPLETA — cópia de segurança feita (pasta duplicada internamente e em /tmp/). Recomenda-se também gerar uma cópia compactada (.zip) antes do upload.
+COMPROVANTE_DE_ENTREGA: NÃO ENCONTRADO — se existir, copie para a raiz de P2_TQS_... e confirme com o professor.
+
+PENDÊNCIAS PARA O USUÁRIO (organizadas por pasta / prioridade)
+1. Renomear pasta principal com turma, grupo e nome correto do sistema (ex: P2_TQS_2026_CC_GRUPO03_ORDEN-CARMESIM-FICHA).
+2. 00: criar/preencher P01 (aprovacao professor) e Apêndice M; completar README com todos os itens obrigatórios.
+3. 02: criar P02 com catálogo de requisitos (mín. 8: 6 funcionais + 2 não funcionais, com ID, descrição verificável, tipo, prioridade, critério de aceitação) e matriz de riscos (mín. 8, com probabilidade, impacto, prioridade, resposta/teste); definir escopo (dentro/fora).
+4. 04: criar P05 Matriz de rastreabilidade (planilha XLSX) ligando requisitos → riscos → casos → execuções → defeitos → situação.
+5. 06: exportar todos os defeitos reais dos GitHub Issues/Jira para PDF/CSV/relatório consolidado; preencher Apêndice G para cada defeito (título, ambiente/versão, pré-condições, passos, esperado vs obtido, severidade, prioridade, evidências, status, requisito/caso relacionados).
+6. 08: criar/exportar coleção Postman (JSON) e ambiente; criar pelo menos 5 testes de integração/API com evidências (positivo e negativo por operação crítica).
+7. 09: criar pelo menos 3 testes de sistema/interface usando Selenium (WebDriver), com verificações reais e capturas/logs; se o projeto usa Playwright, verifique se o professor aceita; caso contrário, adapte para Selenium.
+8. 10: criar 4 cenários de aceitação (decisão: Aceito / Aceito com ressalvas / Não aceito) e pelo menos 6 testes não funcionais distribuídos em 3 categorias; documentar conforme Apêndice I.
+9. 11: criar planilha P10 (Apêndice K) com 8 métricas (percentual de execução, taxa de aprovação, taxa de reprovação, cobertura de requisitos, taxa de automação, defeitos por severidade, defeitos por status, taxa de reabertura), gráficos explicados e interpretações; executar SonarQube 2 vezes (linha de base + posterior) e incluir evidências.
+10. 12: documentar evolução por TDD (evidências Red, Green, Refactor + commits relacionados); completar evidências do pipeline CI/CD (falha, correção, aprovação); escrever plano de melhoria contínua (prioridades, responsáveis, critérios).
+11. 13: escrever relatório final em DOCX editável + PDF idêntico, com todos os capítulos e apêndices obrigatórios (P12).
+12. 14: criar apresentação PPTX + PDF, roteiro de demonstração e vídeo de contingência (MP4/link acessível, curtos, demonstrando principais testes).
+13. 15: preencher diário de participação (Apêndice L).
+14. Verificar links do repositório, issues, pipeline e vídeo em janela anônima, garantindo permissão do professor.
+15. Confirmar que não há senhas reais, dados pessoais ou informações confidenciais; usar apenas dados fictícios.
+16. Não modificar arquivos da entrega depois do horário limite da P2.
+17. Confirmar que o sistema testado foi aprovado pelo professor (Apêndice A / P01).
+
+Observação final: nenhum conteúdo falso, inventado ou simulado foi criado neste processo. Todos os arquivos copiados são originais do projeto. As pendências refletem exatamente o que não existe no repositório no momento da análise. Quando completar os itens acima, chame novamente para reanalisar apenas as pastas pendentes.

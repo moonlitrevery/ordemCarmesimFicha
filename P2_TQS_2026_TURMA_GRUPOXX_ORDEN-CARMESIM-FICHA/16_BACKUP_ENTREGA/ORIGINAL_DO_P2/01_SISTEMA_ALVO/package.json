@@ -1,0 +1,49 @@
+{
+  "name": "ordem-carmesim",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/patch-next-realpath.mjs && next dev",
+    "build": "node scripts/patch-next-realpath.mjs && node scripts/vtt-manifest.mjs && next build",
+    "vtt:manifest": "node scripts/vtt-manifest.mjs",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "postinstall": "node scripts/patch-next-realpath.mjs"
+  },
+  "dependencies": {
+    "@mdx-js/loader": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
+    "@next/mdx": "^14.2.35",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.3",
+    "@vercel/blob": "^2.8.2",
+    "framer-motion": "^13.1.1",
+    "howler": "^2.2.4",
+    "lucide-react": "^1.66.0",
+    "next": "14.2.35",
+    "pixi.js": "^8.22.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.14",
+    "@next/bundle-analyzer": "^14.2.35",
+    "@tailwindcss/typography": "^0.5.20",
+    "@types/howler": "^2.2.13",
+    "@types/mdx": "^2.0.14",
+    "@types/node": "20.19.43",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "^18",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.35",
+    "music-metadata": "^12.3.3",
+    "postcss": "^8",
+    "sharp": "^0.35.5",
+    "tailwindcss": "^3.4.1",
+    "typescript": "5.9.3",
+    "vitest": "^2.1.9"
+  }
+}

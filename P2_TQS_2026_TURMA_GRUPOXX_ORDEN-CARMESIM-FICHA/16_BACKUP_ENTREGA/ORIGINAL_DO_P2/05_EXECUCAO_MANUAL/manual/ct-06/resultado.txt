@@ -1,0 +1,3 @@
+CT-06 — Login com credenciais inválidas
+Status: OK
+Resultado: Mensagem "E-mail ou senha inválidos." Permaneceu em /login; não acessou /fichas.

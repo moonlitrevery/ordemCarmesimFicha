@@ -1,0 +1,3 @@
+CT-11 — Criar ficha sem nome
+Status: OK
+Resultado: Campo vazio + Criar ficha; permaneceu em /fichas/nova. Validação required do formulário; ficha não criada.
