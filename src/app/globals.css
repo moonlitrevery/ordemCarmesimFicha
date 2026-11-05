@@ -83,9 +83,70 @@ body {
     }
   }
 
+  /* Barra de fragmentos: largura muda só quando os fragmentos mudam. */
+  .fragment-fill {
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .fragment-notice {
+    animation: fade-down-in 0.2s ease-out 1;
+  }
+
+  @keyframes fade-down-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Resultado do rolador: entra uma vez; balança enquanto rola de novo. */
+  .dice-result-in {
+    animation: dice-result-in 0.35s ease-out 1;
+  }
+
+  .dice-result-wobble {
+    animation: dice-result-wobble 0.35s ease-in-out 1;
+  }
+
+  @keyframes dice-result-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes dice-result-wobble {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    33% {
+      transform: scale(1.04);
+    }
+    66% {
+      transform: scale(0.98);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .element-symbol-pulse {
+    .element-symbol-pulse,
+    .fragment-notice,
+    .dice-result-in,
+    .dice-result-wobble,
+    .fragment-shimmer {
       animation: none;
+    }
+
+    .fragment-fill {
+      transition: none;
     }
   }
 

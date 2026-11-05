@@ -1,12 +1,10 @@
 'use client';
 
-import { AnimatePresence, m } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COMMON_DICE, parseDiceNotation, rollDice, type DiceRollResult } from '@/lib/dice';
 import { formatModifier } from '@/lib/calculations';
 import { useDiceToast } from '@/components/dice/DiceToast';
-import { MotionProvider } from '@/components/ui/MotionProvider';
 
 export function DiceIcon({ className = 'h-5 w-5' }: { className?: string }) {
   return (
@@ -120,24 +118,20 @@ export function DiceRoller({
         </button>
       </div>
       {error && <p className="text-base text-crimson-soft">{error}</p>}
-      <MotionProvider>
-        <AnimatePresence mode="wait">
-          {result && (
-            <m.div
-              key={result.total + '-' + result.breakdown}
-              initial={{ opacity: 0, scale: 0.92, y: 6 }}
-              animate={{ opacity: 1, scale: rolling ? [1, 1.04, 0.98, 1] : 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.35 }}
-              className="rounded-md border border-crimson/30 bg-ink-raised px-4 py-3 text-center"
-            >
-              <p className="label mb-1">{result.notation}</p>
-              <p className="font-display text-5xl text-crimson-soft">{result.total}</p>
-              <p className="mt-1 text-base text-ink-muted">{result.breakdown}</p>
-            </m.div>
-          )}
-        </AnimatePresence>
-      </MotionProvider>
+      {result && (
+        // A key nova remonta o bloco e a animação CSS de entrada roda de novo.
+        <div
+          key={result.total + '-' + result.breakdown}
+          className={
+            'dice-result-in rounded-md border border-crimson/30 bg-ink-raised px-4 py-3 text-center' +
+            (rolling ? ' dice-result-wobble' : '')
+          }
+        >
+          <p className="label mb-1">{result.notation}</p>
+          <p className="font-display text-5xl text-crimson-soft">{result.total}</p>
+          <p className="mt-1 text-base text-ink-muted">{result.breakdown}</p>
+        </div>
+      )}
     </div>
   );
 }

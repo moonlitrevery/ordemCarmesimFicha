@@ -1,14 +1,15 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
 import { DEFAULT_ATTRIBUTES } from '@/types/database';
 import { DEFAULT_SKILLS } from '@/lib/constants';
 import { computeDerivedMaxes } from '@/lib/calculations';
 
 export default function NovaFichaPage() {
   const router = useRouter();
+  useEffect(() => preloadSupabase(), []);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,12 @@ export default function NovaFichaPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const supabase = createClient();
+    const supabase = await loadSupabase().catch(() => null);
+    if (!supabase) {
+      setError('Sem conexão. Tente de novo.');
+      setLoading(false);
+      return;
+    }
     const {
       data: { user },
     } = await supabase.auth.getUser();

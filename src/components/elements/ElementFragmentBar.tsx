@@ -1,7 +1,5 @@
 'use client';
 
-import { m, AnimatePresence } from 'framer-motion';
-import { MotionProvider } from '@/components/ui/MotionProvider';
 import { useState } from 'react';
 import {
   ELEMENT_COLORS,
@@ -101,112 +99,101 @@ export function ElementFragmentBar({
   const canRemove = row.level > 0 || row.fragments_current > 0;
 
   return (
-    <MotionProvider>
+    <div
+      className={
+        'relative overflow-hidden rounded-xl border border-ink-border bg-gradient-to-br from-ink-raised/90 to-ink/60 p-3 ' +
+        (pulse ? 'ring-2' : '')
+      }
+      style={
+        pulse
+          ? { boxShadow: '0 0 28px ' + color + '99', borderColor: color }
+          : { borderColor: color + '44' }
+      }
+    >
       <div
-        className={
-          'relative overflow-hidden rounded-xl border border-ink-border bg-gradient-to-br from-ink-raised/90 to-ink/60 p-3 ' +
-          (pulse ? 'ring-2' : '')
-        }
-        style={
-          pulse
-            ? { boxShadow: '0 0 28px ' + color + '99', borderColor: color }
-            : { borderColor: color + '44' }
-        }
-      >
-        <div
-          className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-20 blur-2xl"
-          style={{ backgroundColor: color }}
-        />
+        className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-20 blur-2xl"
+        style={{ backgroundColor: color }}
+      />
 
-        <div className="relative mb-3 flex items-end justify-between gap-2">
-          <div className="flex items-end gap-2.5">
-            <ElementSymbol element={element} size={30} glow pulse={pulse} decorative />
-            <div>
-            <p
-              className="label"
-              style={{
-                color,
-                textShadow: needsGlow
-                  ? '0 0 8px rgba(255,255,255,0.55), 0 0 16px rgba(255,255,255,0.25)'
-                  : undefined,
-              }}
-            >
-              {ELEMENT_LABELS[element]}
-            </p>
-            <p className="font-display text-3xl leading-none text-parchment">
-              {row.level}
-              <span className="ml-1 text-sm text-ink-muted">nível</span>
-            </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
-            <input
-              type="number"
-              min={1}
-              className="field w-14 py-1.5 text-center"
-              value={amount}
-              onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 1))}
-            />
-            <button type="button" className="btn-ghost py-1.5 px-2.5" disabled={!canRemove} onClick={() => remove(amount)} title="Remover fragmentos">
-              −
-            </button>
-            <button
-              type="button"
-              className="btn-primary py-1.5"
-              disabled={capped && row.fragments_current >= cost}
-              onClick={() => add(amount)}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              className="btn-ghost px-2 py-1.5 text-sm"
-              onClick={removeElement}
-              title={'Remover ' + ELEMENT_LABELS[element] + ' da ficha'}
-              aria-label={'Remover ' + ELEMENT_LABELS[element]}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-
-        <div className="relative h-8 overflow-hidden rounded-full border border-white/5 bg-ink/90 shadow-inner">
-          <m.div
-            className="absolute inset-y-0 left-0 overflow-hidden"
+      <div className="relative mb-3 flex items-end justify-between gap-2">
+        <div className="flex items-end gap-2.5">
+          <ElementSymbol element={element} size={30} glow pulse={pulse} decorative />
+          <div>
+          <p
+            className="label"
             style={{
-              background: 'linear-gradient(90deg, ' + color + 'cc, ' + color + ', ' + color + 'ee)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px ' + color + '66',
+              color,
+              textShadow: needsGlow
+                ? '0 0 8px rgba(255,255,255,0.55), 0 0 16px rgba(255,255,255,0.25)'
+                : undefined,
             }}
-            initial={false}
-            animate={{ width: progress + '%' }}
-            transition={{ type: 'spring', stiffness: 140, damping: 22 }}
           >
-            {progress > 2 && (
-              <div className="fragment-shimmer absolute inset-0">
-                <div className="h-full w-10 bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-              </div>
-            )}
-          </m.div>
-          <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold tracking-wide text-parchment drop-shadow">
-            {row.level >= 20
-              ? 'Nível máximo do elemento'
-              : row.fragments_current + ' / ' + (cost === Infinity ? '—' : cost) + ' fragmentos'}
+            {ELEMENT_LABELS[element]}
+          </p>
+          <p className="font-display text-3xl leading-none text-parchment">
+            {row.level}
+            <span className="ml-1 text-sm text-ink-muted">nível</span>
+          </p>
           </div>
         </div>
-
-        <AnimatePresence>
-          {notice && (
-            <m.p
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="mt-2 text-center text-xs text-crimson-soft"
-            >
-              {notice}
-            </m.p>
-          )}
-        </AnimatePresence>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <input
+            type="number"
+            min={1}
+            className="field w-14 py-1.5 text-center"
+            value={amount}
+            onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 1))}
+          />
+          <button type="button" className="btn-ghost py-1.5 px-2.5" disabled={!canRemove} onClick={() => remove(amount)} title="Remover fragmentos">
+            −
+          </button>
+          <button
+            type="button"
+            className="btn-primary py-1.5"
+            disabled={capped && row.fragments_current >= cost}
+            onClick={() => add(amount)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="btn-ghost px-2 py-1.5 text-sm"
+            onClick={removeElement}
+            title={'Remover ' + ELEMENT_LABELS[element] + ' da ficha'}
+            aria-label={'Remover ' + ELEMENT_LABELS[element]}
+          >
+            ×
+          </button>
+        </div>
       </div>
-    </MotionProvider>
+
+      <div className="relative h-8 overflow-hidden rounded-full border border-white/5 bg-ink/90 shadow-inner">
+        <div
+          className="fragment-fill absolute inset-y-0 left-0 overflow-hidden"
+          style={{
+            width: progress + '%',
+            background: 'linear-gradient(90deg, ' + color + 'cc, ' + color + ', ' + color + 'ee)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px ' + color + '66',
+          }}
+        >
+          {progress > 2 && (
+            <div className="fragment-shimmer absolute inset-0">
+              <div className="h-full w-10 bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+            </div>
+          )}
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold tracking-wide text-parchment drop-shadow">
+          {row.level >= 20
+            ? 'Nível máximo do elemento'
+            : row.fragments_current + ' / ' + (cost === Infinity ? '—' : cost) + ' fragmentos'}
+        </div>
+      </div>
+
+      {notice && (
+        <p key={notice} className="fragment-notice mt-2 text-center text-xs text-crimson-soft">
+          {notice}
+        </p>
+      )}
+    </div>
   );
 }

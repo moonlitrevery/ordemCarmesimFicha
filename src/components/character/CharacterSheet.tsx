@@ -1,8 +1,9 @@
 'use client';
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// Supabase fora do primeiro carregamento: só é usado depois de montar.
+import { loadSupabase } from '@/lib/supabase/lazy';
 import dynamic from 'next/dynamic';
-import { createClient } from '@/lib/supabase/client';
 import {
   computeDerivedMaxes,
   getAttributeModifier,
@@ -225,7 +226,7 @@ export function CharacterSheet({
 
   const persistCharacter = useCallback(
     async (next: SheetState, nextElements: CharacterElementRow[]) => {
-      const supabase = createClient();
+      const supabase = await loadSupabase();
       const baseMaxes = computeDerivedMaxes(
         getTotalLevel(nextElements),
         next.attributes
@@ -341,45 +342,53 @@ export function CharacterSheet({
   const savePendingRef = useRef(false);
 
   useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`character:${character.id}:${crypto.randomUUID()}`)
-      .on<ResourceValues & Pick<Character, 'inventory' | 'money'>>(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'characters',
-          filter: `id=eq.${character.id}`,
-        },
-        ({ new: row }) => {
-          const merged = mergeRemoteResources(
-            localResources(sheetRef.current, elementsRef.current),
-            lastSavedResourcesRef.current,
-            {
-              hp_current: row.hp_current,
-              mana_current: row.mana_current,
-              sanity_current: row.sanity_current,
-            }
-          );
-          const mergedBackpack = mergeRemoteBackpack(
-            {
-              inventory: sheetRef.current.inventory,
-              money: sheetRef.current.money,
-            },
-            lastSavedBackpackRef.current,
-            normalizeBackpack(row)
-          );
-          lastSavedResourcesRef.current = merged.lastSaved;
-          lastSavedBackpackRef.current = mergedBackpack.lastSaved;
-          if (!merged.changed && !mergedBackpack.changed) return;
-          remoteMergeRef.current = true;
-          setSheet((s) => ({ ...s, ...merged.local, ...mergedBackpack.local }));
-        }
-      )
-      .subscribe();
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    void loadSupabase().then((supabase) => {
+      if (cancelled) return;
+      const channel = supabase
+        .channel(`character:${character.id}:${crypto.randomUUID()}`)
+        .on<ResourceValues & Pick<Character, 'inventory' | 'money'>>(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'characters',
+            filter: `id=eq.${character.id}`,
+          },
+          ({ new: row }) => {
+            const merged = mergeRemoteResources(
+              localResources(sheetRef.current, elementsRef.current),
+              lastSavedResourcesRef.current,
+              {
+                hp_current: row.hp_current,
+                mana_current: row.mana_current,
+                sanity_current: row.sanity_current,
+              }
+            );
+            const mergedBackpack = mergeRemoteBackpack(
+              {
+                inventory: sheetRef.current.inventory,
+                money: sheetRef.current.money,
+              },
+              lastSavedBackpackRef.current,
+              normalizeBackpack(row)
+            );
+            lastSavedResourcesRef.current = merged.lastSaved;
+            lastSavedBackpackRef.current = mergedBackpack.lastSaved;
+            if (!merged.changed && !mergedBackpack.changed) return;
+            remoteMergeRef.current = true;
+            setSheet((s) => ({ ...s, ...merged.local, ...mergedBackpack.local }));
+          }
+        )
+        .subscribe();
+      cleanup = () => {
+        void supabase.removeChannel(channel);
+      };
+    });
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      cleanup?.();
     };
   }, [character.id]);
 

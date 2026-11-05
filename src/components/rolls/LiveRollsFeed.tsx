@@ -5,20 +5,20 @@ import { m, AnimatePresence } from 'framer-motion';
 import { MotionProvider } from '@/components/ui/MotionProvider';
 import { createClient } from '@/lib/supabase/client';
 
+/** Só o que o feed mostra. */
 export type DiceRollRow = {
   id: string;
-  character_id: string | null;
   character_name: string;
-  roller_id: string;
   roller_name: string | null;
   label: string;
   notation: string;
-  die_result: number | null;
-  bonus: number;
   total: number;
   breakdown: string | null;
   created_at: string;
 };
+
+const DICE_ROLL_COLUMNS =
+  'id, character_name, roller_name, label, notation, total, breakdown, created_at';
 
 function formatTime(iso: string) {
   try {
@@ -46,7 +46,7 @@ export function LiveRollsFeed() {
       setLoading(true);
       const { data, error: err } = await supabase
         .from('dice_rolls')
-        .select('*')
+        .select(DICE_ROLL_COLUMNS)
         .order('created_at', { ascending: false })
         .limit(80);
 

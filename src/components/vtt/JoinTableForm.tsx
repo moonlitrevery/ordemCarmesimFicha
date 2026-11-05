@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
 import {
   isValidTableCode,
   joinErrorMessage,
@@ -12,6 +12,7 @@ import {
 
 export function JoinTableForm() {
   const router = useRouter();
+  useEffect(() => preloadSupabase(), []);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +26,12 @@ export function JoinTableForm() {
     }
     setBusy(true);
     setError(null);
-    const supabase = createClient();
+    const supabase = await loadSupabase().catch(() => null);
+    if (!supabase) {
+      setError('Sem conexão. Tente de novo.');
+      setBusy(false);
+      return;
+    }
     const { data, error: err } = await supabase.rpc('join_table', {
       p_code: normalized,
     });

@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { FormEvent, useState, useEffect } from 'react';
+import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
 
 export function LoginForm() {
   const router = useRouter();
+  useEffect(() => preloadSupabase(), []);
   const search = useSearchParams();
   const next = search.get('next') || '/fichas';
   const [email, setEmail] = useState('');
@@ -18,7 +19,12 @@ export function LoginForm() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const supabase = createClient();
+    const supabase = await loadSupabase().catch(() => null);
+    if (!supabase) {
+      setError('Sem conexão. Tente de novo.');
+      setLoading(false);
+      return;
+    }
     const { error: err } = await supabase.auth.signInWithPassword({
       email,
       password,

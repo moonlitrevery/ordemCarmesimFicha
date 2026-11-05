@@ -201,3 +201,10 @@ src/lib/storage/
 - Onde aparece: ficha → Elementos e Fragmentos (com glow, 30 px na barra, 20 px no "+ Adicionar elemento"; só os elementos que a ficha tem); sem glow, 18–20 px, na legenda do Mosaico (elementos com nível > 0), ao lado do seletor de elemento das Magias e na Ficha Rápida da Mesa (que por isso lê `character_elements(element, level)`).
 - MDX: `mdx-components.tsx` registra `ElementSymbol` (inline e decorativo por padrão) e `ElementsTable` (tabela "Os 11 elementos" de Regras). Símbolo inline só onde a palavra é **o elemento**, nunca em uso comum ("arma de fogo", "sede por sangue").
 - `public/simbolos/{elemento}.svg`: os mesmos desenhos soltos, cor fixa e fundo transparente, para uso fora do site. São gerados do componente: `UPDATE_SYMBOLS=1 npx vitest run src/components/elements` regrava, e o teste falha se os arquivos divergirem do componente.
+
+## 11. Desempenho do site fora da Mesa
+
+- **Supabase fora do primeiro carregamento:** componente cliente que só fala com o banco depois de montar ou de um clique usa `loadSupabase()` de `src/lib/supabase/lazy.ts`, nunca `import { createClient }` estático (~60 KB gz). Formulários chamam `preloadSupabase()` num `useEffect` (baixa no ocioso). O `Nav` já carrega o cliente por `import()` em toda página.
+- **Nada de framer-motion no primeiro carregamento** das páginas comuns: animação simples (largura de barra, entrada de aviso ou resultado) é CSS em `globals.css`, só `transform`/`opacity` (a largura da barra de fragmentos é a exceção, e só muda quando os fragmentos mudam). Toda animação CSS nova entra no bloco `prefers-reduced-motion` de lá. framer-motion fica para `MosaicFrame` e `DiceToastStack` (ambos `dynamic`) e `/rolagens`.
+- **Ficha** (`CharacterSheet`): seções `memo` recebem só a fatia que usam, callbacks estáveis (`patch`, `handlers`), save agrupado de 700 ms; aba fora da ativa não monta. Coluna nova da ficha entra em `SHEET_COLUMNS` (`src/app/fichas/[id]/page.tsx`): nenhum `select('*')` em tela de usuário.
+- Fontes por `next/font` (`display: swap`), só pesos usados. Lexend e Cormorant são variáveis: tirar peso não reduz bytes, só o intervalo declarado.

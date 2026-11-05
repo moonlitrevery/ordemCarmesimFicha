@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
 
 type Step = 'idle' | 'confirm' | 'type-name';
 
@@ -15,6 +15,7 @@ export function DeleteCharacterButton({
   characterName: string;
 }) {
   const router = useRouter();
+  useEffect(() => preloadSupabase(), []);
   const [step, setStep] = useState<Step>('idle');
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
@@ -53,7 +54,7 @@ export function DeleteCharacterButton({
     setBusy(true);
     setError(null);
     try {
-      const supabase = createClient();
+      const supabase = await loadSupabase();
       const { error: delErr } = await supabase
         .from('characters')
         .delete()

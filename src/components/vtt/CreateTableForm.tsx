@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
 
 export function CreateTableForm({ ownerId }: { ownerId: string }) {
   const router = useRouter();
+  useEffect(() => preloadSupabase(), []);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +17,12 @@ export function CreateTableForm({ ownerId }: { ownerId: string }) {
     if (!trimmed) return;
     setBusy(true);
     setError(null);
-    const supabase = createClient();
+    const supabase = await loadSupabase().catch(() => null);
+    if (!supabase) {
+      setError('Sem conexão. Tente de novo.');
+      setBusy(false);
+      return;
+    }
     const { error: err } = await supabase
       .from('tables')
       .insert({ name: trimmed, owner_id: ownerId });

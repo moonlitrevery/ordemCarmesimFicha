@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { FormEvent, useState, useEffect } from 'react';
+import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
 
 export function SignupForm() {
   const router = useRouter();
+  useEffect(() => preloadSupabase(), []);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,7 +18,12 @@ export function SignupForm() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const supabase = createClient();
+    const supabase = await loadSupabase().catch(() => null);
+    if (!supabase) {
+      setError('Sem conexão. Tente de novo.');
+      setLoading(false);
+      return;
+    }
     const { error: err } = await supabase.auth.signUp({
       email,
       password,

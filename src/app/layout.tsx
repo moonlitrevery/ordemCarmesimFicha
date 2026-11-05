@@ -12,7 +12,8 @@ const display = Cormorant_Garamond({
 
 const sans = Lexend({
   subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
+  // 300 não é usado (nenhum font-light).
+  weight: ['400', '500', '600', '700'],
   variable: '--font-sans',
 });
 
