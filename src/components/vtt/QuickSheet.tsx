@@ -7,7 +7,8 @@ import {
   getEffectiveMaxes,
   getTotalLevel,
 } from '@/lib/calculations';
-import { DEFAULT_SKILLS } from '@/lib/constants';
+import { ALL_ELEMENTS, DEFAULT_SKILLS, ELEMENT_LABELS } from '@/lib/constants';
+import { ElementSymbol } from '@/components/elements/ElementSymbol';
 import {
   backpackToSave,
   mergeRemoteBackpack,
@@ -64,7 +65,13 @@ interface QuickCharacter extends ResourceValues {
 }
 
 const CHARACTER_COLUMNS =
-  'id, name, attributes, skills, resource_mods, hp_current, mana_current, sanity_current, inventory, money, character_elements(level)';
+  'id, name, attributes, skills, resource_mods, hp_current, mana_current, sanity_current, inventory, money, character_elements(element, level)';
+
+/** Elementos da ficha na ordem padrão (os que ela tem, mesmo nível 0). */
+function elementsOf(character: QuickCharacter): CharacterElementRow[] {
+  const rows = character.character_elements ?? [];
+  return ALL_ELEMENTS.flatMap((el) => rows.filter((r) => r.element === el));
+}
 
 function normalizeCharacter(row: QuickCharacter): QuickCharacter {
   return {
@@ -447,6 +454,20 @@ export function QuickSheet() {
 
         {character && resources && backpack && maxes && (
           <>
+            {elementsOf(character).length > 0 && (
+              <ul className="flex flex-wrap gap-x-3 gap-y-1" aria-label="Elementos">
+                {elementsOf(character).map((e) => (
+                  <li
+                    key={e.element}
+                    className="flex items-center gap-1 text-xs text-ink-muted"
+                    title={ELEMENT_LABELS[e.element] + ' ' + e.level}
+                  >
+                    <ElementSymbol element={e.element} size={18} />
+                    <span className="text-parchment">{e.level}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="space-y-1.5">
               {RESOURCES.map(({ key, label, maxKey }) => (
                 <ResourceRow

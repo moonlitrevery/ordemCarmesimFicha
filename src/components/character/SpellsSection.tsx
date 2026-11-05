@@ -8,6 +8,7 @@ import {
   ELEMENT_LABELS,
 } from '@/lib/constants';
 import type { ElementType, Spell } from '@/types/database';
+import { ElementSymbol } from '@/components/elements/ElementSymbol';
 
 function resolveElement(raw: string): ElementType {
   const key = raw.trim().toLowerCase() as ElementType;
@@ -71,6 +72,8 @@ export function SpellsSection({
                   onChange(next);
                 }}
               />
+              <span className="flex items-center gap-1.5">
+              <ElementSymbol element={element} size={20} decorative />
               <select
                 className="field w-44"
                 value={element}
@@ -97,6 +100,7 @@ export function SpellsSection({
                   </option>
                 ))}
               </select>
+              </span>
               <InlineRollButton notation={spell.effect || '1d6'} />
               <button
                 type="button"

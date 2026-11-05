@@ -2,7 +2,8 @@
 
 import { m } from 'framer-motion';
 import { MotionProvider } from '@/components/ui/MotionProvider';
-import { ELEMENT_LABELS } from '@/lib/constants';
+import { ALL_ELEMENTS, ELEMENT_LABELS } from '@/lib/constants';
+import { ElementSymbol } from '@/components/elements/ElementSymbol';
 import { getMosaicPieceColors, getTotalLevel } from '@/lib/calculations';
 import type { CharacterElementRow } from '@/types/database';
 
@@ -38,6 +39,10 @@ export function MosaicFrame({
 }) {
   const total = getTotalLevel(elements);
   const fills = getMosaicPieceColors(elements);
+  // Legenda: só quem tem pedaço no mosaico (nível > 0).
+  const legend = ALL_ELEMENTS.flatMap((el) =>
+    elements.filter((e) => e.element === el && e.level > 0)
+  );
 
   return (
     <section className="panel space-y-4 overflow-hidden p-4 md:p-6">
@@ -110,6 +115,18 @@ export function MosaicFrame({
           </div>
         </div>
       </div>
+
+      {legend.length > 0 && (
+        <ul className="flex flex-wrap justify-center gap-x-4 gap-y-1.5" aria-label="Elementos no mosaico">
+          {legend.map((e) => (
+            <li key={e.element} className="flex items-center gap-1.5 text-sm text-ink-muted">
+              <ElementSymbol element={e.element} size={18} decorative />
+              {ELEMENT_LABELS[e.element]}
+              <span className="text-parchment">{e.level}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

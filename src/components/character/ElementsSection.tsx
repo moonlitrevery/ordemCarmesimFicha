@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ALL_ELEMENTS, ELEMENT_COLORS, ELEMENT_LABELS } from '@/lib/constants';
 import { ElementFragmentBar } from '@/components/elements/ElementFragmentBar';
+import { ElementSymbol } from '@/components/elements/ElementSymbol';
 import { SectionCard } from '@/components/ui/SectionCard';
 import type { CharacterElementRow, ElementType } from '@/types/database';
 
@@ -62,7 +63,7 @@ export function ElementsSection({
             <button
               key={el}
               type="button"
-              className="btn-ghost text-sm"
+              className="btn-ghost gap-1.5 text-sm"
               onClick={() => addElement(el)}
               style={{
                 color: ELEMENT_COLORS[el],
@@ -72,6 +73,7 @@ export function ElementsSection({
                     : undefined,
               }}
             >
+              <ElementSymbol element={el} size={20} glow decorative />
               {ELEMENT_LABELS[el]}
             </button>
           ))}

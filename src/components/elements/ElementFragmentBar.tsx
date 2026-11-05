@@ -15,6 +15,7 @@ import {
   removeFragmentsFromElement,
 } from '@/lib/calculations';
 import type { CharacterElementRow, ElementType } from '@/types/database';
+import { ElementSymbol } from '@/components/elements/ElementSymbol';
 
 export function ElementFragmentBar({
   elements,
@@ -118,7 +119,9 @@ export function ElementFragmentBar({
         />
 
         <div className="relative mb-3 flex items-end justify-between gap-2">
-          <div>
+          <div className="flex items-end gap-2.5">
+            <ElementSymbol element={element} size={30} glow pulse={pulse} decorative />
+            <div>
             <p
               className="label"
               style={{
@@ -134,6 +137,7 @@ export function ElementFragmentBar({
               {row.level}
               <span className="ml-1 text-sm text-ink-muted">nível</span>
             </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <input
