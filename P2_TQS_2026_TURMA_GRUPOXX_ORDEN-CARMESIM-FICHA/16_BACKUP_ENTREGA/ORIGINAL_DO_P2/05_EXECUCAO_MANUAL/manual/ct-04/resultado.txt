@@ -1,4 +1,0 @@
-CT-04 — Cadastro com senha muito curta
-Status: OK
-Resultado: Permaneceu em /cadastro. Mensagem "Password should be at least 6 characters." Conta não criada.
-Obs: minLength HTML não bloqueou o clique (fill programático); o backend recusou.

@@ -1,3 +1,0 @@
-CT-08 — Acesso a rota protegida sem autenticação
-Status: OK
-Resultado: /fichas → /login?next=/fichas; /lore → /login?next=/lore; /regras → /login?next=/regras.

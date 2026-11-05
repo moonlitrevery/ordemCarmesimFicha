@@ -1,3 +1,0 @@
-CT-09 — Usuário logado redirecionado de páginas de autenticação
-Status: OK
-Resultado: /login, /cadastro e / redirecionaram para /fichas. Formulários de auth não ficaram utilizáveis.

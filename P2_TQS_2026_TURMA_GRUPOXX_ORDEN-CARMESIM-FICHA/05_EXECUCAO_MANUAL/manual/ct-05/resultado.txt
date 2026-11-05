@@ -1,3 +1,0 @@
-CT-05 — Login com credenciais válidas
-Status: OK
-Resultado: Login mestre ok. Redirecionou para /fichas. Menu Fichas, Rolagens, Lore, Regras, Sair visível.

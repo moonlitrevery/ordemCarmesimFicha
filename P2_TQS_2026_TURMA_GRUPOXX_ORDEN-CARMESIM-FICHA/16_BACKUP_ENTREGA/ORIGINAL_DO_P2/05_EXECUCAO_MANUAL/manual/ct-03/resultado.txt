@@ -1,4 +1,0 @@
-CT-03 — Cadastro com e-mail já cadastrado
-Status: OK
-Resultado: Não autenticou como conta nova nem foi a /fichas. Após Cadastrar com e-mail do mestre, a UI foi para /login?next=/fichas (deslogado).
-Obs: Não ficou em /cadastro com mensagem; o critério “ou não segue o fluxo de sucesso” foi atendido.
