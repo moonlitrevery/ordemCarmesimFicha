@@ -1,0 +1,4 @@
+CT-24 — Mestre visualiza link e página de Rolagens
+Status: OK
+Resultado: Com a conta mestre, o menu exibiu "Rolagens". A página /rolagens carregou o feed "Feed ao vivo das rolagens dos jogadores" sem redirecionar para /fichas; o feed mostrava as rolagens geradas no CT-20 e no CT-21.
+Obs: Print do feed de rolagens.

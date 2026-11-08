@@ -1,0 +1,4 @@
+CT-13 — Editar ficha e verificar autosave
+Status: OK
+Resultado: A ocupação foi alterada para "Teste CT-13" e o indicador exibiu "Salvando…". Após recarregar com F5, a ficha manteve o valor "Teste CT-13".
+Obs: O estado "Salvo" não foi capturado na verificação seguinte (o indicador já havia voltado a idle), mas não houve erro de salvamento e o valor persistiu após o reload.

@@ -1,0 +1,4 @@
+CT-16 — Exclusão de ficha — nome incorreto
+Status: OK
+Resultado: Apagar → Continuar abriu a confirmação final; digitei "Nome Errado". O botão "Apagar definitivamente" permaneceu desabilitado e a ficha não foi apagada.
+Obs: O modal foi fechado com Cancelar depois da verificação.

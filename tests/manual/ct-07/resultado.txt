@@ -1,0 +1,4 @@
+CT-07 — Logout
+Status: OK
+Resultado: Clique em Sair encerrou a sessão e levou para /login. Ao abrir /fichas deslogado, a aplicação redirecionou para /login?next=%2Ffichas.
+Obs: Menu autenticado não permaneceu após o logout.

@@ -1,0 +1,4 @@
+CT-17 — Exclusão de ficha — confirmação correta
+Status: OK
+Resultado: Nome/URL anotados: "Personagem CT-10" e /fichas/e9936ded-2bbc-44fd-bada-b64e54197453. Apagar → Continuar → nome exato habilitou "Apagar definitivamente". Após o clique, a busca "Teste CT-13" passou a mostrar "0 fichas encontradas" / "Nenhuma ficha corresponde à busca.", e a URL antiga passou a exibir 404 ("This page could not be found.").
+Obs: Print final da URL antiga em 404. As outras duas fichas homônimas de execuções anteriores não foram apagadas.

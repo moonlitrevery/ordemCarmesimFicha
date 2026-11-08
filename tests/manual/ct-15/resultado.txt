@@ -1,0 +1,4 @@
+CT-15 — Exclusão de ficha — cancelar
+Status: OK
+Resultado: Em /fichas, com o filtro "Teste CT-13", clique em Apagar abriu o modal "Apagar ficha?". Clicar em Cancelar fechou o modal e a ficha continuou na listagem (1 ficha encontrada).
+Obs: Nenhuma exclusão foi realizada.

@@ -1,0 +1,4 @@
+CT-21 — Rolador flutuante com notação válida
+Status: OK
+Resultado: O botão flutuante abriu "Rolar Dados". Com a notação 2d6+3 e clique em Rolar, o resultado foi total 11, com breakdown "3 + 5 + +3 = 11". A rolagem também apareceu no feed /rolagens.
+Obs: Print do resultado exibido no rolador.

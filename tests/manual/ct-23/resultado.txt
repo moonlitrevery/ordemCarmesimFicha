@@ -1,0 +1,4 @@
+CT-23 — Jogador não acessa a tela de Rolagens
+Status: OK
+Resultado: Login com a conta de jogador (tenri123@protonmail.com) levou para /fichas com o menu Fichas, Mesa, Lore, Regras e Sair, sem o link "Rolagens". O acesso direto a /rolagens redirecionou para /fichas.
+Obs: Print final em /fichas após o redirecionamento; o menu visível não contém Rolagens.

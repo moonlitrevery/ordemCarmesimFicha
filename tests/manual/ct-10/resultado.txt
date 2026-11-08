@@ -1,0 +1,4 @@
+CT-10 — Criar nova ficha de personagem
+Status: OK
+Resultado: Em /fichas, + Nova Ficha abriu /fichas/nova. Com o nome "Personagem CT-10", Criar ficha redirecionou para /fichas/e9936ded-2bbc-44fd-bada-b64e54197453, com a ficha editável (título e campos Nome/Ocupação). O card correspondente apareceu na listagem.
+Obs: A listagem já possuía outras duas fichas homônimas de execuções anteriores (donos TESTE e LOGINJOGADOR); elas não foram alteradas. A ficha criada neste caso foi identificada pela URL/ID e, depois, pela ocupação "Teste CT-13".

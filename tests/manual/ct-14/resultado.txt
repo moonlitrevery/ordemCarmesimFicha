@@ -1,0 +1,4 @@
+CT-14 — Navegar pelas abas da ficha
+Status: OK
+Resultado: As abas Elementos e Fragmentos, Magias e Poderes Passivos, Armas, Inventário, Maldições, Feitos Históricos, Anotações, História do Personagem e Mosaico trocaram de conteúdo sem tela em branco. O Mosaico mostrou "O Mosaico de Personagem CT-10" e "0 de 20 pedaços preenchidos".
+Obs: Print final na aba Mosaico.

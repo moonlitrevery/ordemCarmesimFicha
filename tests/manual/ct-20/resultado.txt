@@ -1,0 +1,4 @@
+CT-20 — Rolagem rápida na ficha
+Status: OK
+Resultado: O clique no ícone de dado do atributo Força gerou o toast "FORÇA", com total 9 e a notação 1d20 + 0. Não houve erro de interface.
+Obs: Print com o toast de rolagem aberto.

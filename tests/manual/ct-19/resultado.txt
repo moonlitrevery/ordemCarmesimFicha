@@ -1,0 +1,4 @@
+CT-19 — Consultar índice e páginas de Regras
+Status: OK
+Resultado: /regras exibiu Atributos, Perícias, Elementos e Fragmentos, Arcanas, Armas e Runas, Tabela de Armas e Itens Amaldiçoados. Abri /regras/atributos e, pela navegação lateral, /regras/pericias; ambas carregaram.
+Obs: Print final em /regras/pericias.

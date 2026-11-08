@@ -1,0 +1,4 @@
+CT-22 — Rolador flutuante com notação inválida
+Status: OK
+Resultado: Com a notação "abc", clicar em Rolar exibiu "Use o formato XdY+Z (ex: 2d6+3)" e nenhum resultado de rolagem foi apresentado.
+Obs: O rolador foi fechado e reaberto antes do teste para não exibir o resultado válido do CT-21.

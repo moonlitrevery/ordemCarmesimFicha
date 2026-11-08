@@ -1,0 +1,4 @@
+CT-18 — Consultar índice e páginas de Lore
+Status: OK
+Resultado: /lore exibiu História, Estrutura, Cargos, Planos de Existência e Líderes. Abri /lore/historia e, pela navegação lateral, /lore/estrutura; ambas carregaram com título e conteúdo.
+Obs: Print final em /lore/estrutura.

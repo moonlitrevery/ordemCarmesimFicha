@@ -1,0 +1,4 @@
+CT-12 — Listar fichas do jogador
+Status: OK
+Resultado: /fichas exibiu os cards das fichas e o clique no card abriu /fichas/e9936ded-2bbc-44fd-bada-b64e54197453.
+Obs: O caso descreve o subtítulo de jogador ("Suas fichas de personagem."), mas a conta usada é mestre; a UI mostrou "Visão de mestre — todas as fichas da campanha.", conforme previsto na seção 9 do plano. A visão de jogador foi verificada no CT-23 e mostrou "Suas fichas de personagem.".
