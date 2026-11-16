@@ -1,0 +1,585 @@
+{
+  "info": {
+    "_postman_id": "7a6b49cc-f47b-5e79-9bfd-30cc6389b382",
+    "name": "Ordem Carmesim — P2 integração/API (Supabase)",
+    "description": "Testes de integração da aplicação com a API do Supabase (GoTrue + PostgREST). P2 — Testes e Qualidade de Software, Turma A, Grupo 15.\nRode a pasta 'Fichas e autenticação' em ordem (as requisições encadeiam token, user_id e character_id).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Fichas e autenticação",
+      "item": [
+        {
+          "name": "API-01 Login com credenciais válidas (CT-05)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/auth/v1/token?grant_type=password"
+            },
+            "description": "RF-02. Positivo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('devolve access_token e usuário', () => { pm.expect(b.access_token).to.be.a('string'); pm.expect(b.user.id).to.be.a('string'); });",
+                  "pm.test('tempo de resposta < 2000 ms', () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "pm.collectionVariables.set('access_token', b.access_token);",
+                  "pm.collectionVariables.set('user_id', b.user.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-02 Login com senha incorreta (CT-06)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/auth/v1/token?grant_type=password"
+            },
+            "description": "RF-02. Negativo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"senha-errada-123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "const b = pm.response.json(); const msg = b.msg || b.error_description || b.message || '';",
+                  "pm.test('mensagem de credencial inválida', () => pm.expect(msg).to.match(/Invalid login credentials/));",
+                  "pm.test('não devolve token', () => pm.expect(b.access_token).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-03 Cadastro com senha curta (CT-04)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/auth/v1/signup"
+            },
+            "description": "RF-01. Negativo, valor limite (5 caracteres). Não cria conta.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"p2-api03-{{$timestamp}}@example.com\",\n  \"password\": \"12345\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 4xx (400 ou 422)', () => pm.expect(pm.response.code).to.be.oneOf([400, 422]));",
+                  "const b = pm.response.json(); const msg = b.msg || b.error_description || b.message || '';",
+                  "pm.test('mensagem de senha mínima', () => pm.expect(msg).to.match(/at least 6 characters/));",
+                  "pm.test('nenhuma sessão criada', () => pm.expect(b.access_token).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-04 Perfil do usuário logado",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/profiles?id=eq.{{user_id}}&select=id,role,display_name"
+            },
+            "description": "RF-10. Integração Auth → Postgres (trigger handle_new_user)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test('uma linha', () => pm.expect(rows).to.have.lengthOf(1));",
+                  "pm.test('papel válido', () => pm.expect(rows[0].role).to.be.oneOf(['mestre', 'jogador']));",
+                  "pm.collectionVariables.set('role', rows[0].role);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-05 Criar ficha (CT-10)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters"
+            },
+            "description": "RF-04. Positivo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"owner_id\": \"{{user_id}}\",\n  \"name\": \"Personagem API-05\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const [ficha] = pm.response.json();",
+                  "pm.test('ficha com id e nome', () => { pm.expect(ficha.id).to.be.a('string'); pm.expect(ficha.name).to.eql('Personagem API-05'); });",
+                  "pm.test('dono é o usuário logado', () => pm.expect(ficha.owner_id).to.eql(pm.collectionVariables.get('user_id')));",
+                  "pm.collectionVariables.set('character_id', ficha.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-06 Criar ficha sem nome (CT-11)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters"
+            },
+            "description": "RF-04. Negativo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"owner_id\": \"{{user_id}}\",\n  \"name\": null\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('violação de NOT NULL (23502)', () => pm.expect(pm.response.json().code).to.eql('23502'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-07 Criar ficha em nome de outra pessoa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters"
+            },
+            "description": "RNF-01. Negativo (RLS characters_insert).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"owner_id\": \"00000000-0000-4000-8000-000000000000\",\n  \"name\": \"Intrusa\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('recusado (401 ou 403)', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));",
+                  "pm.test('erro de RLS (42501)', () => pm.expect(pm.response.json().code).to.eql('42501'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-08 Editar ocupação (CT-13)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters?id=eq.{{character_id}}"
+            },
+            "description": "RF-06. Positivo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"occupation\": \"Teste API-08\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ocupação alterada', () => pm.expect(pm.response.json()[0].occupation).to.eql('Teste API-08'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-09 Ler ficha e conferir persistência (CT-13)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters?id=eq.{{character_id}}&select=id,name,occupation"
+            },
+            "description": "RF-06, RNF-03."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json();",
+                  "pm.test('valor persistido', () => { pm.expect(rows).to.have.lengthOf(1); pm.expect(rows[0].occupation).to.eql('Teste API-08'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-10 Listar fichas sem login (CT-08)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anon_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters?select=id"
+            },
+            "description": "RF-03, RNF-01. Negativo: anon não vê fichas."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('lista vazia para anon', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-11 Token inválido",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer token-invalido"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/auth/v1/user"
+            },
+            "description": "RF-02. Negativo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('recusado (401 ou 403)', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-12 Apagar ficha (CT-17)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters?id=eq.{{character_id}}"
+            },
+            "description": "RF-07. Positivo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('uma ficha apagada', () => pm.expect(pm.response.json()).to.have.lengthOf(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API-13 Ficha apagada não existe mais (CT-17)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/characters?id=eq.{{character_id}}&select=id"
+            },
+            "description": "RF-07."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('lista vazia', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Segurança (somente ambiente de teste)",
+      "item": [
+        {
+          "name": "API-14 Jogador tenta se promover a mestre (DEF-01)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{anon_key}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Prefer",
+                "value": "return=representation"
+              }
+            ],
+            "url": {
+              "raw": "{{supabase_url}}/rest/v1/profiles?id=eq.{{user_id}}"
+            },
+            "description": "RNF-01. ATENÇÃO: rode só com conta de JOGADOR descartável e depois de API-01. Se o defeito DEF-01 ainda existir no banco, a conta VIRA MESTRE e precisa ser rebaixada no SQL Editor: update public.profiles set role = 'jogador' where id = '<id>';",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"mestre\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('recusado (401 ou 403)', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));",
+                  "pm.test('sem permissão na coluna role (42501)', () => pm.expect(pm.response.json().code).to.eql('42501'));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.collectionVariables.get('role') !== 'jogador') { throw new Error('API-14 exige conta de jogador (rode API-01 e API-04 antes).'); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "character_id",
+      "value": ""
+    },
+    {
+      "key": "role",
+      "value": ""
+    }
+  ]
+}
