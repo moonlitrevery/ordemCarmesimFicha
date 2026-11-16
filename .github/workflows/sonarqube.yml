@@ -77,6 +77,10 @@ jobs:
             "http://localhost:9000/api/measures/component?component=ordem-carmesim&metricKeys=$M" | tee sonarqube-metricas.json
           curl -s -H "Authorization: Bearer ${{ steps.token.outputs.token }}" \
             "http://localhost:9000/api/issues/search?componentKeys=ordem-carmesim&ps=500" > sonarqube-issues.json
+          echo "--- bugs e vulnerabilidades ---"
+          jq -r '.issues[] | select(.type=="BUG" or .type=="VULNERABILITY") | "\(.type) | \(.severity) | \(.rule) | \(.component):\(.line) | \(.message)"' sonarqube-issues.json
+          echo "--- code smells por regra ---"
+          jq -r '[.issues[] | select(.type=="CODE_SMELL") | .rule] | group_by(.) | map("\(length) \(.[0])") | .[]' sonarqube-issues.json
           curl -s -H "Authorization: Bearer ${{ steps.token.outputs.token }}" \
             "http://localhost:9000/api/qualitygates/project_status?projectKey=ordem-carmesim" > sonarqube-quality-gate.json
 
