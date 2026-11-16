@@ -2262,3 +2262,7 @@ create policy "table_reports_delete" on public.table_reports
 
 
 notify pgrst, 'reload schema';
+
+-- ========== 022: papel só muda pelo SQL Editor (DEF-01) ==========
+revoke update on public.profiles from anon, authenticated;
+grant update (display_name, color) on public.profiles to authenticated;
