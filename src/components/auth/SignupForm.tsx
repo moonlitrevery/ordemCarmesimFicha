@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState, useEffect } from 'react';
 import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
+import { translateAuthError } from '@/lib/auth-errors';
 
 export function SignupForm() {
   const router = useRouter();
@@ -33,7 +34,7 @@ export function SignupForm() {
     });
     setLoading(false);
     if (err) {
-      setError(err.message);
+      setError(translateAuthError(err.message));
       return;
     }
     router.push('/fichas');

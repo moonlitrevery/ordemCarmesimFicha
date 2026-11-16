@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useState, useEffect } from 'react';
 import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
+import { translateAuthError } from '@/lib/auth-errors';
 
 export function LoginForm() {
   const router = useRouter();
@@ -31,9 +32,7 @@ export function LoginForm() {
     });
     setLoading(false);
     if (err) {
-      setError(err.message === 'Invalid login credentials'
-        ? 'E-mail ou senha inválidos.'
-        : err.message);
+      setError(translateAuthError(err.message));
       return;
     }
     router.push(next);
