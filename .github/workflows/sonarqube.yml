@@ -2,9 +2,11 @@ name: Qualidade — SonarQube
 
 # Sobe um SonarQube Community dentro do próprio runner (sem conta externa),
 # analisa o código e guarda as métricas como artefato.
-# Rode pelo botão "Run workflow": uma vez no commit da linha de base e outra
-# no commit final, para comparar (seção 9.16 do manual da P2).
+# Roda ao enviar um branch p2-sonar-* (ou pelo botão "Run workflow" quando este
+# arquivo estiver no main): uma vez na linha de base e outra no final (seção 9.16).
 on:
+  push:
+    branches: ['p2-sonar-*']
   workflow_dispatch:
     inputs:
       ref:
