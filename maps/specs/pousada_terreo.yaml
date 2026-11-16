@@ -1,0 +1,87 @@
+# Pousada da Rosa — térreo. Coordenadas em METROS. Origem no canto superior esquerdo, x → leste, y → sul.
+# Disposição aprovada é esta; ajuste fino de posição (evitar sobreposição, alinhar) é permitido.
+id: pousada-rosa-terreo
+title: Pousada da Rosa — térreo
+visibility: mestra
+size_m: [16, 19]
+px_per_m: 120          # saída ~1920×2280
+sun: { azimuth_deg: 135, elevation_deg: 40 }   # luz vindo do sudeste, sombras pra noroeste
+
+ground:
+  - { rect: [0, 0, 16, 19], material: grass_short }
+  - { rect: [0, 16.2, 16, 19], material: cobblestone_basalt }      # calçada da praça
+  - { rect: [1, 0.5, 15, 5], material: garden_soil }               # jardim dos fundos
+
+buildings:
+  - id: pousada
+    footprint: [[1, 5], [15, 5], [15, 16.2], [1, 16.2]]
+    wall: { thickness: 0.35, material: plaster_tufo_old }
+    roof: { show: false }   # interior visível neste mapa
+    rooms:
+      - { name: salao,    rect: [1, 9.5, 15, 16.2], floor: terracotta_tiles_worn }
+      - { name: escada,   rect: [1, 5, 4, 9.5],     floor: wood_planks_dark }
+      - { name: cozinha,  rect: [4, 5, 12.5, 9.5],  floor: ceramic_tiles_checker_cream }
+      - { name: despensa, rect: [12.5, 5, 15, 9.5], floor: concrete_old }
+    doors:
+      - { between: [salao, outside], wall: south, at_x: 7.6, width: 1.2, type: wood_glass_double }
+      - { between: [salao, cozinha], wall_y: 9.5, at_x: 8.2, width: 0.9, type: swing }
+      - { between: [salao, escada],  wall_y: 9.5, at_x: 2.5, width: 0.9, type: open }
+      - { between: [cozinha, despensa], wall_x: 12.5, at_y: 7.5, width: 0.8, type: wood }
+      - { between: [cozinha, outside], wall: north, at_x: 6, width: 0.9, type: wood }
+    windows:
+      - { wall: south, at_x: 3.2, width: 1.4 }
+      - { wall: south, at_x: 12.2, width: 1.4 }
+      - { wall: east,  at_y: 13, width: 1.2 }
+      - { wall: north, at_x: 10, width: 1.0 }
+
+props:
+  # salão
+  - { type: bar_counter_zinc, path: [[6, 10.3], [12.2, 10.3], [12.2, 11.8]], depth: 0.6 }
+  - { type: shelf_bottles, rect: [6, 9.55, 12, 9.9] }
+  - { type: espresso_machine, at: [7, 10.25] }
+  - { type: cash_register, at: [11.5, 10.25] }
+  - { type: bar_stool, at: [6.8, 11.0] }
+  - { type: bar_stool, at: [8.0, 11.0] }
+  - { type: bar_stool, at: [9.2, 11.0] }
+  - { type: bar_stool, at: [10.4, 11.0] }
+  - { type: bar_stool, at: [12.9, 11.4] }
+  - { type: tv_wall, at: [14.75, 12.5], rot: 270 }
+  - { type: fireplace_stone, at: [1.25, 12.6], rot: 90, width: 1.6 }      # só acende em outubro: apagada
+  - { type: firewood_stack, at: [1.4, 14.2] }
+  - { type: table_square_cloth, at: [3.4, 12.8], seats: 4 }
+  - { type: table_square_cloth, at: [7.0, 13.4], seats: 4 }
+  - { type: table_square_cloth, at: [10.6, 13.4], seats: 4 }
+  - { type: table_square_cloth, at: [3.4, 15.0], seats: 4 }
+  - { type: table_square_cloth, at: [10.6, 15.3], seats: 2 }
+  - { type: table_square_cloth, at: [13.6, 15.2], seats: 2 }
+  - { type: coat_rack, at: [6.4, 15.8] }
+  - { type: clutter, area: [1.2, 9.6, 14.8, 16], items: [ashtray, newspaper, wine_bottle, glass, napkin_holder, salt_pepper], density: medium }
+  # escada
+  - { type: stairs_wood, rect: [1.2, 5.2, 3.8, 9.3], direction: north }
+  # cozinha
+  - { type: stove_industrial, at: [5.2, 5.6], width: 1.6 }
+  - { type: pot_steaming, at: [5.0, 5.6] }               # molho a qualquer hora
+  - { type: kitchen_counter, path: [[6.2, 5.4], [11.8, 5.4]], depth: 0.6 }
+  - { type: sink_double, at: [9.5, 5.4] }
+  - { type: fridge, at: [11.9, 6.3] }
+  - { type: prep_table_wood, at: [8.2, 7.6], size: [2.2, 0.9] }
+  - { type: hanging_pans, at: [8.2, 7.6] }
+  - { type: clutter, area: [4.2, 5.2, 12.3, 9.3], items: [cutting_board, tomatoes, garlic, bread, cloth, wooden_spoon], density: high }
+  # despensa
+  - { type: shelf_pantry, rect: [12.7, 5.2, 14.8, 5.7] }
+  - { type: shelf_pantry, rect: [14.3, 5.8, 14.8, 9.3] }
+  - { type: crate_wine, at: [13.2, 8.6] }
+  - { type: sack_flour, at: [13.6, 7.2] }
+  # jardim
+  - { type: herb_bed, rect: [2, 1.2, 6, 2.4], plants: [manjericao, alecrim, oregano] }
+  - { type: herb_bed, rect: [2, 3.0, 6, 4.2], plants: [salsa, salvia, tomilho] }
+  - { type: terracotta_pots, area: [8, 1, 14.5, 4.5], count: 9 }
+  - { type: clothesline, from: [8, 2.5], to: [14.5, 2.5], clothes: true }
+  - { type: plastic_chair, at: [7.2, 4.2] }
+  # calçada
+  - { type: bistro_table, at: [3.2, 17.4] }
+  - { type: plastic_chair, at: [2.5, 17.6] }
+  - { type: sign_enamel_old, at: [1.2, 16.4] }           # placa esmaltada descascada, SEM texto legível
+
+variants:
+  - { id: noite, note: "use a iluminação da Mesa; não gerar" }

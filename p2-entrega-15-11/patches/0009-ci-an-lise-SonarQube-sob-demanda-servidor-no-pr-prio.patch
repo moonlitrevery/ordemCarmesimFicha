@@ -1,0 +1,103 @@
+From 8b4c1722a278959454d7139f39698695b0c7a31a Mon Sep 17 00:00:00 2001
+From: moonlitrevery <superjoaovitor@gmail.com>
+Date: Sun, 15 Nov 2026 22:39:41 -0300
+Subject: [PATCH 9/9] =?UTF-8?q?ci:=20an=C3=A1lise=20SonarQube=20sob=20dema?=
+ =?UTF-8?q?nda=20(servidor=20no=20pr=C3=B3prio=20runner)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AcqLqFvmo7Uwcr37XkFG3N
+---
+ .github/workflows/sonarqube.yml | 78 +++++++++++++++++++++++++++++++++
+ 1 file changed, 78 insertions(+)
+ create mode 100644 .github/workflows/sonarqube.yml
+
+diff --git a/.github/workflows/sonarqube.yml b/.github/workflows/sonarqube.yml
+new file mode 100644
+index 0000000..a0e67b7
+--- /dev/null
++++ b/.github/workflows/sonarqube.yml
+@@ -0,0 +1,78 @@
++name: Qualidade — SonarQube
++
++# Sobe um SonarQube Community dentro do próprio runner (sem conta externa),
++# analisa o código e guarda as métricas como artefato.
++# Rode pelo botão "Run workflow": uma vez no commit da linha de base e outra
++# no commit final, para comparar (seção 9.16 do manual da P2).
++on:
++  workflow_dispatch:
++
++jobs:
++  sonarqube:
++    runs-on: ubuntu-latest
++    timeout-minutes: 30
++    services:
++      sonarqube:
++        image: sonarqube:community
++        ports:
++          - 9000:9000
++    steps:
++      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 22
++          cache: npm
++
++      - name: Cobertura dos testes (lcov)
++        run: |
++          npm ci
++          npm i --no-save @vitest/coverage-v8@2.1.9
++          npx vitest run --coverage --coverage.provider=v8 --coverage.reporter=lcov --coverage.include='src/**' --coverage.exclude='**/*.test.ts'
++
++      - name: Esperar o SonarQube e gerar token
++        id: token
++        run: |
++          for i in $(seq 1 60); do
++            s=$(curl -s http://localhost:9000/api/system/status | jq -r .status || true)
++            [ "$s" = "UP" ] && break; sleep 5
++          done
++          NEW_PASS="P2-${{ github.run_id }}-Aa1!"
++          curl -s -u admin:admin -X POST "http://localhost:9000/api/users/change_password?login=admin&previousPassword=admin&password=$NEW_PASS" || true
++          TOKEN=$(curl -s -u "admin:$NEW_PASS" -X POST "http://localhost:9000/api/user_tokens/generate?name=ci" | jq -r .token)
++          echo "::add-mask::$TOKEN"
++          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
++
++      - name: Análise
++        uses: SonarSource/sonarqube-scan-action@v5
++        env:
++          SONAR_TOKEN: ${{ steps.token.outputs.token }}
++          SONAR_HOST_URL: http://localhost:9000
++        with:
++          args: >
++            -Dsonar.projectKey=ordem-carmesim
++            -Dsonar.sources=src
++            -Dsonar.tests=src,supabase
++            -Dsonar.test.inclusions=**/*.test.ts
++            -Dsonar.exclusions=**/*.test.ts
++            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
++            -Dsonar.qualitygate.wait=true
++        continue-on-error: true
++
++      - name: Exportar métricas
++        run: |
++          sleep 10
++          M=bugs,vulnerabilities,code_smells,security_hotspots,coverage,duplicated_lines_density,ncloc,sqale_rating,reliability_rating,security_rating
++          curl -s -H "Authorization: Bearer ${{ steps.token.outputs.token }}" \
++            "http://localhost:9000/api/measures/component?component=ordem-carmesim&metricKeys=$M" | tee sonarqube-metricas.json
++          curl -s -H "Authorization: Bearer ${{ steps.token.outputs.token }}" \
++            "http://localhost:9000/api/issues/search?componentKeys=ordem-carmesim&ps=500" > sonarqube-issues.json
++          curl -s -H "Authorization: Bearer ${{ steps.token.outputs.token }}" \
++            "http://localhost:9000/api/qualitygates/project_status?projectKey=ordem-carmesim" > sonarqube-quality-gate.json
++
++      - uses: actions/upload-artifact@v4
++        with:
++          name: sonarqube-${{ github.sha }}
++          path: sonarqube-*.json
+-- 
+2.43.0
+

@@ -4,6 +4,7 @@ import {
   assetsOfKind,
   isBackfillCandidate,
   mergeLibrary,
+  presetMetersPerPx,
   staticItemToAsset,
   visibleStaticItems,
   type StaticManifestItem,
@@ -31,6 +32,20 @@ describe('staticItemToAsset', () => {
     expect(asset.uploaded_by).toBeNull();
     expect(asset.tags).toEqual([]);
     expect(libraryImageUrl(asset)).toBe(ITEM.thumb);
+  });
+});
+
+describe('presetMetersPerPx', () => {
+  it('mapa do gerador leva a escala do meta.json para a cena', () => {
+    const asset = staticItemToAsset({ ...ITEM, meters_per_px: 1 / 120 });
+    expect(presetMetersPerPx(asset)).toBeCloseTo(1 / 120);
+  });
+
+  it('sem meta (ou valor absurdo) a cena nasce sem calibrar', () => {
+    expect(presetMetersPerPx(staticItemToAsset(ITEM))).toBeNull();
+    expect(presetMetersPerPx({ meters_per_px: -1 })).toBeNull();
+    expect(presetMetersPerPx({ meters_per_px: Number.NaN })).toBeNull();
+    expect(presetMetersPerPx(null)).toBeNull();
   });
 });
 

@@ -20,6 +20,11 @@
 /generated/
 /public/vtt/_built/
 
+# gerador de mapas (maps/): saída local e texturas baixadas por npm run maps:assets
+/maps/out/
+/maps/assets/textures/*
+!/maps/assets/textures/.gitkeep
+
 # misc
 .DS_Store
 *.pem

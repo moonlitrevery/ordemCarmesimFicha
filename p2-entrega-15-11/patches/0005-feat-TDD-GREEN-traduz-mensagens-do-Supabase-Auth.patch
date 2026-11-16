@@ -1,0 +1,42 @@
+From e266e10b9163201450a13f8b838a737f0d411f14 Mon Sep 17 00:00:00 2001
+From: moonlitrevery <superjoaovitor@gmail.com>
+Date: Sun, 15 Nov 2026 22:36:31 -0300
+Subject: [PATCH 5/9] feat(TDD-GREEN): traduz mensagens do Supabase Auth
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Implementação mínima para os 6 testes passarem.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AcqLqFvmo7Uwcr37XkFG3N
+---
+ src/lib/auth-errors.ts | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/src/lib/auth-errors.ts b/src/lib/auth-errors.ts
+index d2be9aa..f38ea9a 100644
+--- a/src/lib/auth-errors.ts
++++ b/src/lib/auth-errors.ts
+@@ -1,4 +1,17 @@
+ /** Traduz mensagens do Supabase Auth para o usuário (pt-BR). */
+ export function translateAuthError(message: string): string {
+-  return message; // ainda sem tradução (TDD — RED)
++  if (message === 'Invalid login credentials') {
++    return 'E-mail ou senha inválidos.';
++  }
++  const minimo = message.match(/^Password should be at least (\d+) characters/);
++  if (minimo) {
++    return `A senha deve ter pelo menos ${minimo[1]} caracteres.`;
++  }
++  if (message === 'User already registered') {
++    return 'Este e-mail já está cadastrado.';
++  }
++  if (message === 'Email rate limit exceeded') {
++    return 'Muitas tentativas em pouco tempo. Aguarde e tente de novo.';
++  }
++  return 'Não foi possível concluir. Tente de novo.';
+ }
+-- 
+2.43.0
+

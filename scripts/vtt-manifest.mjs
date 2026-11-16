@@ -153,9 +153,35 @@ async function buildAudio(file, buffer, keep) {
   };
 }
 
+const META_SUFFIX = '.meta.json';
+
+/**
+ * Mapa do gerador traz a escala no <nome>.meta.json ao lado. Se o manifest reduziu a
+ * imagem, a escala acompanha: a régua da cena nasce calibrada (SPEC, "Gerador de mapas").
+ */
+async function mapScale(file, built) {
+  const metaFile = file.replace(/\.[^.]+$/, META_SUFFIX);
+  if (!(await exists(metaFile))) return {};
+  try {
+    const meta = JSON.parse(await fs.readFile(metaFile, 'utf8'));
+    const value = Number(meta.meters_per_px);
+    if (!(value > 0) || !(meta.width > 0)) return {};
+    // O título do YAML é melhor que o nome do arquivo: "Pousada da Rosa — térreo (noite)".
+    const title = typeof meta.title === 'string' && meta.title.trim()
+      ? `${meta.title.trim()}${meta.variant ? ` (${String(meta.variant).replace(/_/g, ' ')})` : ''}`.slice(0, 120)
+      : null;
+    return { meters_per_px: value * (meta.width / built.width), ...(title ? { name: title } : {}) };
+  } catch (error) {
+    console.warn(`[vtt:manifest] ${relativeTo(root, metaFile)}: meta ilegível, régua fica sem calibrar (${error.message})`);
+    return {};
+  }
+}
+
 async function readEntry(file, folder, config, visibility, keep) {
   const relativePath = relativeTo(root, file);
   const extension = path.extname(file).toLowerCase();
+  // <mapa>.meta.json do gerador (maps/) acompanha a imagem: não é item da biblioteca.
+  if (file.endsWith(META_SUFFIX)) return null;
   const accepted = config.image ? IMAGE_EXTENSIONS.includes(extension) : AUDIO_MIMES[extension];
   if (!accepted) {
     console.warn(`[vtt:manifest] ${relativePath}: formato não aceito em ${folder}/, ignorado`);
@@ -189,6 +215,7 @@ async function readEntry(file, folder, config, visibility, keep) {
         height: built.height,
         duration_s: built.duration_s,
         ...(config.image ? {} : { tags: audioTags(relativePath, folder) }),
+        ...(config.kind === 'mapa' ? await mapScale(file, built) : {}),
       },
     };
   } catch (error) {

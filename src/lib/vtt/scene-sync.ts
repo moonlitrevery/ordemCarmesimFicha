@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Asset } from './assets/rules';
+import { presetMetersPerPx } from './assets/static';
 import { checkUploadAvailable, uploadAsset } from './assets/upload';
 import type { VttEventOf } from './events';
 import { toggleCondition } from './conditions';
@@ -1168,6 +1169,12 @@ export class SceneSync {
     this.channel.emit({ type: 'scene:assign' });
   }
 
+  /** Mapa do gerador já sabe a própria escala: a régua nasce calibrada. */
+  private mapPresetScale(mapAssetId: string | null): number | null {
+    if (!mapAssetId) return null;
+    return presetMetersPerPx(store().library?.find((asset) => asset.id === mapAssetId));
+  }
+
   async createScene(name: string, folder: string, mapAssetId: string | null) {
     const { scenes, table } = store();
     const { data, error } = await this.supabase
@@ -1177,6 +1184,7 @@ export class SceneSync {
         name,
         folder,
         map_asset_id: mapAssetId,
+        meters_per_px: this.mapPresetScale(mapAssetId),
         sort: scenes.reduce((max, s) => Math.max(max, s.sort), 0) + 1,
       })
       .select(SCENE_COLUMNS)
@@ -1212,8 +1220,8 @@ export class SceneSync {
   }
 
   async changeMap(id: string, mapAssetId: string) {
-    // A calibração valia para o mapa antigo.
-    await this.updateScene(id, { map_asset_id: mapAssetId, meters_per_px: null });
+    // A calibração valia para o mapa antigo; o novo traz a dele, se for do gerador.
+    await this.updateScene(id, { map_asset_id: mapAssetId, meters_per_px: this.mapPresetScale(mapAssetId) });
   }
 
   async reorderScenes(ordered: VttScene[]) {

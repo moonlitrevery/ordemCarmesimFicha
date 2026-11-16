@@ -1,0 +1,53 @@
+From 3ee80f986506e5c83e03143a7354698048df364e Mon Sep 17 00:00:00 2001
+From: moonlitrevery <superjoaovitor@gmail.com>
+Date: Sun, 15 Nov 2026 22:35:54 -0300
+Subject: [PATCH 3/9] =?UTF-8?q?fix(db):=20jogador=20n=C3=A3o=20altera=20o?=
+ =?UTF-8?q?=20pr=C3=B3prio=20papel=20(DEF-01)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Migração 022 restringe o UPDATE de profiles às colunas display_name e
+color. Reteste: supabase/fichas-rls.test.ts passa; regressão: suíte
+completa (438 testes) aprovada.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AcqLqFvmo7Uwcr37XkFG3N
+---
+ supabase/migrations/022_profiles_role_lock.sql | 11 +++++++++++
+ supabase/schema.sql                            |  4 ++++
+ 2 files changed, 15 insertions(+)
+ create mode 100644 supabase/migrations/022_profiles_role_lock.sql
+
+diff --git a/supabase/migrations/022_profiles_role_lock.sql b/supabase/migrations/022_profiles_role_lock.sql
+new file mode 100644
+index 0000000..2d9b3ef
+--- /dev/null
++++ b/supabase/migrations/022_profiles_role_lock.sql
+@@ -0,0 +1,11 @@
++-- DEF-01 (P2 — Testes e Qualidade): jogador conseguia virar mestre editando
++-- o próprio perfil, porque a política profiles_update_own libera a linha
++-- inteira, inclusive a coluna role.
++-- Correção: o usuário logado só altera as colunas que o app usa.
++-- O papel continua sendo trocado só pelo SQL Editor (README, passo 3).
++-- Rode no SQL Editor do Supabase.
++
++revoke update on public.profiles from anon, authenticated;
++grant update (display_name, color) on public.profiles to authenticated;
++
++notify pgrst, 'reload schema';
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index d7bb805..f589b2f 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -2262,3 +2262,7 @@ create policy "table_reports_delete" on public.table_reports
+ 
+ 
+ notify pgrst, 'reload schema';
++
++-- ========== 022: papel só muda pelo SQL Editor (DEF-01) ==========
++revoke update on public.profiles from anon, authenticated;
++grant update (display_name, color) on public.profiles to authenticated;
+-- 
+2.43.0
+

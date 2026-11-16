@@ -1,0 +1,14 @@
+{
+  "id": "pousada-rosa-terreo",
+  "title": "Pousada da Rosa — térreo",
+  "variant": null,
+  "seed": 3741434216,
+  "size_m": [
+    16,
+    19
+  ],
+  "px_per_m": 120,
+  "meters_per_px": 0.008333333333333333,
+  "width": 1920,
+  "height": 2280
+}

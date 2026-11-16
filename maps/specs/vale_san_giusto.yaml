@@ -1,0 +1,53 @@
+id: vale-san-giusto
+title: Vale de San Giusto e a pedra que escorre
+visibility: mestra
+size_m: [120, 100]
+px_per_m: 32          # ~3840×3200
+sun: { azimuth_deg: 135, elevation_deg: 40 }
+
+terrain:
+  type: bowl                       # encosta em forma de tigela; aplicar hillshade suave
+  center: [60, 55]
+  radius: 46
+  depth_m: 14
+  rim_open: east                   # a pedra fica na encosta leste
+
+ground:
+  - { rect: [0, 0, 120, 100], material: forest_floor_leaves }
+  - { circle: [60, 55, 44], material: tall_grass_dry_mixed }
+
+terraces:                          # muros de pedra seca em degraus, engolidos pelo mato, com falhas
+  - { arc_center: [60, 55], radius: 14, from_deg: 120, to_deg: 300, material: drystone_wall_mossy, gaps: 4, overgrowth: 0.6 }
+  - { arc_center: [60, 55], radius: 21, from_deg: 100, to_deg: 320, material: drystone_wall_mossy, gaps: 5, overgrowth: 0.7 }
+  - { arc_center: [60, 55], radius: 28, from_deg: 90,  to_deg: 330, material: drystone_wall_mossy, gaps: 6, overgrowth: 0.8 }
+  - { arc_center: [60, 55], radius: 35, from_deg: 110, to_deg: 300, material: drystone_wall_mossy, gaps: 6, overgrowth: 0.9 }
+
+vegetation:
+  - { type: chestnut_tree, scatter_outside: [60, 55, 45], density: high, size_m: [6, 11] }
+  - { type: oak_tree, scatter_outside: [60, 55, 45], density: medium, size_m: [6, 10] }
+  - { type: maritime_pine, scatter_area: [0, 0, 40, 30], density: low }
+  - { type: shrub_bramble, scatter_inside: [60, 55, 44], density: medium }
+  - { type: young_tree, scatter_inside: [60, 55, 40], count: 10 }        # mato tomou os terraços
+  # NENHUM animal, ninho, rastro de caça ou pasto.
+
+features:
+  - id: pedra_que_escorre
+    type: basalt_outcrop
+    at: [90, 50]
+    size: [9, 6.5]
+    rot: 15
+    smooth_side: west               # preto e liso de um lado
+    cracked_side: east              # rachado do outro
+    water: { from: [91.5, 49.5], trickle_to: [84, 56], width_m: 0.25, wet_glow: subtle }
+    moss_ground: { radius: 4.5, color: vivid_green, always_wet: true }
+  - id: trilha_unica
+    type: footpath_faint
+    path: [[0, 62], [18, 58], [34, 60], [50, 54], [66, 52], [80, 50], [86, 50]]
+    width_m: 0.6                    # caminho de UMA pessoa, ida e volta, muitas vezes
+  - { type: drag_marks, path: [[64, 52.5], [80, 50.2], [86, 50.4]], intensity: subtle }
+  - { type: footprints_bare, path: [[78, 50.5], [86.5, 50.6]], intensity: subtle }
+
+variants:
+  - id: fenda_aberta               # a partir de 05/10
+    add:
+      - { type: rock_fissure, at: [94.5, 48.5], size: [1.5, 3.2], rot: 15, inner: dark_descending, warm_air_haze: subtle }

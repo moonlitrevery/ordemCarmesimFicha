@@ -9,7 +9,8 @@ const src = path.join(__dirname, "src");
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
-  eslint: { ignoreDuringBuilds: false },
+  // maps/ é o gerador de mapas (Node): entra no lint junto com o site.
+  eslint: { ignoreDuringBuilds: false, dirs: ['src', 'maps'] },
   pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
   experimental: {
     // Lido com fs pela rota: sem isso o manifest não vai para a função da Vercel.

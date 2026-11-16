@@ -1,0 +1,14 @@
+{
+  "id": "trocchia-praca",
+  "title": "Trocchia — a praça e a fonte",
+  "variant": null,
+  "seed": 3580542150,
+  "size_m": [
+    40,
+    32
+  ],
+  "px_per_m": 80,
+  "meters_per_px": 0.0125,
+  "width": 3200,
+  "height": 2560
+}

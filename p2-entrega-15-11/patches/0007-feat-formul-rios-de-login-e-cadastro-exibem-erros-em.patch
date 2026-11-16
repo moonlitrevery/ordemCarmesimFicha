@@ -1,0 +1,66 @@
+From 50c93ae101606c3553b99aca59c02b3c36b3572c Mon Sep 17 00:00:00 2001
+From: moonlitrevery <superjoaovitor@gmail.com>
+Date: Sun, 15 Nov 2026 22:37:30 -0300
+Subject: [PATCH 7/9] =?UTF-8?q?feat:=20formul=C3=A1rios=20de=20login=20e?=
+ =?UTF-8?q?=20cadastro=20exibem=20erros=20em=20portugu=C3=AAs=20(OBS-01)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+LoginForm e SignupForm passam a usar translateAuthError. Corrige a
+mensagem em inglês observada no CT-04.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AcqLqFvmo7Uwcr37XkFG3N
+---
+ src/components/auth/LoginForm.tsx  | 5 ++---
+ src/components/auth/SignupForm.tsx | 3 ++-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/components/auth/LoginForm.tsx b/src/components/auth/LoginForm.tsx
+index 234682e..884ade9 100644
+--- a/src/components/auth/LoginForm.tsx
++++ b/src/components/auth/LoginForm.tsx
+@@ -4,6 +4,7 @@ import Link from 'next/link';
+ import { useRouter, useSearchParams } from 'next/navigation';
+ import { FormEvent, useState, useEffect } from 'react';
+ import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
++import { translateAuthError } from '@/lib/auth-errors';
+ 
+ export function LoginForm() {
+   const router = useRouter();
+@@ -31,9 +32,7 @@ export function LoginForm() {
+     });
+     setLoading(false);
+     if (err) {
+-      setError(err.message === 'Invalid login credentials'
+-        ? 'E-mail ou senha inválidos.'
+-        : err.message);
++      setError(translateAuthError(err.message));
+       return;
+     }
+     router.push(next);
+diff --git a/src/components/auth/SignupForm.tsx b/src/components/auth/SignupForm.tsx
+index ba50c4a..bdf2b53 100644
+--- a/src/components/auth/SignupForm.tsx
++++ b/src/components/auth/SignupForm.tsx
+@@ -4,6 +4,7 @@ import Link from 'next/link';
+ import { useRouter } from 'next/navigation';
+ import { FormEvent, useState, useEffect } from 'react';
+ import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
++import { translateAuthError } from '@/lib/auth-errors';
+ 
+ export function SignupForm() {
+   const router = useRouter();
+@@ -33,7 +34,7 @@ export function SignupForm() {
+     });
+     setLoading(false);
+     if (err) {
+-      setError(err.message);
++      setError(translateAuthError(err.message));
+       return;
+     }
+     router.push('/fichas');
+-- 
+2.43.0
+

@@ -1,0 +1,49 @@
+id: trocchia-praca
+title: Trocchia — a praça e a fonte
+visibility: mestra
+size_m: [40, 32]
+px_per_m: 80          # ~3200×2560
+sun: { azimuth_deg: 135, elevation_deg: 40 }
+
+ground:
+  - { rect: [0, 0, 40, 32], material: cobblestone_basalt_irregular }
+  - { rect: [8, 8, 32, 24], material: cobblestone_basalt_irregular, tint: lighter }   # a praça propriamente dita
+  - { polygon: [[0, 25], [9, 24], [14, 32], [0, 32]], material: asphalt_patched }      # rua principal subindo do sudoeste
+  - { rect: [18, 0, 23, 8], material: asphalt_patched }                                # rua continua ao norte (capela)
+  - { rect: [32, 14, 40, 18], material: cobblestone_basalt_irregular }                 # rua leste
+  - { rect: [0, 12, 8, 16], material: cobblestone_basalt_irregular }                   # rua oeste
+
+buildings:   # vistos de cima: SÓ TELHADO (interior fica no mapa próprio)
+  - { id: pousada,     footprint: [[0, 16.5], [8, 16.5], [8, 24], [0, 24.5]], roof: { material: terracotta_roof_old, patch: blue_tarp } }
+  - { id: carabinieri, footprint: [[32, 2], [40, 2], [40, 13], [32, 13]], roof: { material: terracotta_roof_old }, floors: 1 }
+  - { id: mercadinho,  footprint: [[23.5, 0], [32, 0], [32, 7.5], [23.5, 7.5]], roof: { material: terracotta_roof_old } }
+  - { id: casa_no,     footprint: [[0, 0], [17.5, 0], [17.5, 7.5], [0, 7.5]], roof: { material: terracotta_roof_old, patch: blue_tarp } }
+  - { id: casa_o,      footprint: [[0, 7.8], [7.5, 7.8], [7.5, 11.5], [0, 11.5]], roof: { material: terracotta_roof_old } }
+  - { id: casa_se,     footprint: [[32.5, 18.5], [40, 18.5], [40, 32], [15, 32], [15, 24.5], [32.5, 24.5]], roof: { material: terracotta_roof_old } }
+  - { id: casa_e,      footprint: [[32.5, 13.3], [40, 13.3], [40, 13.8], [32.5, 13.8]], roof: { material: terracotta_roof_old } }  # muro/beiral
+
+props:
+  - { type: fountain_volcanic_stone, at: [20, 16], basin_radius: 1.7, moss: heavy, drip: true }
+  - { type: bench_stone_wood, at: [14.5, 12.5], rot: 0 }
+  - { type: bench_stone_wood, at: [25.5, 12.5], rot: 0 }
+  - { type: bench_stone_wood, at: [14.5, 19.8], rot: 180 }
+  - { type: bench_stone_wood, at: [25.5, 19.8], rot: 180 }
+  - { type: lamp_post_iron, at: [8.6, 8.6] }
+  - { type: lamp_post_iron, at: [31.4, 8.6] }
+  - { type: lamp_post_iron, at: [8.6, 23.4] }
+  - { type: lamp_post_iron, at: [31.4, 23.4] }
+  - { type: missing_posters, on: lamp_post, at: [8.6, 23.4], count: 3 }    # papel, sem texto legível
+  - { type: missing_posters, on: lamp_post, at: [31.4, 8.6], count: 2 }
+  - { type: police_car_small, at: [30.2, 10.5], rot: 90 }                  # Fiat Panda dos Carabinieri (sem logotipo legível)
+  - { type: door_marker, at: [32, 8], note: "porta do posto" }
+  - { type: fruit_crates, area: [24, 7.6, 31, 8.6], count: 6 }             # na calçada do mercadinho
+  - { type: scooter, at: [11, 25.5], rot: 30 }
+  - { type: scooter, at: [22.5, 4.5], rot: 90 }
+  - { type: clothesline_across_street, from: [17.5, 3.5], to: [23.5, 3.5] }
+  - { type: clothesline_across_street, from: [0, 14.5], to: [7.5, 14.5] }
+  - { type: dog_tied, at: [7.8, 10.5] }
+  - { type: dog_tied, at: [33, 17] }
+  - { type: bistro_table, at: [9.2, 18.5] }                                # mesinha na calçada da pousada
+  - { type: plastic_chair, at: [9.8, 19.2] }
+  - { type: potted_plants, along: [[8.2, 16.6], [8.2, 23.8]], count: 4 }
+  - { type: clutter_street, area: [0, 0, 40, 32], items: [cigarette_butts, leaves, pigeon_droppings, puddle_small], density: low }

@@ -1,0 +1,14 @@
+{
+  "id": "vale-san-giusto",
+  "title": "Vale de San Giusto e a pedra que escorre",
+  "variant": null,
+  "seed": 1178560929,
+  "size_m": [
+    120,
+    100
+  ],
+  "px_per_m": 32,
+  "meters_per_px": 0.03125,
+  "width": 3840,
+  "height": 3200
+}

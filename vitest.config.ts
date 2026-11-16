@@ -8,6 +8,6 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, 'src') },
   },
   test: {
-    include: ['src/**/*.test.ts', 'supabase/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'supabase/**/*.test.ts', 'maps/**/*.test.ts'],
   },
 });

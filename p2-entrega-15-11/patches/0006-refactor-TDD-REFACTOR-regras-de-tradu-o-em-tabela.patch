@@ -1,0 +1,68 @@
+From 188d5d6ab9653d42727d1b6979188756233259a4 Mon Sep 17 00:00:00 2001
+From: moonlitrevery <superjoaovitor@gmail.com>
+Date: Sun, 15 Nov 2026 22:36:56 -0300
+Subject: [PATCH 6/9] =?UTF-8?q?refactor(TDD-REFACTOR):=20regras=20de=20tra?=
+ =?UTF-8?q?du=C3=A7=C3=A3o=20em=20tabela?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Troca a cadeia de ifs por uma lista de regras (regex → texto), sem mudar o
+comportamento: os 6 testes continuam passando.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AcqLqFvmo7Uwcr37XkFG3N
+---
+ src/lib/auth-errors.ts | 39 +++++++++++++++++++++++++--------------
+ 1 file changed, 25 insertions(+), 14 deletions(-)
+
+diff --git a/src/lib/auth-errors.ts b/src/lib/auth-errors.ts
+index f38ea9a..d259656 100644
+--- a/src/lib/auth-errors.ts
++++ b/src/lib/auth-errors.ts
+@@ -1,17 +1,28 @@
+-/** Traduz mensagens do Supabase Auth para o usuário (pt-BR). */
++/**
++ * Mensagens do Supabase Auth traduzidas para o usuário (pt-BR).
++ * Cada regra casa a mensagem original e devolve o texto exibido na tela.
++ */
++type Rule = { match: RegExp; text: (m: RegExpMatchArray) => string };
++
++const RULES: Rule[] = [
++  { match: /^Invalid login credentials$/, text: () => 'E-mail ou senha inválidos.' },
++  {
++    match: /^Password should be at least (\d+) characters/,
++    text: ([, min]) => `A senha deve ter pelo menos ${min} caracteres.`,
++  },
++  { match: /^User already registered$/, text: () => 'Este e-mail já está cadastrado.' },
++  {
++    match: /^Email rate limit exceeded$/,
++    text: () => 'Muitas tentativas em pouco tempo. Aguarde e tente de novo.',
++  },
++];
++
++const FALLBACK = 'Não foi possível concluir. Tente de novo.';
++
+ export function translateAuthError(message: string): string {
+-  if (message === 'Invalid login credentials') {
+-    return 'E-mail ou senha inválidos.';
++  for (const rule of RULES) {
++    const m = message.match(rule.match);
++    if (m) return rule.text(m);
+   }
+-  const minimo = message.match(/^Password should be at least (\d+) characters/);
+-  if (minimo) {
+-    return `A senha deve ter pelo menos ${minimo[1]} caracteres.`;
+-  }
+-  if (message === 'User already registered') {
+-    return 'Este e-mail já está cadastrado.';
+-  }
+-  if (message === 'Email rate limit exceeded') {
+-    return 'Muitas tentativas em pouco tempo. Aguarde e tente de novo.';
+-  }
+-  return 'Não foi possível concluir. Tente de novo.';
++  return FALLBACK;
+ }
+-- 
+2.43.0
+

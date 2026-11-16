@@ -31,6 +31,8 @@ export interface Asset {
   visibility: AssetVisibility;
   uploaded_by: string | null;
   created_at: string;
+  /** Só mapa fixo do gerador (maps/): escala conhecida, a régua já sai calibrada. */
+  meters_per_px?: number | null;
 }
 
 export const ASSET_KIND_LABELS: Record<AssetKind, string> = {

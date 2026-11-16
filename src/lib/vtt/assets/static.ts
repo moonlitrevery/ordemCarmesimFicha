@@ -24,6 +24,8 @@ export interface StaticManifestItem {
   duration_s: number | null;
   /** Só áudio: as subpastas. Manifest antigo não tem. */
   tags?: string[];
+  /** Mapa do gerador (maps/): metros por pixel, do <arquivo>.meta.json. */
+  meters_per_px?: number;
 }
 
 export function staticItemToAsset(item: StaticManifestItem): Asset {
@@ -44,7 +46,17 @@ export function staticItemToAsset(item: StaticManifestItem): Asset {
     visibility: item.visibility,
     uploaded_by: null,
     created_at: '1970-01-01T00:00:00.000Z',
+    meters_per_px: item.meters_per_px ?? null,
   };
+}
+
+/**
+ * Calibração que um mapa traz de fábrica (só os do gerador). Valor fora do que a
+ * régua aceita vira nulo: a cena nasce sem calibrar, como antes.
+ */
+export function presetMetersPerPx(map: Pick<Asset, 'meters_per_px'> | null | undefined): number | null {
+  const value = map?.meters_per_px;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 100 ? value : null;
 }
 
 /** Jogador vê o que foi liberado e o que a mestra pôs numa cena que ele vê. */

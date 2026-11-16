@@ -6,6 +6,10 @@
     "dev": "node scripts/patch-next-realpath.mjs && node scripts/copy-pdf-worker.mjs && next dev",
     "build": "node scripts/patch-next-realpath.mjs && node scripts/copy-pdf-worker.mjs && node scripts/vtt-manifest.mjs && next build",
     "vtt:manifest": "node scripts/vtt-manifest.mjs",
+    "maps:assets": "node scripts/maps-assets.mjs",
+    "maps:build": "tsx maps/src/cli.ts build",
+    "maps:watch": "tsx maps/src/cli.ts watch",
+    "maps:preview": "tsx maps/src/cli.ts preview",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
@@ -34,6 +38,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.14",
+    "@napi-rs/canvas": "^0.1.100",
     "@next/bundle-analyzer": "^14.2.35",
     "@tailwindcss/typography": "^0.5.20",
     "@types/howler": "^2.2.13",
@@ -47,7 +52,10 @@
     "postcss": "^8",
     "sharp": "^0.35.5",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "yaml": "^2.9.1",
+    "zod": "^4.1.11"
   }
 }
