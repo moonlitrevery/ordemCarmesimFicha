@@ -1,0 +1,104 @@
+name: CI — testes
+
+# Gatilhos: todo push e toda pull request (seção 9.15 do manual da P2).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-integration:
+    name: Unitários e integração (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar os testes
+        run: npx vitest run --reporter=verbose --reporter=junit --outputFile.junit=report/junit.xml
+
+      - name: Publicar o resultado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-vitest
+          path: report/junit.xml
+
+  e2e:
+    name: Sistema/interface (Playwright) e API (Postman/newman)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: unit-integration
+    # Só roda quando os secrets de teste existem (Settings → Secrets → Actions).
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+      BASE_URL: http://localhost:3000
+    steps:
+      - name: Conferir secrets
+        id: secrets
+        run: |
+          if [ -n "$TEST_USER_EMAIL" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Secrets de teste ausentes; E2E e API não rodaram."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ok == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.secrets.outputs.ok == 'true'
+
+      - name: Subir a aplicação
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          npm ci
+          npm run build
+          npx next start -p 3000 &
+          npx --yes wait-on http://localhost:3000 --timeout 120000
+
+      - name: Playwright (pytest)
+        if: steps.secrets.outputs.ok == 'true'
+        working-directory: tests/e2e
+        run: |
+          uv sync
+          uv run playwright install --with-deps chromium
+          uv run pytest test_autenticacao.py -v -k "not cadastro_com_dados_validos" --junitxml=../../report/e2e.xml
+
+      - name: Postman (newman)
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          npx --yes newman run tests/api/ordem-carmesim.postman_collection.json \
+            --folder "Fichas e autenticação" \
+            --env-var "supabase_url=$NEXT_PUBLIC_SUPABASE_URL" \
+            --env-var "anon_key=$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+            --env-var "test_email=$TEST_USER_EMAIL" \
+            --env-var "test_password=$TEST_USER_PASSWORD" \
+            --reporters cli,junit --reporter-junit-export report/newman.xml
+
+      - name: Publicar o resultado
+        if: always() && steps.secrets.outputs.ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-e2e-api
+          path: report/
