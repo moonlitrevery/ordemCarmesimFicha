@@ -6,6 +6,11 @@ name: Qualidade — SonarQube
 # no commit final, para comparar (seção 9.16 do manual da P2).
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit ou branch a analisar (vazio = o próprio branch)'
+        required: false
+        default: ''
 
 jobs:
   sonarqube:
@@ -20,6 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -74,5 +80,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sonarqube-${{ github.sha }}
+          name: sonarqube-${{ inputs.ref || github.sha }}
           path: sonarqube-*.json
