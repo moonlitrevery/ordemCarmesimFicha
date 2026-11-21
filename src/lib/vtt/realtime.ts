@@ -117,3 +117,70 @@ export function joinTableChannel(
     },
   };
 }
+
+// ---------- Névoa (Fase 11) ----------
+
+/** No canal `nevoa:{mesa}`, que o Realtime só deixa a mestra escrever (migração 024). */
+export type FogEvent =
+  /** Recorte de células mudado pela mestra. Transitório: quem recebe aplica na hora. */
+  | { type: 'fog:patch'; sceneId: string; patch: unknown }
+  /** A máscara foi gravada (ou ligada/desligada): quem recebe relê o banco. */
+  | { type: 'fog:saved'; sceneId: string };
+
+export interface FogChannel {
+  emit: (event: FogEvent) => void;
+  leave: () => void;
+}
+
+/**
+ * Canal à parte, sem presença: a política de escrita de `realtime.messages` recusa
+ * envio de quem não é a mestra da mesa, então ninguém forja `fog:patch`. O payload
+ * nunca diz quem enviou; quem garante é o servidor.
+ */
+export function joinFogChannel(
+  supabase: SupabaseClient,
+  tableId: string,
+  onEvent: (event: FogEvent) => void,
+  onSubscribed: () => void
+): FogChannel {
+  const topic = `nevoa:${tableId}`;
+  let channel: RealtimeChannel | null = null;
+  let left = false;
+
+  async function start() {
+    await pendingLeaves.get(topic);
+    await supabase.realtime.setAuth();
+    if (left) return;
+    const next = supabase.channel(topic, { config: { private: true } });
+    channel = next;
+    next
+      .on('broadcast', { event: BROADCAST_EVENT }, ({ payload }) => {
+        const event = payload as FogEvent | null;
+        if (event && (event.type === 'fog:patch' || event.type === 'fog:saved')) onEvent(event);
+      })
+      .subscribe((status) => {
+        if (!left && status === 'SUBSCRIBED') onSubscribed();
+      });
+  }
+
+  void start().catch(() => undefined);
+
+  return {
+    emit(event) {
+      void channel?.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: event });
+    },
+    leave() {
+      left = true;
+      const current = channel;
+      if (!current) return;
+      const leaving = supabase
+        .removeChannel(current)
+        .catch(() => undefined)
+        .then(() => {
+          if (supabase.realtime.getChannels().includes(current)) current.teardown();
+          if (pendingLeaves.get(topic) === leaving) pendingLeaves.delete(topic);
+        });
+      pendingLeaves.set(topic, leaving);
+    },
+  };
+}

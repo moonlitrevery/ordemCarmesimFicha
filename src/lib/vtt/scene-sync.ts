@@ -275,6 +275,7 @@ export class SceneSync {
     if (!scene) {
       this.transition.reveal();
       this.clearHistory();
+      store().fogSync?.clear();
       useVttStore.setState({
         viewedSceneId: null,
         objects: {},
@@ -309,6 +310,8 @@ export class SceneSync {
 
     const changedScene = store().viewedSceneId !== scene.id;
     if (changedScene) this.clearHistory();
+    // Antes dos objetos: o que está sob a névoa já nasce escondido.
+    store().fogSync?.adopt(scene.id, bundle.fog);
     if (!swapping) this.transition.reveal();
     // O que está na mão (arrastando) fica como está na tela, não como veio do banco.
     const held: Record<string, SceneObject> = {};
@@ -1452,6 +1455,17 @@ export class SceneSync {
     this.publishHistory();
   }
 
+  /** Traço de névoa (`FogSync`): entra na mesma pilha do Ctrl+Z. */
+  recordHistory(command: HistoryCommand) {
+    this.record(command);
+  }
+
+  /** Névoa desligada ou religada: os traços antigos dela saem da pilha. */
+  dropFogHistory(sceneId: string) {
+    this.history.removeWhere((command) => command.type === 'fog' && command.sceneId === sceneId);
+    this.publishHistory();
+  }
+
   private publishHistory() {
     useVttStore.setState({
       canUndo: this.history.canUndo,
@@ -1534,6 +1548,8 @@ export class SceneSync {
         if (!state.drawings[command.drawing.id]) return 'skipped';
         return (await this.removeDrawing(command.drawing)) ? 'applied' : 'failed';
       }
+      case 'fog':
+        return state.fogSync?.applyRegion(command.sceneId, command.after) ?? 'skipped';
       case 'batch': {
         // Só patches (mover, girar, ocultar um grupo): uma gravação para todos.
         if (command.commands.length > 1 && command.commands.every((step) => step.type === 'patch')) {

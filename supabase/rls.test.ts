@@ -1270,3 +1270,57 @@ describe('seleção múltipla (migração 023)', () => {
     await db.exec(readSql('migrations', '023_vtt_batch_patch.sql'));
   });
 });
+
+describe('névoa (migração 024)', () => {
+  const FOG = { v: 1, w: 4, h: 2, bits: '/w==' };
+  const update = `update public.scenes set fog = $1::jsonb where id = $2 returning fog`;
+
+  it('só a mestra grava, todo mundo da página lê, e o formato é conferido', async () => {
+    expect(await asUser(PLAYER, update, [JSON.stringify(FOG), defaultScene])).toEqual([]);
+    expect(await asUser(GM, update, [JSON.stringify(FOG), defaultScene])).toEqual([{ fog: FOG }]);
+    expect(await asUser(PLAYER, `select fog from public.scenes where id = $1`, [defaultScene])).toEqual([
+      { fog: FOG },
+    ]);
+    for (const bad of [
+      { ...FOG, v: 2 },
+      { ...FOG, w: 0 },
+      { ...FOG, w: 2000 },
+      { ...FOG, w: 1.5 },
+      { ...FOG, bits: 'AAAA' },
+      { ...FOG, bits: '%%==' },
+      { w: 4, h: 2, bits: '/w==' },
+      [1, 2],
+    ]) {
+      await expect(asUser(GM, update, [JSON.stringify(bad), defaultScene])).rejects.toThrow(/scenes_fog_check/);
+    }
+    // Desligar é gravar nula.
+    expect(await asUser(GM, update, [null, otherScene])).toEqual([{ fog: null }]);
+  });
+
+  it('duplicar a página leva a névoa junto', async () => {
+    const [{ duplicate_scene: copy }] = await asUser<{ duplicate_scene: string }>(
+      GM,
+      `select public.duplicate_scene($1)`,
+      [defaultScene]
+    );
+    expect(await asUser(GM, `select fog from public.scenes where id = $1`, [copy])).toEqual([{ fog: FOG }]);
+    await asUser(GM, `delete from public.scenes where id = $1`, [copy]);
+  });
+
+  it('canal nevoa: membro lê, só a mestra escreve; o da mesa não mudou', async () => {
+    const check = `select public.can_access_table_topic($1) as can_read, public.can_write_table_topic($1) as can_write`;
+    const fogTopic = `nevoa:${openTable}`;
+    const tableTopic = `mesa:${openTable}`;
+    expect(await asUser(GM, check, [fogTopic])).toEqual([{ can_read: true, can_write: true }]);
+    expect(await asUser(PLAYER, check, [fogTopic])).toEqual([{ can_read: true, can_write: false }]);
+    expect(await asUser(SPECTATOR, check, [fogTopic])).toEqual([{ can_read: true, can_write: false }]);
+    expect(await asUser(OUTSIDER, check, [fogTopic])).toEqual([{ can_read: false, can_write: false }]);
+    expect(await asUser(PLAYER, check, [tableTopic])).toEqual([{ can_read: true, can_write: true }]);
+    expect(await asUser(PLAYER, check, ['nevoa:nao-e-uuid'])).toEqual([{ can_read: false, can_write: false }]);
+  });
+
+  it('a migração roda de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '024_vtt_fog.sql'));
+    expect(await asUser(PLAYER, update, [JSON.stringify(FOG), defaultScene])).toEqual([]);
+  });
+});

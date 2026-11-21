@@ -1,4 +1,5 @@
 import type { ObjectPatch } from './scene-rules';
+import type { FogRegion } from './fog/mask';
 import type { Drawing, SceneObject } from './types';
 
 export const HISTORY_LIMIT = 20;
@@ -13,6 +14,8 @@ export type HistoryCommand =
   | { type: 'remove'; row: SceneObject }
   | { type: 'draw-add'; drawing: Drawing }
   | { type: 'draw-remove'; drawing: Drawing }
+  /** Um traço de névoa (Fase 11): o mesmo recorte de células antes e depois. */
+  | { type: 'fog'; sceneId: string; before: FogRegion; after: FogRegion }
   | { type: 'batch'; commands: HistoryCommand[] };
 
 export function invertCommand(command: HistoryCommand): HistoryCommand {
@@ -32,6 +35,8 @@ export function invertCommand(command: HistoryCommand): HistoryCommand {
       return { type: 'draw-remove', drawing: command.drawing };
     case 'draw-remove':
       return { type: 'draw-add', drawing: command.drawing };
+    case 'fog':
+      return { type: 'fog', sceneId: command.sceneId, before: command.after, after: command.before };
     case 'batch':
       // Ordem contrária: quem foi feito por último é desfeito primeiro.
       return {
@@ -99,5 +104,11 @@ export class HistoryStack {
   clear() {
     this.undoSteps = [];
     this.redoSteps = [];
+  }
+
+  /** Tira os passos que já não fazem sentido (névoa desligada), mantendo o resto. */
+  removeWhere(test: (command: HistoryCommand) => boolean) {
+    this.undoSteps = this.undoSteps.filter((command) => !test(command));
+    this.redoSteps = this.redoSteps.filter((command) => !test(command));
   }
 }

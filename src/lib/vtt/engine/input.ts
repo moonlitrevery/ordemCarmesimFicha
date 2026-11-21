@@ -1,3 +1,4 @@
+import { fillPolygon, fillRect, stampCircle, stampSegment } from '../fog/mask';
 import { distanceToStroke, simplifyToLimit } from '../geometry';
 import {
   canEditObjects,
@@ -14,7 +15,7 @@ import {
   selectionLimitMessage,
   toggleInSelection,
 } from '../selection';
-import { personColor, soleSelectedId, useVttStore } from '../store';
+import { FOG_BRUSH_MAX, FOG_BRUSH_MIN, personColor, soleSelectedId, useVttStore } from '../store';
 import type { SceneObject } from '../types';
 import { snapAngle, type Point } from '../transform';
 import { pinch, zoomAt } from './camera';
@@ -34,6 +35,11 @@ const MAX_LIVE_POINTS = 12000;
 const ERASER_RADIUS_PX = 10;
 const MAX_STROKE_WIDTH = 200;
 const CONDITION_TIP_MS = 2500;
+/** `[` e `]`: o pincel cresce ou diminui um quarto. */
+const FOG_BRUSH_STEP = 1.25;
+/** Clicar perto do primeiro ponto fecha o polígono; perto do último, é o duplo clique. */
+const POLY_CLOSE_PX = 10;
+const POLY_DUPLICATE_PX = 4;
 
 /** Não há cursor nativo de girar: uma seta curva em SVG, com `grab` de reserva. */
 const ROTATE_CURSOR =
@@ -90,7 +96,11 @@ type Gesture =
       active: boolean;
     }
   /** Toque no vazio: segurar vira caixa de seleção; soltar sem mexer limpa a seleção. */
-  | { kind: 'tap-empty'; world: Point };
+  | { kind: 'tap-empty'; world: Point }
+  /** Pincel de névoa: `last` em células, para emendar o traço sem buraco. */
+  | { kind: 'fog-brush'; last: Point; value: 0 | 1 }
+  /** Retângulo de névoa, em coordenadas do mundo. */
+  | { kind: 'fog-rect'; x1: number; y1: number; x2: number; y2: number; value: 0 | 1 };
 
 function store() {
   return useVttStore.getState();
@@ -121,6 +131,8 @@ export class EngineInput {
   /** Hover: no máximo um hit-test por quadro, nunca um por evento de mouse. */
   private hoverAt: Point | null = null;
   private hoverRaf = 0;
+  /** Polígono de névoa em andamento: um ponto por clique, até fechar. */
+  private fogPoly: { points: Point[]; value: 0 | 1 } | null = null;
 
   constructor(
     private engine: VttEngine,
@@ -152,6 +164,8 @@ export class EngineInput {
       engine.setHover(null);
       engine.revealCaption(null);
       this.showConditionTip(null, { x: 0, y: 0 });
+      // O círculo do pincel não fica parado na borda; polígono pela metade fica.
+      if (this.gesture.kind === 'none' && !this.fogPoly) engine.setFogPreview(null);
     });
     listen('wheel', (e) => this.onWheel(e), { passive: false });
     listen('dblclick', (e) => this.onDoubleClick(e));
@@ -174,6 +188,15 @@ export class EngineInput {
         ) {
           this.engine.setHover(null);
           this.updateCursor();
+        }
+        // Saiu da névoa, trocou de formato ou a página perdeu a névoa: o polígono pela metade some.
+        if (
+          state.tool !== prev.tool ||
+          state.fogShape !== prev.fogShape ||
+          state.fogOn !== prev.fogOn ||
+          state.viewedSceneId !== prev.viewedSceneId
+        ) {
+          this.cancelFog();
         }
       })
     );
@@ -239,6 +262,13 @@ export class EngineInput {
     }
 
     const world = this.engine.toWorld(at.x, at.y);
+
+    // Névoa antes do Alt+clique (ping): com ela, o Alt troca revelar por cobrir.
+    if (store().tool === 'fog') {
+      this.engine.setHover(null);
+      this.startFog(world, event.altKey);
+      return;
+    }
 
     if (event.altKey) {
       store().sync?.ping(world.x, world.y);
@@ -568,6 +598,21 @@ export class EngineInput {
         gesture.y2 = world.y;
         this.showRuler(gesture);
         return;
+      case 'fog-brush':
+        this.moveFogBrush(gesture, world);
+        return;
+      case 'fog-rect':
+        gesture.x2 = world.x;
+        gesture.y2 = world.y;
+        this.engine.setFogPreview({
+          kind: 'rect',
+          x0: gesture.x1,
+          y0: gesture.y1,
+          x1: gesture.x2,
+          y1: gesture.y2,
+          reveal: gesture.value === 1,
+        });
+        return;
       case 'marquee':
         gesture.x2 = world.x;
         gesture.y2 = world.y;
@@ -598,6 +643,10 @@ export class EngineInput {
    * hover, dica de condição e, para a mestra, legenda ofuscada.
    */
   private hover(at: Point) {
+    if (store().tool === 'fog') {
+      this.fogHover(at);
+      return;
+    }
     this.showConditionTip(this.engine.conditionAt(at.x, at.y), at);
     const state = store();
     const world = this.engine.toWorld(at.x, at.y);
@@ -754,7 +803,8 @@ export class EngineInput {
       return;
     }
 
-    if (event.pointerType === 'touch' && at) this.registerTap(at);
+    // Com a névoa, dois toques seguidos são dois pontos do polígono, não "enquadrar".
+    if (event.pointerType === 'touch' && at && store().tool !== 'fog') this.registerTap(at);
 
     const { gesture } = this;
     this.gesture = { kind: 'none' };
@@ -795,6 +845,12 @@ export class EngineInput {
         this.select(mergeSelection(gesture.base, found));
         return;
       }
+      case 'fog-brush':
+        store().fogSync?.endStroke();
+        return;
+      case 'fog-rect':
+        this.finishFogRect(gesture);
+        return;
       case 'tap-empty':
         if (at && Math.hypot(at.x - this.downAt.x, at.y - this.downAt.y) <= TAP_SLOP_PX) {
           if (store().selectedIds.length > 0) useVttStore.setState({ selectedIds: [] });
@@ -879,6 +935,9 @@ export class EngineInput {
     }
     if (gesture.kind === 'marquee') this.engine.setMarquee(null);
     if (gesture.kind === 'stroke') this.engine.drawLiveStroke([], '#000000', 1);
+    // O que o pincel já pintou fica (e vira um passo); o retângulo não chega a valer.
+    if (gesture.kind === 'fog-brush') store().fogSync?.endStroke();
+    if (gesture.kind === 'fog-rect') this.engine.setFogPreview(null);
     if (gesture.kind === 'ruler' && me) {
       this.engine.showRuler(me.userId, '', null);
       if (!store().calibrating) sync?.emitRuler(null);
@@ -927,6 +986,10 @@ export class EngineInput {
   }
 
   private onDoubleClick(event: MouseEvent) {
+    if (store().tool === 'fog') {
+      this.closeFogPoly();
+      return;
+    }
     if (store().tool !== 'select') return;
     const at = this.screen(event);
     const world = this.engine.toWorld(at.x, at.y);
@@ -969,6 +1032,7 @@ export class EngineInput {
       return;
     }
     const { selectedIds, sync } = store();
+    if (this.onFogKey(event)) return;
     if (this.onHistoryKey(event)) return;
     if (this.onSelectAllKey(event)) return;
     if (this.onClipboardKey(event)) return;
@@ -1003,6 +1067,166 @@ export class EngineInput {
     }
   }
 
+  // ---------- Névoa (Fase 11, só a mestra) ----------
+
+  private canFog(): boolean {
+    const { me, fogSync } = store();
+    return me?.role === 'mestre' && Boolean(fogSync?.mask);
+  }
+
+  /** Alt segurado inverte: revelar vira cobrir e vice-versa. */
+  private fogValue(alt: boolean): 0 | 1 {
+    return (store().fogMode === 'reveal') !== alt ? 1 : 0;
+  }
+
+  /** Raio do pincel em células: o tamanho é de tela, como a espessura do desenho. */
+  private brushCells(): number {
+    return (store().fogBrush / 2 / this.engine.camera.zoom) * this.engine.fogCellsPerWorld();
+  }
+
+  private startFog(world: Point, alt: boolean) {
+    if (!this.canFog()) return;
+    const value = this.fogValue(alt);
+    const state = store();
+    if (state.fogShape === 'brush') {
+      const cell = this.engine.fogCell(world.x, world.y);
+      const fog = state.fogSync;
+      if (!cell || !fog) return;
+      fog.beginStroke();
+      const r = this.brushCells();
+      fog.edit((mask) => stampCircle(mask, cell.x, cell.y, r, value));
+      this.gesture = { kind: 'fog-brush', last: cell, value };
+      this.previewBrush(world, value);
+      return;
+    }
+    if (state.fogShape === 'rect') {
+      this.gesture = { kind: 'fog-rect', x1: world.x, y1: world.y, x2: world.x, y2: world.y, value };
+      return;
+    }
+    this.addFogPoint(world, value);
+  }
+
+  private moveFogBrush(gesture: Extract<Gesture, { kind: 'fog-brush' }>, world: Point) {
+    const cell = this.engine.fogCell(world.x, world.y);
+    if (!cell) return;
+    const r = this.brushCells();
+    const { last, value } = gesture;
+    store().fogSync?.edit((mask) => stampSegment(mask, last.x, last.y, cell.x, cell.y, r, value));
+    gesture.last = cell;
+    this.previewBrush(world, value);
+  }
+
+  private previewBrush(world: Point, value: 0 | 1) {
+    this.engine.setFogPreview({
+      kind: 'circle',
+      x: world.x,
+      y: world.y,
+      r: store().fogBrush / 2 / this.engine.camera.zoom,
+      reveal: value === 1,
+    });
+  }
+
+  private finishFogRect(gesture: Extract<Gesture, { kind: 'fog-rect' }>) {
+    this.engine.setFogPreview(null);
+    const a = this.engine.fogCell(gesture.x1, gesture.y1);
+    const b = this.engine.fogCell(gesture.x2, gesture.y2);
+    const fog = store().fogSync;
+    if (!a || !b || !fog) return;
+    fog.beginStroke();
+    fog.edit((mask) => fillRect(mask, a.x, a.y, b.x, b.y, gesture.value));
+    fog.endStroke();
+  }
+
+  private addFogPoint(world: Point, value: 0 | 1) {
+    const poly = this.fogPoly ?? { points: [], value };
+    this.fogPoly = poly;
+    const zoom = this.engine.camera.zoom;
+    const screenDistance = (point: Point) => Math.hypot(point.x - world.x, point.y - world.y) * zoom;
+    const first = poly.points[0];
+    const last = poly.points[poly.points.length - 1];
+    if (first && poly.points.length >= 3 && screenDistance(first) <= POLY_CLOSE_PX * this.engine.handleScale) {
+      this.closeFogPoly();
+      return;
+    }
+    // O duplo clique passa duas vezes aqui no mesmo lugar.
+    if (last && screenDistance(last) <= POLY_DUPLICATE_PX) return;
+    poly.points.push(world);
+    this.previewPoly(world);
+  }
+
+  private previewPoly(cursor: Point | null) {
+    const poly = this.fogPoly;
+    if (!poly) return;
+    this.engine.setFogPreview({ kind: 'poly', points: poly.points, cursor, reveal: poly.value === 1 });
+  }
+
+  /** Duplo clique, Enter ou clique no primeiro ponto. Menos de 3 pontos não faz nada. */
+  private closeFogPoly() {
+    const poly = this.fogPoly;
+    this.fogPoly = null;
+    this.engine.setFogPreview(null);
+    const fog = store().fogSync;
+    if (!poly || poly.points.length < 3 || !fog || !this.canFog()) return;
+    const cells = poly.points
+      .map((point) => this.engine.fogCell(point.x, point.y))
+      .filter((cell): cell is Point => cell !== null);
+    fog.beginStroke();
+    fog.edit((mask) => fillPolygon(mask, cells, poly.value));
+    fog.endStroke();
+  }
+
+  private cancelFog() {
+    if (this.gesture.kind === 'fog-brush' || this.gesture.kind === 'fog-rect') this.abortGesture();
+    this.fogPoly = null;
+    this.engine.setFogPreview(null);
+  }
+
+  /** Mouse parado com a névoa: o círculo do pincel ou a próxima aresta do polígono. */
+  private fogHover(at: Point) {
+    const world = this.engine.toWorld(at.x, at.y);
+    const state = store();
+    if (!this.canFog()) {
+      this.engine.setFogPreview(null);
+      return;
+    }
+    if (state.fogShape === 'brush') this.previewBrush(world, this.fogValue(false));
+    else if (state.fogShape === 'poly' && this.fogPoly) this.previewPoly(world);
+  }
+
+  /** `[` e `]` mudam o pincel; Enter fecha o polígono, Backspace tira o último ponto, Esc cancela. */
+  private onFogKey(event: KeyboardEvent): boolean {
+    const state = store();
+    if (state.tool !== 'fog' || event.ctrlKey || event.metaKey) return false;
+    if (event.key === '[' || event.key === ']') {
+      event.preventDefault();
+      const next = event.key === ']' ? state.fogBrush * FOG_BRUSH_STEP : state.fogBrush / FOG_BRUSH_STEP;
+      useVttStore.setState({
+        fogBrush: Math.round(Math.min(FOG_BRUSH_MAX, Math.max(FOG_BRUSH_MIN, next))),
+      });
+      if (this.hoverAt) this.fogHover(this.hoverAt);
+      return true;
+    }
+    if (!this.fogPoly) return false;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.closeFogPoly();
+      return true;
+    }
+    if (event.key === 'Backspace') {
+      event.preventDefault();
+      this.fogPoly.points.pop();
+      if (this.fogPoly.points.length === 0) this.cancelFog();
+      else this.previewPoly(this.hoverAt ? this.engine.toWorld(this.hoverAt.x, this.hoverAt.y) : null);
+      return true;
+    }
+    if (event.key === 'Escape') {
+      // Só o polígono: a seleção e o resto ficam para o próximo Esc.
+      this.cancelFog();
+      return true;
+    }
+    return false;
+  }
+
   /** Foco no mapa (ou em lugar nenhum): fora disso a tecla é da página. */
   private focusOnMap(event: KeyboardEvent): boolean {
     return event.target === this.canvas || event.target === document.body;
@@ -1013,7 +1237,8 @@ export class EngineInput {
     if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'a') return false;
     if (!this.canEdit() || !this.focusOnMap(event)) return false;
     event.preventDefault();
-    this.select(Object.keys(store().objects));
+    // O que está escondido na névoa não entra.
+    this.select(this.engine.selectableIds());
     if (store().tool !== 'select') useVttStore.setState({ tool: 'select' });
     return true;
   }

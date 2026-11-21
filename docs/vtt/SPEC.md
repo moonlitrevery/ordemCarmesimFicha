@@ -375,3 +375,79 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 ### Banco (migração 023)
 
 - Só a função `patch_scene_objects(jsonb) returns setof scene_objects`, `security invoker`, `execute` só para `authenticated`. Nenhuma política nem privilégio mudou. Testes em `supabase/rls.test.ts` ("seleção múltipla").
+
+## 15. Névoa de guerra (Fase 11)
+
+> Versão 2 do prompt 11, feita sobre a UI das fases 12 e 12b. A lanterna (cone que revela temporariamente) ficou para outra fase.
+
+### Ligar, desligar e duplicar
+
+- A névoa é **por página** e fica em `scenes.fog`, a coluna que existia desde a 010 sem uso. Nula = sem névoa. **Página nova nasce sem névoa.**
+- Interruptor "Névoa de guerra" nas **Configurações da página** (`FogSection`, em `pages/PageSettingsModal`). **Ligar grava a máscara toda coberta**, do tamanho do mapa da página (ou 2000 px, página em branco). **Desligar pede confirmação** e grava nula: o que foi revelado se perde. Os traços de névoa daquela página saem da pilha de desfazer (`SceneSync.dropFogHistory`).
+- Página que não está aberta: as Configurações só perguntam se há névoa (`select('fog_w:fog->w')`), sem baixar a máscara.
+- **Duplicar página copia a névoa**: `duplicate_scene` já copiava `fog`.
+- Trocar o mapa da página não mexe na máscara: ela se estica sobre o mapa novo.
+
+### Formato (`src/lib/vtt/fog/mask.ts`, funções puras com testes)
+
+- `{ v: 1, w, h, bits }`: grade de **1/8 do mapa** (`FOG_CELL_PX = 8`; 4096×2309 vira 512×289), lado de 1 a 1024. **1 bit por célula** (1 = revelado), em base64 com padding: no máximo ~43 KB, então cabe no jsonb e **não usa o Blob**.
+- Na memória é um `Uint8Array` de um byte por célula, **mutável**, no `FogSync`. Fica fora do store e do React; o store só tem `fogOn` e o contador `fogRev`.
+- **A névoa não entra em `fetchScenes`** (20 páginas seriam ~1 MB para a mestra). Ela vem em `fetchSceneBundle`, junto com objetos e desenhos, e `SceneSync.loadViewedScene` entrega a máscara ao `FogSync` **antes** de pôr os objetos no store. O jogador nunca vê a página descoberta por um quadro, nem um token que deveria estar escondido.
+- Pincel (`stampCircle`/`stampSegment`, carimbos a cada meio raio, sem buraco em traço rápido), retângulo (`fillRect`) e polígono (`fillPolygon`, varredura par-ímpar pelo centro da célula). Cada um devolve só o retângulo de células mudado.
+
+### Sincronia (`src/lib/vtt/fog/fog-sync.ts`)
+
+- **Canal próprio `nevoa:{mesa}`** (`joinFogChannel`, em `realtime.ts`), privado e sem presença. **Todo membro lê, só a mestra da mesa escreve**: a política `vtt_channel_write` de `realtime.messages` usa `can_write_table_topic`, que para `nevoa:` exige `is_table_gm`.
+  - O broadcast do Supabase não diz quem enviou, e um campo `userId` no payload seria forjável. Quem garante a origem é o servidor, que **recusa `fog:patch` de jogador**, então ninguém apaga nem revela a névoa na tela dos outros, nem por um instante. O canal `mesa:` não mudou.
+- `fog:patch {sceneId, patch: {x, y, w, h, bits}}`: o retângulo de células mudado, com **throttle de 50 ms** durante o traço e um envio final ao soltar. O mesmo evento serve para pincel, retângulo, polígono, revelar/cobrir tudo e desfazer/refazer. Quem recebe valida o recorte (inteiros, dentro da máscara, tamanho exato de bits, `payloadToRegion`) e escreve na hora.
+- **Gravação agrupada**: 600 ms depois da última mudança, uma gravação por vez. Depois de gravar sai `fog:saved {sceneId}`, e quem recebe relê `scenes.fog`: **o banco é a fonte da verdade**. Ligar e desligar também emitem `fog:saved`.
+- Ao reconectar o canal da névoa, a página vista relê a coluna. Releitura e `scene:refresh` não passam por cima do que a mestra tem na tela e o banco ainda não tem (traço em andamento, mudança não gravada ou gravação a caminho, `FogSync.busy`).
+- Trocar de página com mudança não gravada grava a página anterior antes (a gravação guarda qual página era).
+
+### Como cada um vê (`engine/fog-layer.ts`)
+
+- A máscara vira uma **textura pequena** (um pixel por célula, num `<canvas>`) esticada sobre o mapa. O **filtro linear** da GPU faz a borda suave e, fora do modo leve, ainda entra uma **média 3×3 na CPU** (`paintAlpha`). **No modo leve, a borda é menos suave** (sem a média).
+  - Só o retângulo mudado é repintado, no máximo **uma vez por quadro** (`scheduleFog`, um rAF), e a textura sobe uma vez por quadro. Parada, a névoa não pede quadro nenhum. Fora do mapa também fica coberto (moldura de 4 retângulos).
+- Camada no mundo: acima de mapa, adereços, tokens, legendas, marcas, desenhos e efeitos; abaixo da camada "por cima da névoa", de pings, réguas, alças e prévias. **Ping e régua de todos aparecem por cima da névoa** e não revelam nada.
+- **Mestra:** tom escuro (`#0d0a0b`) a 50%. **Jogador e espectador:** preto total.
+- **"Ver como jogador"** (olho no grupo Névoa, `store.fogPlayerView`, local): a mestra vê a névoa opaca e some para ela o que some para os jogadores. Nessa visão ela não tem token próprio: os tokens dos jogadores que estiverem cobertos também somem para ela.
+
+### O que fica escondido
+
+- Só para quem vê a névoa opaca (`seesPlayerFog`). Objeto cuja caixa no mundo (o retângulo girado, pela caixa alinhada que o envolve) **não toca nenhuma célula revelada** sai de `renderedObjects`: não é desenhado, não tem legenda, condição, efeito nem anel de turno.
+  - Também fica fora de `objectAt` (clique, hover, menu de contexto), de `objectsInBox` (caixa da 12b), de Shift/Ctrl+clique e do **Ctrl+A** (`VttEngine.selectableIds`). Se entrar na névoa estando selecionado, sai da seleção (e o menu de contexto fecha).
+  - Parcialmente revelado, aparece inteiro.
+- **Por família** (`classifyFog`, `fog/rules.ts`): o anexo não flutua sem o pai, então a família aparece se qualquer membro dela estiver revelado.
+- **Desenho** inteiro sob a névoa fica invisível pela caixa dos pontos mais a espessura, com a caixa guardada por desenho.
+- **Token do próprio jogador** (`isOwnObject`): vinculado a uma ficha dele (`characters.owner_id`, lido uma vez ao abrir a mesa em `store.myCharacterIds`) **ou criado por ele** (`created_by`; ex.: o falcão da Áma, sem ficha). Ele nunca some para o jogador.
+  - Se estiver inteiramente coberto, a família sobe para `liftedLayer`, por cima da névoa, com legenda e condições, e em volta continua preto. Revelado, fica na ordem de sempre.
+  - Ficha vinculada depois de abrir a mesa só conta ao recarregar.
+- O cálculo roda em `syncScene` (objetos mudaram) e a cada repintura da névoa, e só redesenha a cena se o conjunto de escondidos ou de "por cima" mudou.
+
+### Ferramentas da mestra (`FogTools`, na `MapToolbar`)
+
+- Grupo **Névoa** depois das ferramentas, **só para a mestra e só com a névoa ligada na página vista**: ferramenta Névoa (`tool: 'fog'`) e o olho "Ver como jogador". Desligar a névoa com a ferramenta na mão volta para Selecionar.
+- O popover tem:
+  - **Pincel, Retângulo e Polígono**;
+  - **Revelar / Cobrir**;
+  - slider de tamanho do pincel (8 a 400 px **de tela**, como a espessura do desenho);
+  - **Revelar tudo** e **Cobrir tudo**, confirmados em `ConfirmDialog`, aberto por portal no `body` porque a barra tem `transform`;
+  - uma linha de ajuda.
+- **Pincel:** arrastar pinta, e um círculo segue o mouse. **`[` e `]`** mudam o tamanho um quarto por vez.
+- **Retângulo:** arrastar mostra a caixa, e soltar aplica.
+- **Polígono:** clique ponto a ponto. Fecha com **duplo clique, Enter ou clique no primeiro ponto**; Backspace tira o último ponto e Esc cancela. Menos de 3 pontos não faz nada. No touch, cada toque é um ponto e tocar no primeiro fecha; dois toques seguidos não enquadram o mapa.
+- **Alt** segurado inverte revelar/cobrir no pincel, no retângulo e no primeiro ponto do polígono. Com a ferramenta Névoa ativa, Alt+clique não faz ping; nas outras, continua fazendo.
+- No touch, segurar com a ferramenta Névoa não abre menu de contexto. Dois dedos continuam pan e pinça, e o que o pincel já pintou fica e vira um passo.
+- **Desfazer:** comando `fog` em `history.ts` (`{sceneId, before, after}`, o mesmo recorte de células). Um traço, um retângulo, um polígono ou um "tudo" é **um passo** na mesma pilha de 20 do Ctrl+Z e passa pela mesma via (transmite e grava). Passo de outra página ou de máscara que mudou de tamanho é pulado com o aviso de sempre.
+
+### Limite de segurança
+
+- **A névoa esconde na tela, não é segredo.** A linha do objeto escondido continua chegando ao jogador pelo RLS, e a máscara inteira também (ele lê `scenes.fog`). Quem abrir o DevTools vê os tokens sob a névoa e o mapa inteiro, que já era público pela URL.
+- Fazer isso no RLS custaria consultar a máscara por linha. **Para segredo de verdade, use "Ocultar"** (§4), que o RLS garante. Decisão da mestra.
+
+### Banco (migração 024)
+
+- `is_valid_fog(jsonb)` e o check `scenes_fog_check` (`not valid`: só confere o que for gravado daqui em diante). Exige formato, lados de 1 a 1024, tamanho exato do base64 e **padding exato**, porque só o tamanho deixaria passar 3 bytes onde cabe 1.
+- `can_access_table_topic` passa a aceitar `nevoa:{uuid}` (membro ou mestra) e a nova `can_write_table_topic` (`nevoa:` só a mestra; o resto igual à leitura). `vtt_channel_write` passa a usar a nova função. Nenhuma política de tabela mudou.
+- Sem a migração, a névoa funciona na mestra (a coluna e as permissões já existiam), mas os jogadores não recebem `fog:patch` ao vivo, porque o Realtime não conhece o tópico `nevoa:`. Eles só veem a névoa ao recarregar ou trocar de página.
+- Testes em `supabase/rls.test.ts` ("névoa (migração 024)"): quem grava e quem lê, formato, duplicar, canal e rodar de novo sobre o schema pronto.

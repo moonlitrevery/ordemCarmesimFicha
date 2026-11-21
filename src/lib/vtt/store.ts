@@ -11,6 +11,8 @@ import {
 import type { ChatMessage } from './chat-rules';
 import type { ChatSync } from './chat-sync';
 import type { DocSync } from './docs/doc-sync';
+import type { FogMode, FogShape } from './fog/mask';
+import type { FogSync } from './fog/fog-sync';
 import type { TableDocument, TableReport, ViewerTarget } from './docs/rules';
 import type { LibrarySync } from './library-sync';
 import { EMPTY_INITIATIVE, parseInitiative } from './initiative';
@@ -36,7 +38,10 @@ import type {
 
 export type ConnectionStatus = 'connecting' | 'online' | 'offline';
 
-export type VttTool = 'select' | 'pan' | 'draw' | 'erase' | 'ruler' | 'ping';
+export type VttTool = 'select' | 'pan' | 'draw' | 'erase' | 'ruler' | 'ping' | 'fog';
+
+export const FOG_BRUSH_MIN = 8;
+export const FOG_BRUSH_MAX = 400;
 
 export interface PendingAsset extends Asset {
   profiles: { display_name: string } | null;
@@ -136,6 +141,21 @@ interface VttState {
   lightModeAsked: boolean;
   canUndo: boolean;
   canRedo: boolean;
+
+  /** Névoa da página vista (Fase 11). A máscara fica no `FogSync`, mutável, fora do React. */
+  fogSync: FogSync | null;
+  /** A página vista tem névoa ligada. */
+  fogOn: boolean;
+  /** Sobe a cada mudança da máscara: o canvas redesenha só o que mudou. */
+  fogRev: number;
+  /** Só da mestra, local: vê a névoa opaca e o que os jogadores não veem some. */
+  fogPlayerView: boolean;
+  fogShape: FogShape;
+  fogMode: FogMode;
+  /** Diâmetro do pincel em pixels de tela. */
+  fogBrush: number;
+  /** Fichas do jogador: o token vinculado a elas nunca some na névoa. */
+  myCharacterIds: ReadonlySet<string>;
 
   /** Ao entrar na mesa: zera tudo o que é da mesa anterior. */
   enterTable: (snapshot: TableSnapshot) => void;
@@ -274,6 +294,14 @@ export const useVttStore = create<VttState>((set) => ({
   lightModeAsked: false,
   canUndo: false,
   canRedo: false,
+  fogSync: null,
+  fogOn: false,
+  fogRev: 0,
+  fogPlayerView: false,
+  fogShape: 'brush',
+  fogMode: 'reveal',
+  fogBrush: 64,
+  myCharacterIds: new Set<string>(),
   enterTable: (snapshot) =>
     set({
       ...fromSnapshot(snapshot),
@@ -327,6 +355,9 @@ export const useVttStore = create<VttState>((set) => ({
       lightModeAsked: false,
       canUndo: false,
       canRedo: false,
+      fogOn: false,
+      fogPlayerView: false,
+      myCharacterIds: new Set<string>(),
     }),
   applySnapshot: (snapshot) => set(fromSnapshot(snapshot)),
   setOnline: (online) => set({ online }),

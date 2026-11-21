@@ -63,6 +63,17 @@ describe('invertCommand', () => {
     });
   });
 
+  it('traço de névoa troca o recorte de antes pelo de depois', () => {
+    const before = { x: 1, y: 2, w: 2, h: 1, cells: new Uint8Array([0, 0]) };
+    const after = { x: 1, y: 2, w: 2, h: 1, cells: new Uint8Array([1, 1]) };
+    expect(invertCommand({ type: 'fog', sceneId: 's1', before, after })).toEqual({
+      type: 'fog',
+      sceneId: 's1',
+      before: after,
+      after: before,
+    });
+  });
+
   it('lote inverte a ordem: restaura o pai antes de reanexar os filhos', () => {
     const detachChild = patch('filho');
     const removeParent: HistoryCommand = { type: 'remove', row: ROW };

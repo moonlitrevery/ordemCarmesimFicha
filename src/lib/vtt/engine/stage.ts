@@ -10,6 +10,8 @@ import {
 import { conditionArc, resolveConditions, splitVisibleConditions } from '../conditions';
 import { FxManager } from '../fx/manager';
 import { FpsMonitor } from '../fx/rules';
+import { boxRevealed, type FogMask } from '../fog/mask';
+import { classifyFog, isOwnObject, seesPlayerFog } from '../fog/rules';
 import { formatRulerDistance } from '../geometry';
 import { gridCellPx } from '../pages';
 import { polygonTouchesBox, type Box } from '../selection';
@@ -32,6 +34,7 @@ import {
   type CaptionArt,
 } from './caption-art';
 import { fitMap, screenToWorld, type Camera } from './camera';
+import { FogLayer } from './fog-layer';
 import { EngineInput } from './input';
 import { MARKER_ART_SIZE, MarkerArt, RING_ART_SIZE } from './marker-art';
 import { TextureStore } from './textures';
@@ -61,6 +64,20 @@ const HP_BAR_MIN_WIDTH = 28;
 const HP_BAR_MAX_WIDTH = 96;
 
 export type HandleId = 'nw' | 'ne' | 'se' | 'sw' | 'rotate';
+
+/** Prévia das ferramentas de névoa, em coordenadas do mundo. */
+export type FogPreview =
+  | { kind: 'circle'; x: number; y: number; r: number; reveal: boolean }
+  | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; reveal: boolean }
+  | { kind: 'poly'; points: Point[]; cursor: Point | null; reveal: boolean };
+
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of Array.from(a)) if (!b.has(id)) return false;
+  return true;
+}
 
 interface ObjectNode {
   id: string;
@@ -126,6 +143,19 @@ export class VttEngine implements EngineBridge {
   private effectsLayer = new Container();
   private pingsLayer = new Container();
   private uiLayer = new Container();
+  /** Névoa (Fase 11): acima de tudo o que ela esconde, abaixo de ping, régua e alças. */
+  private fogLayer = new FogLayer();
+  /** Token do próprio jogador inteiramente coberto: desenhado por cima da névoa. */
+  private liftedLayer = new Container();
+  private liftedTokens = new Container();
+  private liftedCaptions = new Container();
+  private liftedMarkers = new Container();
+  private fogHidden: ReadonlySet<string> = EMPTY_IDS;
+  private fogLifted: ReadonlySet<string> = EMPTY_IDS;
+  private fogRaf = 0;
+  private fogPreview = new Graphics();
+  /** Caixa de cada desenho no mundo, para saber se está inteiro sob a névoa. */
+  private strokeBoxes = new Map<string, [number, number, number, number]>();
 
   private textures = new TextureStore();
   private loads = new Set<Promise<void>>();
@@ -227,15 +257,19 @@ export class VttEngine implements EngineBridge {
       this.markersLayer,
       this.drawingsLayer,
       this.effectsLayer,
+      this.fogLayer.container,
+      this.liftedLayer,
       this.pingsLayer,
       this.uiLayer
     );
+    this.liftedTokens.sortableChildren = true;
+    this.liftedLayer.addChild(this.liftedTokens, this.liftedCaptions, this.liftedMarkers);
     this.app.stage.addChild(this.world);
     this.mapLayer.addChild(this.mapBackdrop);
     // A grade fica por cima do mapa e abaixo de tudo o que é interativo.
     this.mapLayer.addChild(this.grid);
     this.drawingsLayer.addChild(this.liveStroke);
-    this.uiLayer.addChild(this.hoverOutline, this.selection, this.marquee);
+    this.uiLayer.addChild(this.hoverOutline, this.selection, this.marquee, this.fogPreview);
     this.propsLayer.sortableChildren = true;
     this.tokensLayer.sortableChildren = true;
     this.fx = new FxManager(
@@ -269,10 +303,19 @@ export class VttEngine implements EngineBridge {
       }
       if (state.drawings !== prev.drawings) this.syncDrawings();
       if (state.lightMode !== prev.lightMode) this.applyLightMode();
+      if (
+        state.fogRev !== prev.fogRev ||
+        state.fogPlayerView !== prev.fogPlayerView ||
+        state.myCharacterIds !== prev.myCharacterIds ||
+        state.me?.role !== prev.me?.role
+      ) {
+        this.scheduleFog();
+      }
     });
 
     this.syncScene();
     this.syncDrawings();
+    this.scheduleFog();
     this.invalidate();
   }
 
@@ -280,6 +323,8 @@ export class VttEngine implements EngineBridge {
     if (this.destroyed) return;
     this.destroyed = true;
     cancelAnimationFrame(this.raf);
+    cancelAnimationFrame(this.fogRaf);
+    this.fogLayer.destroy();
     clearInterval(this.obfuscateTimer);
     this.observer?.disconnect();
     this.unsubscribe?.();
@@ -365,6 +410,8 @@ export class VttEngine implements EngineBridge {
     this.resize();
     this.updateObfuscationTimer();
     this.fx?.applyLightMode();
+    // Modo leve: borda menos suave (sem a média 3×3).
+    this.scheduleFog();
   }
 
   // ---------- Câmera ----------
@@ -420,8 +467,10 @@ export class VttEngine implements EngineBridge {
 
   // ---------- Mapa e objetos ----------
 
+  /** O que se desenha: sem o que está inteiro sob a névoa (para quem a vê opaca). */
   private renderedObjects(): Record<string, SceneObject> {
-    const { objects, placements } = useVttStore.getState();
+    const { objects: stored, placements } = useVttStore.getState();
+    const objects = this.withoutFogHidden(stored);
     if (placements.length === 0) return objects;
     const all = { ...objects };
     for (const placement of placements) {
@@ -444,6 +493,8 @@ export class VttEngine implements EngineBridge {
       : undefined;
     this.syncMap(mapAsset?.url ?? null, mapAsset?.width, mapAsset?.height);
     this.syncGrid(scene?.grid_visible ? gridCellPx(scene.meters_per_px) : null);
+    // Depois do mapa: o tamanho dele decide o tamanho de cada célula da névoa.
+    this.updateFogClass();
 
     const objects = this.renderedObjects();
     for (const [id, node] of Array.from(this.nodes.entries())) {
@@ -458,6 +509,7 @@ export class VttEngine implements EngineBridge {
     this.fx?.syncLighting(scene?.lighting ?? null);
     this.syncCaptions(objects);
     this.syncMarkers(objects);
+    this.placeLiftedMarks();
     this.drawSelection();
     this.drawHover();
     this.drawMarquee();
@@ -496,6 +548,7 @@ export class VttEngine implements EngineBridge {
               this.drawBackdrop();
               this.redrawGrid();
               this.fitOnce();
+              this.scheduleFog();
               this.invalidate();
             },
             () => useVttStore.getState().showToast('Não foi possível carregar o mapa.')
@@ -664,9 +717,11 @@ export class VttEngine implements EngineBridge {
     const parent = effectiveParent(object, objects);
     const target = parent
       ? this.nodes.get(parent.id)?.container
-      : object.kind === 'adereco'
-        ? this.propsLayer
-        : this.tokensLayer;
+      : this.fogLifted.has(object.id)
+        ? this.liftedTokens
+        : object.kind === 'adereco'
+          ? this.propsLayer
+          : this.tokensLayer;
     if (target && node.container.parent !== target) target.addChild(node.container);
   }
 
@@ -1036,7 +1091,7 @@ export class VttEngine implements EngineBridge {
   /** Pelo retângulo do objeto, em coordenadas do mundo. Pendentes não são clicáveis. */
   objectAt(wx: number, wy: number, exceptId?: string): SceneObject | null {
     const { objects } = useVttStore.getState();
-    for (const object of this.drawOrder(objects)) {
+    for (const object of this.drawOrder(this.withoutFogHidden(objects))) {
       if (object.id === exceptId) continue;
       const node = this.nodes.get(object.id);
       if (!node) continue;
@@ -1087,7 +1142,7 @@ export class VttEngine implements EngineBridge {
   objectsInBox(box: Box): string[] {
     const { objects } = useVttStore.getState();
     const found: string[] = [];
-    for (const object of this.drawOrder(objects)) {
+    for (const object of this.drawOrder(this.withoutFogHidden(objects))) {
       const corners = this.objectCorners(object.id);
       if (corners && polygonTouchesBox(corners, box)) found.push(object.id);
     }
@@ -1251,6 +1306,7 @@ export class VttEngine implements EngineBridge {
       if (!drawings[id]) {
         graphics.destroy();
         this.strokes.delete(id);
+        this.strokeBoxes.delete(id);
       }
     }
     for (const drawing of Object.values(drawings)) {
@@ -1261,6 +1317,7 @@ export class VttEngine implements EngineBridge {
       this.strokes.set(drawing.id, graphics);
     }
     this.drawingsLayer.addChild(this.liveStroke);
+    this.applyDrawingFog();
     this.invalidate();
   }
 
@@ -1285,6 +1342,215 @@ export class VttEngine implements EngineBridge {
     this.liveStroke.clear();
     if (points.length >= 4) {
       this.traceStroke(this.liveStroke, { points, color, width });
+    }
+    this.invalidate();
+  }
+
+  // ---------- Névoa (Fase 11) ----------
+
+  /** No máximo uma vez por quadro, por mais recortes que cheguem no meio. */
+  private scheduleFog() {
+    if (this.fogRaf || this.destroyed) return;
+    this.fogRaf = requestAnimationFrame(() => {
+      this.fogRaf = 0;
+      this.refreshFog();
+    });
+  }
+
+  /** A máscara da página que está na tela (a do `FogSync` pode já ser da próxima). */
+  private viewedFog(): FogMask | null {
+    const { fogSync, viewedSceneId } = useVttStore.getState();
+    return fogSync && fogSync.sceneId === viewedSceneId ? fogSync.mask : null;
+  }
+
+  private playerFog(): boolean {
+    const { me, fogPlayerView } = useVttStore.getState();
+    return seesPlayerFog(me?.role, fogPlayerView);
+  }
+
+  private refreshFog() {
+    if (this.destroyed) return;
+    const state = useVttStore.getState();
+    const mask = this.viewedFog();
+    const dirty = state.fogSync?.takeDirty() ?? null;
+    this.fogLayer.sync(mask, dirty, this.mapSize, {
+      opaque: this.playerFog(),
+      soft: !state.lightMode,
+    });
+    if (this.updateFogClass()) this.syncScene();
+    this.applyDrawingFog();
+    this.invalidate();
+  }
+
+  /** Mundo → células da máscara (fracionárias). Nulo sem névoa na página. */
+  fogCell(wx: number, wy: number): Point | null {
+    const mask = this.viewedFog();
+    if (!mask) return null;
+    return {
+      x: (wx / this.mapSize.width) * mask.w,
+      y: (wy / this.mapSize.height) * mask.h,
+    };
+  }
+
+  /** Quantas células cabem em um pixel do mundo (na horizontal). */
+  fogCellsPerWorld(): number {
+    const mask = this.viewedFog();
+    return mask ? mask.w / this.mapSize.width : 0;
+  }
+
+  private worldBoxRevealed(mask: FogMask, x0: number, y0: number, x1: number, y1: number): boolean {
+    const sx = mask.w / this.mapSize.width;
+    const sy = mask.h / this.mapSize.height;
+    return boxRevealed(mask, x0 * sx, y0 * sy, x1 * sx, y1 * sy);
+  }
+
+  private withoutFogHidden(objects: Record<string, SceneObject>): Record<string, SceneObject> {
+    if (this.fogHidden.size === 0) return objects;
+    const visible: Record<string, SceneObject> = {};
+    for (const [id, object] of Object.entries(objects)) {
+      if (!this.fogHidden.has(id)) visible[id] = object;
+    }
+    return visible;
+  }
+
+  /** Ctrl+A: o que está escondido na névoa não entra. */
+  selectableIds(): string[] {
+    return Object.keys(this.withoutFogHidden(useVttStore.getState().objects));
+  }
+
+  /**
+   * Quem some e quem sobe para cima da névoa. Pelo retângulo girado de cada objeto
+   * (a caixa alinhada que o envolve): basta uma célula revelada para aparecer.
+   * Devolve se algo mudou.
+   */
+  private updateFogClass(): boolean {
+    const state = useVttStore.getState();
+    const mask = this.viewedFog();
+    let hidden: ReadonlySet<string> = EMPTY_IDS;
+    let lifted: ReadonlySet<string> = EMPTY_IDS;
+    if (mask && this.playerFog() && state.me) {
+      const { objects, sceneAssets, myCharacterIds } = state;
+      const userId = state.me.userId;
+      // A mestra no "Ver como jogador" não tem token próprio.
+      const canOwn = state.me.role !== 'mestre';
+      const result = classifyFog(
+        objects,
+        (object) => {
+          const node = this.nodes.get(object.id);
+          const asset = sceneAssets[object.asset_id];
+          const w = (node?.width ?? asset?.width ?? FALLBACK_OBJECT_SIZE) / 2;
+          const h = (node?.height ?? asset?.height ?? FALLBACK_OBJECT_SIZE) / 2;
+          const matrix = worldMatrix(object, objects);
+          let x0 = Infinity;
+          let y0 = Infinity;
+          let x1 = -Infinity;
+          let y1 = -Infinity;
+          for (const corner of [
+            { x: -w, y: -h },
+            { x: w, y: -h },
+            { x: w, y: h },
+            { x: -w, y: h },
+          ]) {
+            const p = applyMatrix(matrix, corner);
+            x0 = Math.min(x0, p.x);
+            y0 = Math.min(y0, p.y);
+            x1 = Math.max(x1, p.x);
+            y1 = Math.max(y1, p.y);
+          }
+          return this.worldBoxRevealed(mask, x0, y0, x1, y1);
+        },
+        (object) => canOwn && isOwnObject(object, userId, myCharacterIds)
+      );
+      hidden = result.hidden;
+      lifted = result.lifted;
+    }
+    const changed = !sameIds(hidden, this.fogHidden) || !sameIds(lifted, this.fogLifted);
+    this.fogHidden = hidden;
+    this.fogLifted = lifted;
+    if (changed && hidden.size > 0) {
+      const { selectedIds, contextMenu } = state;
+      if (selectedIds.some((id) => hidden.has(id)) || (contextMenu && hidden.has(contextMenu.id))) {
+        // Fora deste ciclo: o setState redesenharia a cena no meio dele.
+        queueMicrotask(() =>
+          useVttStore.setState((s) => ({
+            selectedIds: s.selectedIds.filter((id) => !this.fogHidden.has(id)),
+            contextMenu: s.contextMenu && this.fogHidden.has(s.contextMenu.id) ? null : s.contextMenu,
+          }))
+        );
+      }
+    }
+    return changed;
+  }
+
+  /** Legenda e condições do token que subiu vão junto, senão ficariam sob o preto. */
+  private placeLiftedMarks() {
+    this.captions.forEach((caption, id) => {
+      const target = this.fogLifted.has(id) ? this.liftedCaptions : this.captionsLayer;
+      if (caption.sprite.parent !== target) target.addChild(caption.sprite);
+    });
+    this.conditionNodes.forEach((node, id) => {
+      const target = this.fogLifted.has(id) ? this.liftedMarkers : this.markersLayer;
+      for (const { sprite } of node.slots) {
+        if (sprite.parent !== target) target.addChild(sprite);
+      }
+    });
+  }
+
+  /** Desenho inteiro sob a névoa some para quem a vê opaca. */
+  private applyDrawingFog() {
+    const mask = this.playerFog() ? this.viewedFog() : null;
+    const { drawings } = useVttStore.getState();
+    this.strokes.forEach((graphics, id) => {
+      if (!mask) {
+        graphics.visible = true;
+        return;
+      }
+      let box = this.strokeBoxes.get(id);
+      const drawing = drawings[id];
+      if (!box && drawing) {
+        const { points, width } = drawing;
+        let x0 = Infinity;
+        let y0 = Infinity;
+        let x1 = -Infinity;
+        let y1 = -Infinity;
+        for (let i = 0; i + 1 < points.length; i += 2) {
+          x0 = Math.min(x0, points[i]);
+          x1 = Math.max(x1, points[i]);
+          y0 = Math.min(y0, points[i + 1]);
+          y1 = Math.max(y1, points[i + 1]);
+        }
+        box = [x0 - width / 2, y0 - width / 2, x1 + width / 2, y1 + width / 2];
+        this.strokeBoxes.set(id, box);
+      }
+      graphics.visible = box ? this.worldBoxRevealed(mask, box[0], box[1], box[2], box[3]) : true;
+    });
+  }
+
+  /** Pincel, retângulo ou polígono em andamento (só a mestra). */
+  setFogPreview(preview: FogPreview | null) {
+    const graphics = this.fogPreview;
+    graphics.clear();
+    if (preview) {
+      const unit = 1 / this.camera.zoom;
+      const color = preview.reveal ? 0xf5e6c8 : CRIMSON;
+      if (preview.kind === 'circle') {
+        graphics.circle(preview.x, preview.y, preview.r).stroke({ color, width: 1.5 * unit, alpha: 0.9 });
+      } else if (preview.kind === 'rect') {
+        const { x0, y0, x1, y1 } = preview;
+        graphics
+          .rect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0))
+          .fill({ color, alpha: 0.15 })
+          .stroke({ color, width: 1.5 * unit, alpha: 0.9 });
+      } else if (preview.points.length > 0) {
+        const points = preview.cursor ? [...preview.points, preview.cursor] : preview.points;
+        if (points.length >= 3) {
+          graphics.poly(points.flatMap((p) => [p.x, p.y])).fill({ color, alpha: 0.15 });
+        }
+        graphics.moveTo(points[0].x, points[0].y);
+        for (const p of points.slice(1)) graphics.lineTo(p.x, p.y);
+        graphics.stroke({ color, width: 1.5 * unit, alpha: 0.9 });
+        for (const p of preview.points) graphics.circle(p.x, p.y, 3 * unit).fill(color);
+      }
     }
     this.invalidate();
   }

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { Asset } from '@/lib/vtt/assets/rules';
+import { fogDims } from '@/lib/vtt/fog/mask';
 import { formatScale, parseMeters } from '@/lib/vtt/geometry';
 import { formatTileScale, MAX_PAGE_NAME, metersPerPxFromTiles, TILE_METERS } from '@/lib/vtt/pages';
 import {
@@ -223,6 +224,84 @@ function ScaleSection({
   );
 }
 
+/** Página em branco: o fundo neutro tem 2000 px (`EMPTY_MAP_SIZE` do canvas). */
+const BLANK_PAGE_PX = 2000;
+
+/**
+ * Névoa de guerra (Fase 11), por página. Ligar começa toda coberta; desligar apaga
+ * o que foi revelado (pede confirmação). Página nova nasce sem névoa.
+ */
+function FogSection({ scene, map }: { scene: VttScene; map: Asset | null }) {
+  const fogSync = useVttStore((s) => s.fogSync);
+  // A página aberta já tem a resposta no store; as outras perguntam ao banco.
+  const viewedOn = useVttStore((s) => (s.fogSync?.sceneId === scene.id ? s.fogOn : null));
+  const [fetched, setFetched] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmOff, setConfirmOff] = useState(false);
+  const enabled = viewedOn ?? fetched;
+
+  useEffect(() => {
+    if (!fogSync || viewedOn !== null) return;
+    let cancelled = false;
+    void fogSync.isEnabled(scene.id).then((on) => {
+      if (!cancelled) setFetched(on);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fogSync, scene.id, viewedOn]);
+
+  async function setEnabled(on: boolean) {
+    if (!fogSync) return;
+    const loaded = scene.map_asset_id ? useVttStore.getState().sceneAssets[scene.map_asset_id] : undefined;
+    const width = map?.width ?? loaded?.width ?? BLANK_PAGE_PX;
+    const height = map?.height ?? loaded?.height ?? BLANK_PAGE_PX;
+    setBusy(true);
+    const saved = await fogSync.setEnabled(scene.id, on, fogDims(width, height));
+    setBusy(false);
+    if (saved) setFetched(on);
+  }
+
+  return (
+    <section className="space-y-1 border-t border-ink-border pt-3">
+      <h3 className="label">Névoa de guerra</h3>
+      <label className="flex min-h-11 items-center gap-2 text-sm desk:min-h-0">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-crimson"
+          checked={enabled === true}
+          disabled={busy || enabled === null}
+          onChange={(e) => {
+            if (e.target.checked) void setEnabled(true);
+            else setConfirmOff(true);
+          }}
+        />
+        <span>Névoa de guerra</span>
+        {enabled === null && <span className="text-xs text-ink-muted">(carregando…)</span>}
+      </label>
+      <p className="text-xs text-ink-muted">
+        Ao ligar, a página começa toda coberta. Revele com as ferramentas do grupo Névoa, na barra do topo, com a
+        página aberta. Os jogadores veem preto onde está coberto; você vê a névoa a meia opacidade.
+      </p>
+      {confirmOff && (
+        <ConfirmDialog
+          title="Desligar a névoa?"
+          confirmLabel="Desligar"
+          danger
+          onCancel={() => setConfirmOff(false)}
+          onConfirm={() => {
+            setConfirmOff(false);
+            void setEnabled(false);
+          }}
+        >
+          Os jogadores passam a ver o mapa todo, e o que foi revelado se perde: ao ligar de novo, a página começa
+          toda coberta.
+        </ConfirmDialog>
+      )}
+    </section>
+  );
+}
+
 /** Da mesa inteira: o jogador escolhe a cobertura antes de poder ler a página nova. */
 function TransitionPicker() {
   const sync = useVttStore((s) => s.sync);
@@ -275,6 +354,7 @@ export function PageSettingsModal({
         <MapSection scene={scene} maps={maps} loadingMaps={loadingMaps} />
         <ScaleSection scene={scene} map={map} onMeasure={() => onMeasure(scene.id)} />
         <LightingSection scene={scene} />
+        <FogSection key={scene.id} scene={scene} map={map} />
         <section className="space-y-1 border-t border-ink-border pt-3">
           <h3 className="label">Som ambiente</h3>
           <p className="text-xs text-ink-muted">

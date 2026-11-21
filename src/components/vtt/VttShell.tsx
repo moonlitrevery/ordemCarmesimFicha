@@ -10,6 +10,7 @@ import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
 import { ChatSync } from '@/lib/vtt/chat-sync';
 import { DocSync } from '@/lib/vtt/docs/doc-sync';
+import { FogSync } from '@/lib/vtt/fog/fog-sync';
 import { InitiativeSync } from '@/lib/vtt/initiative-sync';
 import { LibrarySync } from '@/lib/vtt/library-sync';
 import { NpcSync } from '@/lib/vtt/npc-sync';
@@ -142,6 +143,22 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     });
     channelRef.current = channel;
 
+    // Antes da primeira leitura da página: a névoa vem junto com ela.
+    const fog = new FogSync(supabase, tableId, isGm);
+    fog.start();
+    useVttStore.setState({ fogSync: fog });
+    // O token vinculado a uma ficha do jogador nunca some na névoa. O RLS só devolve as dele.
+    if (!isGm) {
+      void supabase
+        .from('characters')
+        .select('id')
+        .eq('owner_id', userId)
+        .then(({ data }) => {
+          if (disposed || !data) return;
+          useVttStore.setState({ myCharacterIds: new Set(data.map((row: { id: string }) => row.id)) });
+        });
+    }
+
     sync = new SceneSync(supabase, channel, tableId, userId);
     sync.start();
     const chat = new ChatSync(supabase, tableId, userId);
@@ -217,7 +234,9 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
       library?.stop();
       audio?.stop();
       docs?.stop();
+      fog.stop();
       useVttStore.setState({
+        fogSync: null,
         audioSync: null,
         docSync: null,
         docViewer: null,

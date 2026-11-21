@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { canEditObjects } from '@/lib/vtt/scene-rules';
 import { useVttStore, type VttTool } from '@/lib/vtt/store';
+import { FogTools } from './FogTools';
 import { FLOATING, FLOATING_PANEL, IconButton } from './hud';
 
 const TOOLS: { id: VttTool; label: string; icon: LucideIcon; edit: boolean }[] = [
@@ -143,6 +144,7 @@ export function MapToolbar() {
           {tool === t.id && t.id === 'ruler' && <RulerHint isGm={isGm} />}
         </div>
       ))}
+      <FogTools popover={POPOVER} />
       {canEdit && (
         <>
           <span aria-hidden className="mx-1 h-6 w-px bg-ink-border" />

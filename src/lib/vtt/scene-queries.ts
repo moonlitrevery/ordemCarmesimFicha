@@ -43,6 +43,8 @@ export interface SceneBundle {
   drawings: Record<string, Drawing>;
   placements: PendingPlacement[];
   assets: Record<string, SceneAsset>;
+  /** `scenes.fog` cru (Fase 11). Vem junto para a página nunca aparecer sem névoa. */
+  fog: unknown;
 }
 
 export async function fetchScenes(
@@ -100,7 +102,8 @@ export async function fetchSceneBundle(
   userId: string,
   mapAssetId: string | null
 ): Promise<SceneBundle> {
-  const [objectsRes, drawingsRes, placementsRes] = await Promise.all([
+  // A névoa fica fora de `fetchScenes`: até ~43 KB por página, só a vista interessa.
+  const [objectsRes, drawingsRes, placementsRes, fogRes] = await Promise.all([
     supabase.from('scene_objects').select(OBJECT_COLUMNS).eq('scene_id', sceneId),
     supabase.from('drawings').select(DRAWING_COLUMNS).eq('scene_id', sceneId),
     supabase
@@ -108,8 +111,10 @@ export async function fetchSceneBundle(
       .select('id, asset_id, scene_id, x, y, scale, created_by, created_at')
       .eq('scene_id', sceneId)
       .eq('created_by', userId),
+    supabase.from('scenes').select('fog').eq('id', sceneId).maybeSingle(),
   ]);
   if (objectsRes.error) throw objectsRes.error;
+  if (fogRes.error) throw fogRes.error;
   if (drawingsRes.error) throw drawingsRes.error;
   if (placementsRes.error) throw placementsRes.error;
 
@@ -127,5 +132,6 @@ export async function fetchSceneBundle(
     drawings: Object.fromEntries(drawings.map((d) => [d.id, d])),
     placements,
     assets: await fetchAssets(supabase, Array.from(assetIds)),
+    fog: (fogRes.data as { fog?: unknown } | null)?.fog ?? null,
   };
 }
