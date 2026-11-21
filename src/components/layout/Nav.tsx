@@ -60,7 +60,7 @@ export function Nav() {
     { href: '/fichas', label: 'Fichas', prefetch: false },
     { href: '/mesa', label: 'Mesa', prefetch: false },
     ...(isMestre
-      ? [{ href: '/rolagens', label: 'Rolagens', prefetch: false }]
+      ? [{ href: '/vm', label: 'V.M.', prefetch: false }]
       : []),
     { href: '/lore', label: 'Lore' },
     { href: '/regras', label: 'Regras' },

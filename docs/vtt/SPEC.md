@@ -281,3 +281,53 @@ No banco continua `scenes`; na interface é **Página**. A "cena padrão" (`tabl
 - `tables.scene_folders jsonb not null default '[]'`, conferida por `is_valid_scene_folders` (lista de textos de 1 a 80 caracteres, até 4 KB), com `grant select/update`. Fica fora de `TABLE_COLUMNS`.
 - `map_calibrations`, RLS `is_mestre()` em tudo, `anon` sem privilégio.
 - **Sem a migração** a Mesa continua abrindo: `fetchScenes` cai para as colunas antigas (`42703`/`PGRST204`) e preenche `archived`/`grid_visible` com `false`; arquivar, grade e pastas avisam qual arquivo rodar. Nenhuma política existente mudou.
+
+## 14. V.M. — Visão da Mestra (Fase 13)
+
+Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em tempo real. Fica fora da Mesa e não muda a ficha.
+
+### Rolagens
+
+- **A página `/rolagens` saiu** (link, rota e `LiveRollsFeed`). As rolagens da Mesa aparecem no chat da sessão.
+- **`dice_rolls` continua recebendo gravações** de `logDiceRoll` (`ChatSync.roll` e `DiceToast` da ficha), mas nada lê a tabela. Rolagem feita na ficha fora da Mesa só ia para lá: hoje ela não aparece em lugar nenhum. A tabela não foi dropada (decisão da mestra).
+
+### Acesso
+
+- Link **V.M.** no menu do topo só com `profiles.role = 'mestre'`.
+- `src/app/vm/page.tsx` confere o papel no servidor e chama `notFound()` para quem não é mestra; o middleware manda quem está sem login para `/login`. O RLS de `gm_groups` é a terceira barreira.
+
+### Banco (migração 023)
+
+- **`gm_groups`**: `id`, `owner_id` (default `auth.uid()`, FK `profiles` on delete cascade), `name` (1–80), `sort_order`, `created_at`. Cada mestra tem os próprios grupos.
+- **`gm_group_members`**: `group_id` (on delete cascade), `section` (`pj`|`npc`), `character_id` (FK `characters` on delete cascade) **ou** `npc_id` (FK `npcs` on delete cascade), `sort_order`. Exatamente um alvo; NPC da Mesa só na seção `npc`; o mesmo personagem só uma vez por grupo (índices únicos parciais), mas pode estar em vários grupos. Apagar o personagem tira ele de todos os grupos; apagar o grupo não apaga ninguém.
+- **RLS**: grupo é `owner_id = (select auth.uid()) and (select is_mestre())`; membro passa por `exists` no grupo e, ao gravar, no personagem/NPC (pelo RLS deles). `anon` sem privilégio.
+- **Realtime**: `character_elements` e `npcs` entraram na publication `supabase_realtime` (`characters` já estava). O RLS de leitura já existente (`characters_select`, `character_elements_select`, `profiles_select` com `is_mestre()`; `npcs_gm_all`) não mudou.
+
+### NPCs
+
+- Duas fontes: **fichas do site da própria mestra** (`characters.owner_id = ela`, card completo, clicável, subtítulo "NPC") e **NPCs da Mesa** (`npcs` das mesas que ela mestra). NPC da Mesa não tem mana, sanidade, foto nem elementos: o card mostra só Vida (máximo de `hp_max`), tier/ND, a mesa e os atributos (array na ordem FOR, CON, DES, INT, EDU, CAR, POD), e **não tem clique** (não existe página de ficha dele).
+
+### Card (`src/components/vm/VmCard.tsx`, só leitura)
+
+- Foto redonda (`image_url` válido por `VALID_IMAGE_URL`) ou círculo com a inicial. Nome; embaixo, o `display_name` do dono (PJ) ou "NPC".
+- Vida, Mana e Sanidade: só o número atual. **Máximos de `getEffectiveMaxes`** (nível pelos elementos + atributos + `resource_mods`), como a ficha — as colunas `*_max` não valem. Cor: padrão de cada recurso; `< 50%` amarelo; `< 25%` vermelho (`resourceTone`). Máximo no `title` ("24 / 40").
+- Tags de elemento: `ElementSymbol` + nome + nível, cor do elemento, maior nível primeiro, nível 0 escondido.
+- Rodapé: FOR, DES, CON, INT, EDU, POD, CAR.
+- Clique abre `/fichas/[id]` na mesma aba. Setas ← → e ✕ ficam fora do link (no desktop, aparecem no hover/foco).
+- Grade: 1 coluna no celular, 2 a partir de `md`, 3 a partir de `xl`.
+
+### Tempo real (`src/components/vm/useVmGroup.ts`)
+
+- Um canal por grupo aberto; trocar de grupo remove o anterior. A chave do canal são os ids (reordenar não reassina).
+- `characters` UPDATE e `character_elements` INSERT/UPDATE com filtro `in.(ids do grupo)`; `npcs` UPDATE com `id=in.(…)`.
+- DELETE não aceita filtro e, sem `replica identity full`, só traz o id: `character_elements` DELETE é casado com os ids que o grupo já tem (o resto é ignorado); `characters`/`npcs` DELETE tiram o card da tela (o FK já tirou do grupo). Não usamos `replica identity full` para não espalhar a linha apagada.
+- A ficha grava `characters` antes de `character_elements`, por isso as duas tabelas são assinadas em vez de reler no UPDATE.
+- **Queda**: `CHANNEL_ERROR`/`TIMED_OUT`/`CLOSED` marca o canal como caído; ao voltar a `SUBSCRIBED`, ao ficar visível ou no evento `online`, relê o grupo inteiro (e reassina se caiu). Aba escondida por mais de 5 s também relê ao voltar. Sem polling.
+- Estado em `Record<id, …>`: um evento troca só aquela entrada; os cards são `memo` com props planas e callbacks estáveis, então os outros não re-renderizam.
+
+### Interface (`GmView`)
+
+- Abas de grupo, **+ Novo grupo** e menu ⋯ (renomear, mover para esquerda/direita, apagar). Apagar confirma no `ConfirmDialog` da Mesa; renomear/criar e o seletor usam `VmModal`. Nenhum diálogo nativo.
+- Último grupo aberto em `localStorage` (`vm:last-group`, com try/catch).
+- Seletor de membro com busca (foto, nome, nome do perfil); fica aberto para adicionar vários; quem já está no grupo aparece marcado.
+- Estados: sem grupos (botão "Criar primeiro grupo"), seção vazia (botão "+ Adicionar PJ/NPC" no título da seção), erro de carga com "Tentar de novo".

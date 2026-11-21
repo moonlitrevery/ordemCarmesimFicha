@@ -178,7 +178,7 @@ export class ChatSync {
     }
   }
 
-  /** Toda rolagem da Mesa vai para o chat e continua indo para `/rolagens`. */
+  /** Toda rolagem da Mesa vai para o chat e continua gravada em `dice_rolls` (sem leitor desde a Fase 13). */
   async roll(input: {
     notation: string;
     label: string;

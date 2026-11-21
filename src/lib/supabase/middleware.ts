@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest) {
     path.startsWith('/mesa') ||
     path.startsWith('/lore') ||
     path.startsWith('/regras') ||
-    path.startsWith('/rolagens');
+    path.startsWith('/vm');
 
   if (!user && isProtected) {
     const redirectUrl = request.nextUrl.clone();

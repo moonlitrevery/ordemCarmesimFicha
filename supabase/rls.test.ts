@@ -1134,3 +1134,69 @@ describe('páginas (migração 022)', () => {
     await db.exec(readSql('migrations', '022_vtt_pages.sql'));
   });
 });
+
+describe('V.M. (migração 023)', () => {
+  let group: string;
+  let pc: string;
+  let npc: string;
+
+  beforeAll(async () => {
+    pc = (
+      await db.query<{ id: string }>(
+        `insert into public.characters (owner_id, name) values ($1, 'Julieta') returning id`,
+        [PLAYER]
+      )
+    ).rows[0].id;
+    npc = (
+      await db.query<{ id: string }>(
+        `insert into public.npcs (table_id, name, plane, tier, nd) values ($1, 'Cão', 'tartaro', 'ante', 1) returning id`,
+        [openTable]
+      )
+    ).rows[0].id;
+    group = (
+      await insertOne(GM, `insert into public.gm_groups (name) values ('Teste') returning id, owner_id`, [])
+    ).id;
+  });
+
+  it('só a mestra cria e lê os próprios grupos', async () => {
+    await expect(
+      asUser(PLAYER, `insert into public.gm_groups (name) values ('Hack')`)
+    ).rejects.toMatchObject({ code: '42501' });
+    expect(await asUser(PLAYER, `select id from public.gm_groups`)).toEqual([]);
+    expect(await asUser(GM, `select name from public.gm_groups where id = $1`, [group])).toEqual([
+      { name: 'Teste' },
+    ]);
+  });
+
+  it('PJ e NPC entram; o mesmo personagem vai em dois grupos, mas uma vez em cada', async () => {
+    const add = `insert into public.gm_group_members (group_id, section, character_id, npc_id)
+      values ($1, $2, $3, $4) returning id, section`;
+    await insertOne(GM, add, [group, 'pj', pc, null]);
+    await insertOne(GM, add, [group, 'npc', null, npc]);
+    await expect(asUser(GM, add, [group, 'pj', pc, null])).rejects.toThrow(/character_uniq/);
+    await expect(asUser(GM, add, [group, 'pj', null, npc])).rejects.toThrow(/npc_section/);
+    await expect(asUser(GM, add, [group, 'npc', pc, npc])).rejects.toThrow(/one_target/);
+
+    const other = (
+      await insertOne(GM, `insert into public.gm_groups (name) values ('Outro') returning id`, [])
+    ).id;
+    await insertOne(GM, add, [other, 'pj', pc, null]);
+    expect(await asUser(PLAYER, `select id from public.gm_group_members`)).toEqual([]);
+    await expect(asUser(PLAYER, add, [other, 'npc', pc, null])).rejects.toMatchObject({ code: '42501' });
+
+    // Apagar grupo não apaga personagem.
+    await asUser(GM, `delete from public.gm_groups where id = $1`, [other]);
+    expect(await asUser(GM, `select id from public.characters where id = $1`, [pc])).toHaveLength(1);
+  });
+
+  it('apagar o personagem tira ele do grupo', async () => {
+    await db.query(`delete from public.characters where id = $1`, [pc]);
+    expect(
+      await asUser(GM, `select section from public.gm_group_members where group_id = $1`, [group])
+    ).toEqual([{ section: 'npc' }]);
+  });
+
+  it('a migração roda de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '023_gm_view.sql'));
+  });
+});
