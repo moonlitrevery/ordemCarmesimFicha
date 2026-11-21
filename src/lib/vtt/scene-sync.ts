@@ -30,6 +30,11 @@ import {
   pagesMigrationMissing,
 } from './scene-queries';
 import {
+  groupConditionTarget,
+  MAX_SELECTION,
+  selectionRoots,
+} from './selection';
+import {
   addFolderIn,
   cleanFolderName,
   folderList,
@@ -52,7 +57,10 @@ import {
   isValidDrawing,
   isValidObject,
   ownTransform,
+  effectiveParent,
+  worldTransform,
   patchFromOwn,
+  patchFromWorld,
   resolveViewedScene,
   wouldCreateCycle,
   type ObjectCopy,
@@ -79,6 +87,22 @@ const SAVE_ERROR = 'Não foi possível salvar. Tente de novo.';
 const PAGES_MIGRATION_HINT =
   'Falta rodar supabase/migrations/022_vtt_pages.sql no Supabase para usar isso.';
 const SKIPPED_STEP = 'Esse passo foi pulado: o que ele mudava já não existe.';
+const BATCH_MIGRATION_HINT =
+  'Falta rodar supabase/migrations/023_vtt_batch_patch.sql: o grupo foi salvo um por um.';
+/** Setinhas: grava uma vez quando a pessoa para de apertar. */
+const NUDGE_SAVE_MS = 350;
+/** Campos que `patch_scene_objects` grava. Outro campo no lote cai para um update por objeto. */
+const BATCHABLE_KEYS = new Set(['x', 'y', 'rotation', 'scale', 'flip_x', 'flip_y', 'local', 'hidden', 'conditions']);
+
+export interface ObjectPatchEntry {
+  id: string;
+  patch: ObjectPatch;
+}
+
+/** Sem a RPC (migração 023 não rodou): PostgREST não acha a função. */
+function isMissingFunction(error: { code?: string } | null): boolean {
+  return error?.code === 'PGRST202' || error?.code === '42883';
+}
 
 /** `skipped`: sumiu por ação de outra pessoa, e não há o que desfazer. */
 type ApplyResult = 'applied' | 'skipped' | 'failed';
@@ -136,11 +160,24 @@ export class SceneSync {
   private transition = new SceneTransition((sceneTransition) =>
     useVttStore.setState({ sceneTransition })
   );
-  /** Fica na memória desta aba: vale para outra cena da mesma mesa. */
-  private copied: ObjectCopy | null = null;
+  /** Fica na memória desta aba: vale para outra cena da mesma mesa. Um por objeto copiado. */
+  private copied: ObjectCopy[] = [];
   private pasteCount = 0;
-  /** Objeto na mão de quem está arrastando: evento de fora não o tira do lugar. */
-  interactingId: string | null = null;
+  private warnedBatch = false;
+  /** Setinhas em andamento: como os objetos estavam antes do primeiro toque. */
+  private nudging: { befores: Record<string, SceneObject>; timer: ReturnType<typeof setTimeout> } | null =
+    null;
+  /** Objetos na mão de quem está arrastando: evento de fora não os tira do lugar. */
+  private interacting = new Set<string>();
+
+  /** Arrastar, alças e setinhas: o que está na mão não aceita evento de fora. */
+  hold(ids: string[]) {
+    for (const id of ids) this.interacting.add(id);
+  }
+
+  release(ids: string[]) {
+    for (const id of ids) this.interacting.delete(id);
+  }
 
   constructor(
     private supabase: SupabaseClient,
@@ -159,7 +196,9 @@ export class SceneSync {
         this.scheduleRefresh();
       }),
       channel.on('obj:drag', (event) => this.onDrag(event)),
+      channel.on('obj:drag-many', (event) => this.onDragMany(event)),
       channel.on('obj:upsert', (event) => this.onUpsert(event)),
+      channel.on('obj:upsert-many', (event) => this.onUpsertMany(event)),
       channel.on('obj:delete', (event) => this.onDelete(event)),
       channel.on('draw:add', (event) => this.onDrawAdd(event)),
       channel.on('draw:delete', (event) => this.onDrawDelete(event)),
@@ -183,6 +222,8 @@ export class SceneSync {
 
   stop() {
     void this.flushSceneFx();
+    if (this.nudging) clearTimeout(this.nudging.timer);
+    this.nudging = null;
     this.stopped = true;
     this.transition.stop();
     clearTimeout(this.refreshTimer);
@@ -239,7 +280,7 @@ export class SceneSync {
         objects: {},
         drawings: {},
         placements: [],
-        selectedId: null,
+        selectedIds: [],
         contextMenu: null,
       });
       return;
@@ -269,21 +310,19 @@ export class SceneSync {
     const changedScene = store().viewedSceneId !== scene.id;
     if (changedScene) this.clearHistory();
     if (!swapping) this.transition.reveal();
-    const held = this.interactingId;
-    const current = store().objects[held ?? ''];
+    // O que está na mão (arrastando) fica como está na tela, não como veio do banco.
+    const held: Record<string, SceneObject> = {};
+    for (const id of Array.from(this.interacting)) {
+      const object = store().objects[id];
+      if (object) held[id] = object;
+    }
     useVttStore.setState((s) => ({
       viewedSceneId: scene.id,
-      objects:
-        !changedScene && current
-          ? { ...bundle.objects, [current.id]: current }
-          : bundle.objects,
+      objects: !changedScene ? { ...bundle.objects, ...held } : bundle.objects,
       drawings: bundle.drawings,
       placements: bundle.placements,
       sceneAssets: bundle.assets,
-      selectedId:
-        !changedScene && s.selectedId && bundle.objects[s.selectedId]
-          ? s.selectedId
-          : null,
+      selectedIds: changedScene ? [] : s.selectedIds.filter((id) => bundle.objects[id]),
       contextMenu: changedScene ? null : s.contextMenu,
       attachingId: changedScene ? null : s.attachingId,
       calibrating: changedScene ? false : s.calibrating,
@@ -317,7 +356,7 @@ export class SceneSync {
   private onDrag(event: VttEventOf<'obj:drag'>) {
     const state = store();
     if (event.sceneId !== state.viewedSceneId) return;
-    if (event.id === this.interactingId) return;
+    if (this.interacting.has(event.id)) return;
     if (!Number.isFinite(event.x) || !Number.isFinite(event.y)) return;
     const object = state.objects[event.id];
     if (!object) return;
@@ -328,24 +367,58 @@ export class SceneSync {
     );
   }
 
+  /** Grupo arrastado por outra pessoa: um evento para todos, aplicado num setState só. */
+  private onDragMany(event: VttEventOf<'obj:drag-many'>) {
+    const state = store();
+    if (event.sceneId !== state.viewedSceneId) return;
+    if (!Array.isArray(event.items) || event.items.length > MAX_SELECTION) return;
+    const patches: ObjectPatchEntry[] = [];
+    for (const item of event.items) {
+      if (!item || typeof item.id !== 'string') continue;
+      if (!Number.isFinite(item.x) || !Number.isFinite(item.y)) continue;
+      if (this.interacting.has(item.id)) continue;
+      const object = state.objects[item.id];
+      if (!object) continue;
+      const own = ownTransform(object, state.objects);
+      patches.push({ id: item.id, patch: patchFromOwn(object, state.objects, { ...own, x: item.x, y: item.y }) });
+    }
+    this.setLocalMany(patches);
+  }
+
   private onUpsert(event: VttEventOf<'obj:upsert'>) {
     if (!isValidObject(event.object)) return;
     this.applyRow(event.object);
   }
 
-  /** Last-write-wins pelo `updated_at` do servidor. */
+  private onUpsertMany(event: VttEventOf<'obj:upsert-many'>) {
+    if (!Array.isArray(event.objects) || event.objects.length > MAX_SELECTION) return;
+    this.applyRows(event.objects.filter((row) => isValidObject(row)));
+  }
+
   private applyRow(row: SceneObject) {
+    this.applyRows([row]);
+  }
+
+  /** Last-write-wins pelo `updated_at` do servidor. Um setState para o lote inteiro. */
+  private applyRows(rows: SceneObject[]) {
     const state = store();
-    if (row.scene_id !== state.viewedSceneId) return;
-    // Oculto nunca viaja pelo canal para jogador: se chegou, é forjado.
-    if (row.hidden && state.me?.role !== 'mestre') return;
-    if (row.id === this.interactingId) return;
-    const existing = state.objects[row.id];
-    if (existing && existing.updated_at > row.updated_at) return;
-    void this.ensureAsset(row.asset_id);
-    useVttStore.setState((s) => ({
-      objects: { ...s.objects, [row.id]: row },
-    }));
+    const accepted: SceneObject[] = [];
+    for (const row of rows) {
+      if (row.scene_id !== state.viewedSceneId) continue;
+      // Oculto nunca viaja pelo canal para jogador: se chegou, é forjado.
+      if (row.hidden && state.me?.role !== 'mestre') continue;
+      if (this.interacting.has(row.id)) continue;
+      const existing = state.objects[row.id];
+      if (existing && existing.updated_at > row.updated_at) continue;
+      void this.ensureAsset(row.asset_id);
+      accepted.push(row);
+    }
+    if (accepted.length === 0) return;
+    useVttStore.setState((s) => {
+      const objects = { ...s.objects };
+      for (const row of accepted) objects[row.id] = row;
+      return { objects };
+    });
   }
 
   private onDelete(event: VttEventOf<'obj:delete'>) {
@@ -404,12 +477,28 @@ export class SceneSync {
     });
   }
 
+  /** Vários de uma vez, num setState só: o canvas redesenha uma vez por movimento. */
+  setLocalMany(patches: ObjectPatchEntry[]) {
+    if (patches.length === 0) return;
+    useVttStore.setState((s) => {
+      const objects = { ...s.objects };
+      let changed = false;
+      for (const { id, patch } of patches) {
+        const object = objects[id];
+        if (!object) continue;
+        objects[id] = { ...object, ...patch };
+        changed = true;
+      }
+      return changed ? { objects } : s;
+    });
+  }
+
   private removeLocal(id: string) {
     useVttStore.setState((s) => {
       if (!s.objects[id]) return s;
       return {
         objects: without(s.objects, id),
-        selectedId: s.selectedId === id ? null : s.selectedId,
+        selectedIds: s.selectedIds.filter((selected) => selected !== id),
         contextMenu: s.contextMenu?.id === id ? null : s.contextMenu,
       };
     });
@@ -432,6 +521,44 @@ export class SceneSync {
       return;
     }
     this.channel.emit({ type: 'obj:upsert', object: row });
+  }
+
+  /** Um aviso para o lote: `obj:upsert-many` com as linhas, ou `scene:refresh` se algo é segredo. */
+  private broadcastRows(rows: SceneObject[]) {
+    if (rows.length === 1) {
+      this.broadcastObject(rows[0]);
+      return;
+    }
+    const open = rows.filter((row) => !row.hidden && this.sceneIsLive(row.scene_id));
+    const secretScenes = new Set(
+      rows.filter((row) => row.hidden || !this.sceneIsLive(row.scene_id)).map((row) => row.scene_id)
+    );
+    if (open.length === 1) this.channel.emit({ type: 'obj:upsert', object: open[0] });
+    else if (open.length > 1) this.channel.emit({ type: 'obj:upsert-many', objects: open });
+    for (const sceneId of Array.from(secretScenes)) {
+      this.channel.emit({ type: 'scene:refresh', sceneId });
+    }
+  }
+
+  /** Grupo sendo arrastado: um evento por tique para todos, com o mesmo throttle de um só. */
+  emitDragMany(items: { id: string; x: number; y: number }[]) {
+    if (items.length === 1) {
+      this.emitDrag(items[0].id, items[0].x, items[0].y);
+      return;
+    }
+    const state = store();
+    const sceneId = state.viewedSceneId;
+    if (!sceneId || !this.sceneIsLive(sceneId)) return;
+    // Oculto não sai no canal: os outros veem quando o banco gravar (pelo refresh).
+    const visible = items.filter((item) => {
+      const object = state.objects[item.id];
+      return object && !object.hidden;
+    });
+    if (visible.length === 0) return;
+    const now = Date.now();
+    if (now - this.lastDrag < DRAG_THROTTLE_MS) return;
+    this.lastDrag = now;
+    this.channel.emit({ type: 'obj:drag-many', sceneId, items: visible.slice(0, MAX_SELECTION) });
   }
 
   emitDrag(id: string, x: number, y: number) {
@@ -484,14 +611,225 @@ export class SceneSync {
           ? 'Esse anexo daria uma volta em si mesmo.'
           : SAVE_ERROR
       );
+      this.interacting.delete(id);
       this.scheduleRefresh();
       return false;
     }
     const row = data as unknown as SceneObject;
-    this.interactingId = this.interactingId === id ? null : this.interactingId;
+    this.interacting.delete(id);
     this.applyRow(row);
     this.broadcastObject(row);
     return true;
+  }
+
+  /**
+   * Vários objetos numa gravação só (`patch_scene_objects`) e um broadcast. Devolve
+   * os ids que o banco confirmou; o resto volta a valer o banco na releitura.
+   */
+  private async writePatches(patches: ObjectPatchEntry[]): Promise<Set<string>> {
+    if (patches.length === 0) return new Set();
+    const ids = patches.map((entry) => entry.id);
+    const batchable =
+      patches.length > 1 &&
+      patches.length <= MAX_SELECTION &&
+      patches.every((entry) => Object.keys(entry.patch).every((key) => BATCHABLE_KEYS.has(key)));
+    if (!batchable) {
+      const results = await Promise.all(patches.map((entry) => this.patchObject(entry.id, entry.patch)));
+      return new Set(ids.filter((_, index) => results[index]));
+    }
+
+    this.setLocalMany(patches);
+    const { data, error } = await this.supabase
+      .rpc('patch_scene_objects', { p_patches: patches })
+      .select(OBJECT_COLUMNS);
+    if (this.stopped) return new Set();
+    if (error && isMissingFunction(error)) {
+      if (!this.warnedBatch) {
+        this.warnedBatch = true;
+        store().showToast(BATCH_MIGRATION_HINT);
+      }
+      const results = await Promise.all(patches.map((entry) => this.patchObject(entry.id, entry.patch)));
+      return new Set(ids.filter((_, index) => results[index]));
+    }
+    this.release(ids);
+    if (error || !data) {
+      store().showToast(SAVE_ERROR);
+      this.scheduleRefresh();
+      return new Set();
+    }
+    const rows = data as unknown as SceneObject[];
+    this.applyRows(rows);
+    this.broadcastRows(rows);
+    // O RLS deixou de mostrar algum (apagado por outra pessoa): relê.
+    if (rows.length < patches.length) this.scheduleRefresh();
+    return new Set(rows.map((row) => row.id));
+  }
+
+  async patchObjects(patches: ObjectPatchEntry[]): Promise<boolean> {
+    return (await this.writePatches(patches)).size === patches.length;
+  }
+
+  /**
+   * Como `changeObject`, para um grupo: uma gravação e **um** passo de desfazer.
+   * `previous`: como os objetos estavam antes do gesto (arraste já mexeu na tela).
+   */
+  changeObjects(patches: ObjectPatchEntry[], previous?: Record<string, SceneObject>): Promise<boolean> {
+    const { objects } = store();
+    const steps = patches
+      .map((entry) => {
+        const object = previous?.[entry.id] ?? objects[entry.id];
+        return object ? { ...entry, before: patchBefore(object, entry.patch) } : null;
+      })
+      .filter((step): step is ObjectPatchEntry & { before: ObjectPatch } => step !== null);
+    if (steps.length === 0) return Promise.resolve(false);
+    if (steps.length === 1) return this.changeObject(steps[0].id, steps[0].patch, previous?.[steps[0].id]);
+    return this.track(
+      this.writePatches(steps.map(({ id, patch }) => ({ id, patch }))).then((saved) => {
+        const commands: HistoryCommand[] = steps
+          .filter((step) => saved.has(step.id) && !isNoopPatch(step.before, step.patch))
+          .map((step) => ({ type: 'patch', id: step.id, before: step.before, after: step.patch }));
+        if (commands.length > 0) this.record({ type: 'batch', commands });
+        return saved.size === steps.length;
+      })
+    );
+  }
+
+  /** Quem se move num grupo: anexado a outro selecionado vai junto com o pai. */
+  rootsOf(ids: string[]): string[] {
+    const { objects } = store();
+    return selectionRoots(
+      ids.filter((id) => objects[id]),
+      (id) => (objects[id] ? (effectiveParent(objects[id], objects)?.id ?? null) : null)
+    );
+  }
+
+  /** Transformação inteira (ou só `local`, se anexado), como o arraste grava. */
+  transformPatch(id: string): ObjectPatch | null {
+    const { objects } = store();
+    const object = objects[id];
+    if (!object) return null;
+    return effectiveParent(object, objects) && object.local
+      ? { local: object.local }
+      : {
+          x: object.x,
+          y: object.y,
+          rotation: object.rotation,
+          scale: object.scale,
+          flip_x: object.flip_x,
+          flip_y: object.flip_y,
+        };
+  }
+
+  /** Fim de um arraste, de um ou vários: grava o que está na tela, um passo só. */
+  commitTransforms(befores: Record<string, SceneObject>) {
+    const patches = Object.keys(befores)
+      .map((id) => {
+        const patch = this.transformPatch(id);
+        return patch ? { id, patch } : null;
+      })
+      .filter((entry): entry is ObjectPatchEntry => entry !== null);
+    if (patches.length === 0) {
+      this.release(Object.keys(befores));
+      return;
+    }
+    void this.changeObjects(patches, befores);
+  }
+
+  /** Setinhas: move na hora, transmite como arraste e grava quando a pessoa para. */
+  nudge(ids: string[], dx: number, dy: number) {
+    if (!this.canEdit()) return;
+    const roots = this.rootsOf(ids);
+    if (roots.length === 0) return;
+    const state = store();
+    if (!this.nudging || roots.some((id) => !this.nudging?.befores[id])) {
+      if (this.nudging) this.flushNudge();
+      const befores: Record<string, SceneObject> = {};
+      for (const id of roots) befores[id] = state.objects[id];
+      this.nudging = { befores, timer: setTimeout(() => this.flushNudge(), NUDGE_SAVE_MS) };
+      this.hold(roots);
+    }
+    const { objects } = store();
+    const patches = roots.map((id) => {
+      const object = objects[id];
+      const world = worldTransform(object, objects);
+      return { id, patch: patchFromWorld(object, objects, { ...world, x: world.x + dx, y: world.y + dy }) };
+    });
+    this.setLocalMany(patches);
+    this.emitDragMany(
+      patches.map(({ id, patch }) => {
+        const own = patch.local ?? { x: patch.x as number, y: patch.y as number };
+        return { id, x: own.x, y: own.y };
+      })
+    );
+    clearTimeout(this.nudging.timer);
+    this.nudging.timer = setTimeout(() => this.flushNudge(), NUDGE_SAVE_MS);
+  }
+
+  private flushNudge() {
+    const nudging = this.nudging;
+    this.nudging = null;
+    if (!nudging) return;
+    clearTimeout(nudging.timer);
+    this.commitTransforms(nudging.befores);
+  }
+
+  rotateMany(ids: string[], radians: number) {
+    const { objects } = store();
+    const patches = this.rootsOf(ids).map((id) => {
+      const object = objects[id];
+      const own = ownTransform(object, objects);
+      return { id, patch: patchFromOwn(object, objects, { ...own, rotation: own.rotation + radians }) };
+    });
+    void this.changeObjects(patches);
+  }
+
+  /** Condição em grupo: liga em todos se algum não tem; desliga se todos têm. */
+  toggleConditionMany(ids: string[], key: string) {
+    const { objects } = store();
+    const targets = ids.map((id) => objects[id]).filter(Boolean);
+    if (targets.length === 0) return;
+    const turnOn = groupConditionTarget(
+      targets.map((object) => object.conditions),
+      key
+    );
+    const patches = targets
+      .filter((object) => object.conditions.includes(key) !== turnOn)
+      .map((object) => ({ id: object.id, patch: { conditions: toggleCondition(object.conditions, key) } }));
+    void this.changeObjects(patches);
+  }
+
+  /** Apaga o que a pessoa pode apagar, um passo só. Jogador: só o que criou. */
+  async deleteObjects(ids: string[]) {
+    const state = store();
+    const role = state.me?.role;
+    if (!role) return;
+    const deletable = ids.filter((id) => {
+      const object = state.objects[id];
+      return object && canDeleteObject(object, role, this.userId);
+    });
+    if (deletable.length < ids.length) {
+      store().showToast(
+        deletable.length === 0
+          ? 'Você só pode apagar o que criou.'
+          : `Apagando ${deletable.length} de ${ids.length}: você só pode apagar o que criou.`
+      );
+    }
+    if (deletable.length === 0) return;
+    if (deletable.length === 1) {
+      await this.deleteObject(deletable[0]);
+      return;
+    }
+    const commands = await this.track(
+      (async () => {
+        const done: HistoryCommand[] = [];
+        for (const id of deletable) {
+          const removal = await this.removeObject(id);
+          if (removal) done.push(removal);
+        }
+        return done;
+      })()
+    );
+    if (commands.length > 0) this.record({ type: 'batch', commands });
   }
 
   async placeAsset(asset: SceneAsset, x: number, y: number) {
@@ -520,7 +858,7 @@ export class SceneSync {
     const row = data as unknown as SceneObject;
     useVttStore.setState((s) => ({
       sceneAssets: { ...s.sceneAssets, [asset.id]: asset },
-      selectedId: row.id,
+      selectedIds: [row.id],
     }));
     this.applyRow(row);
     this.broadcastObject(row);
@@ -530,55 +868,104 @@ export class SceneSync {
   // ---------- Copiar e colar ----------
 
   get hasCopy(): boolean {
-    return this.copied !== null;
+    return this.copied.length > 0;
   }
 
   copyObject(id: string) {
+    this.copyObjects([id]);
+  }
+
+  /** Copia a seleção. Anexado a outro selecionado vai junto com o pai, não duas vezes. */
+  copyObjects(ids: string[]) {
     const state = store();
     if (!this.canEdit()) return;
-    const copy = copyFamily(id, state.objects, state.sceneAssets);
-    if (!copy) return;
-    this.copied = copy;
+    const copies = this.rootsOf(ids)
+      .map((id) => copyFamily(id, state.objects, state.sceneAssets))
+      .filter((copy): copy is ObjectCopy => copy !== null);
+    if (copies.length === 0) return;
+    this.copied = copies;
     this.pasteCount = 0;
-    state.showToast('Copiado. Ctrl+V cola, também em outra cena.');
+    state.showToast(
+      copies.length > 1
+        ? `${copies.length} objetos copiados. Ctrl+V cola, também em outra página.`
+        : 'Copiado. Ctrl+V cola, também em outra página.'
+    );
   }
 
   /** Sem o mouse no mapa: ao lado do original, ou no meio da tela em outra cena. */
   async pasteCopy(at: { x: number; y: number } | null) {
-    const { copied } = this;
+    const copies = this.copied;
     const sceneId = store().viewedSceneId;
-    if (!copied || !sceneId || !this.canEdit()) return;
+    if (copies.length === 0 || !sceneId || !this.canEdit()) return;
     this.pasteCount++;
+    const anchor = copies[0];
     let point = at;
     if (!point) {
-      if (copied.sceneId === sceneId) {
+      if (anchor.sceneId === sceneId) {
         const step = (PASTE_OFFSET_PX * this.pasteCount) / (this.engine?.zoom() ?? 1);
-        point = { x: copied.world.x + step, y: copied.world.y + step };
+        point = { x: anchor.world.x + step, y: anchor.world.y + step };
       } else {
-        point = this.engine?.viewCenter() ?? copied.world;
+        point = this.engine?.viewCenter() ?? anchor.world;
       }
     }
-    await this.pasteFamily(copied, sceneId, point);
+    await this.pasteGroup(copies, sceneId, point);
   }
 
   /** O atalho do tablet: não mexe no que foi copiado com Ctrl+C. */
   async duplicateObject(id: string) {
+    await this.duplicateObjects([id]);
+  }
+
+  async duplicateObjects(ids: string[]) {
     const state = store();
     if (!this.canEdit() || !state.viewedSceneId) return;
-    const copy = copyFamily(id, state.objects, state.sceneAssets);
-    if (!copy) return;
+    const copies = this.rootsOf(ids)
+      .map((id) => copyFamily(id, state.objects, state.sceneAssets))
+      .filter((copy): copy is ObjectCopy => copy !== null);
+    if (copies.length === 0) return;
     const step = PASTE_OFFSET_PX / (this.engine?.zoom() ?? 1);
-    await this.pasteFamily(copy, state.viewedSceneId, {
-      x: copy.world.x + step,
-      y: copy.world.y + step,
+    await this.pasteGroup(copies, state.viewedSceneId, {
+      x: copies[0].world.x + step,
+      y: copies[0].world.y + step,
     });
+  }
+
+  /**
+   * Cola cada família mantendo a posição relativa ao primeiro objeto. Um passo só
+   * de desfazer, e a seleção vira o que foi colado.
+   */
+  private async pasteGroup(copies: ObjectCopy[], sceneId: string, at: { x: number; y: number }) {
+    const anchor = copies[0].world;
+    const result = await this.track(
+      (async () => {
+        const commands: HistoryCommand[] = [];
+        const roots: string[] = [];
+        for (const copy of copies) {
+          const pasted = await this.pasteFamily(copy, sceneId, {
+            x: at.x + copy.world.x - anchor.x,
+            y: at.y + copy.world.y - anchor.y,
+          });
+          if (!pasted) break;
+          commands.push(...pasted.commands);
+          roots.push(pasted.rootId);
+        }
+        return { commands, roots };
+      })()
+    );
+    if (result.commands.length === 0) return;
+    if (store().viewedSceneId === sceneId) useVttStore.setState({ selectedIds: result.roots });
+    this.record({ type: 'batch', commands: result.commands });
   }
 
   /**
    * Pela mesma RPC do desfazer: insert normal não aceita anexo, efeitos nem condições,
    * e ela aplica as regras de `can_place_asset`. Pais antes dos filhos.
    */
-  private async pasteFamily(copy: ObjectCopy, sceneId: string, at: { x: number; y: number }) {
+  private async pasteFamily(
+    copy: ObjectCopy,
+    sceneId: string,
+    at: { x: number; y: number }
+  ): Promise<{ commands: HistoryCommand[]; rootId: string } | null> {
     const state = store();
     const zs = Object.values(state.objects).map((object) => object.z);
     const rows = buildPastedRows(copy, {
@@ -592,23 +979,16 @@ export class SceneSync {
     });
     useVttStore.setState((s) => ({ sceneAssets: { ...s.sceneAssets, ...copy.assets } }));
 
-    const created = await this.track(
-      (async () => {
-        const done: HistoryCommand[] = [];
-        for (const row of rows) {
-          const restored = await this.insertRow(row);
-          if (!restored) {
-            store().showToast('Não foi possível colar. Você pode não ter acesso a essa imagem.');
-            break;
-          }
-          done.push({ type: 'create', row: restored });
-        }
-        return done;
-      })()
-    );
-    if (created.length === 0) return;
-    if (store().viewedSceneId === sceneId) useVttStore.setState({ selectedId: rows[0].id });
-    this.record({ type: 'batch', commands: created });
+    const done: HistoryCommand[] = [];
+    for (const row of rows) {
+      const restored = await this.insertRow(row);
+      if (!restored) {
+        store().showToast('Não foi possível colar. Você pode não ter acesso a essa imagem.');
+        break;
+      }
+      done.push({ type: 'create', row: restored });
+    }
+    return done.length > 0 ? { commands: done, rootId: rows[0].id } : null;
   }
 
   /** Arquivo solto no mapa: da mestra entra direto, de jogador espera aprovação. */
@@ -811,20 +1191,35 @@ export class SceneSync {
 
   /** Anexado some junto com o pai: esconder só o pai deixaria o filho solto no mapa. */
   async setHidden(id: string, hidden: boolean) {
+    await this.setHiddenMany([id], hidden);
+  }
+
+  /** Ocultar ou mostrar um grupo (e as famílias): uma gravação e um passo de desfazer. */
+  async setHiddenMany(ids: string[], hidden: boolean) {
     const { objects } = store();
-    const family = [objects[id], ...descendantsOf(id, objects)].filter(Boolean);
-    const changes = await this.track(
-      Promise.all(
-        family.map(async (object): Promise<HistoryCommand | null> => {
-          const after = { hidden };
-          const saved = await this.patchObject(object.id, after);
-          return saved
-            ? { type: 'patch', id: object.id, before: patchBefore(object, after), after }
-            : null;
-        })
-      )
-    );
-    const commands = changes.filter((step): step is HistoryCommand => step !== null);
+    const family = new Map<string, SceneObject>();
+    for (const id of ids) {
+      if (!objects[id]) continue;
+      family.set(id, objects[id]);
+      for (const child of descendantsOf(id, objects)) family.set(child.id, child);
+    }
+    const patches = Array.from(family.values())
+      .filter((object) => object.hidden !== hidden)
+      .map((object) => ({ id: object.id, patch: { hidden } }));
+    // Uma família grande passa de 50: grava em partes, mas é um passo só para desfazer.
+    if (patches.length <= MAX_SELECTION) {
+      await this.changeObjects(patches);
+      return;
+    }
+    const before = Object.fromEntries(patches.map(({ id }) => [id, objects[id]]));
+    const commands: HistoryCommand[] = [];
+    for (let start = 0; start < patches.length; start += MAX_SELECTION) {
+      const chunk = patches.slice(start, start + MAX_SELECTION);
+      const saved = await this.track(this.writePatches(chunk));
+      for (const { id, patch } of chunk) {
+        if (saved.has(id)) commands.push({ type: 'patch', id, before: patchBefore(before[id], patch), after: patch });
+      }
+    }
     if (commands.length > 0) this.record({ type: 'batch', commands });
   }
 
@@ -1140,6 +1535,16 @@ export class SceneSync {
         return (await this.removeDrawing(command.drawing)) ? 'applied' : 'failed';
       }
       case 'batch': {
+        // Só patches (mover, girar, ocultar um grupo): uma gravação para todos.
+        if (command.commands.length > 1 && command.commands.every((step) => step.type === 'patch')) {
+          const patches = command.commands
+            .filter((step): step is Extract<HistoryCommand, { type: 'patch' }> => step.type === 'patch')
+            .filter((step) => state.objects[step.id])
+            .map((step) => ({ id: step.id, patch: step.after }));
+          if (patches.length === 0) return 'skipped';
+          const saved = await this.writePatches(patches);
+          return saved.size === patches.length ? 'applied' : 'failed';
+        }
         let result: ApplyResult = 'skipped';
         for (const step of command.commands) {
           const stepResult = await this.applyCommand(step);

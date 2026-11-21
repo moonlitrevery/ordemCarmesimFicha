@@ -12,6 +12,7 @@ import { FxManager } from '../fx/manager';
 import { FpsMonitor } from '../fx/rules';
 import { formatRulerDistance } from '../geometry';
 import { gridCellPx } from '../pages';
+import { polygonTouchesBox, type Box } from '../selection';
 import { currentEntry } from '../initiative';
 import type { EngineBridge } from '../scene-sync';
 import {
@@ -21,7 +22,7 @@ import {
   worldMatrix,
   worldTransform,
 } from '../scene-rules';
-import { useVttStore } from '../store';
+import { soleSelectedId, useVttStore } from '../store';
 import { applyMatrix, invert, type Point } from '../transform';
 import type { Caption, Drawing, SceneObject } from '../types';
 import {
@@ -139,6 +140,12 @@ export class VttEngine implements EngineBridge {
   private rulers = new Map<string, RulerNode>();
   private animations = new Set<(now: number) => void>();
   private selection = new Graphics();
+  /** Contorno fraco do que está sob o mouse: redesenhado só quando muda. */
+  private hoverOutline = new Graphics();
+  private hoverId: string | null = null;
+  /** Caixa de seleção, em coordenadas do mundo. */
+  private marquee = new Graphics();
+  private marqueeBox: Box | null = null;
   private liveStroke = new Graphics();
 
   private mapSprite: Sprite | null = null;
@@ -228,7 +235,7 @@ export class VttEngine implements EngineBridge {
     // A grade fica por cima do mapa e abaixo de tudo o que é interativo.
     this.mapLayer.addChild(this.grid);
     this.drawingsLayer.addChild(this.liveStroke);
-    this.uiLayer.addChild(this.selection);
+    this.uiLayer.addChild(this.hoverOutline, this.selection, this.marquee);
     this.propsLayer.sortableChildren = true;
     this.tokensLayer.sortableChildren = true;
     this.fx = new FxManager(
@@ -252,7 +259,7 @@ export class VttEngine implements EngineBridge {
         state.objects !== prev.objects ||
         state.placements !== prev.placements ||
         state.sceneAssets !== prev.sceneAssets ||
-        state.selectedId !== prev.selectedId ||
+        state.selectedIds !== prev.selectedIds ||
         state.viewedSceneId !== prev.viewedSceneId ||
         state.scenes !== prev.scenes ||
         state.initiative !== prev.initiative ||
@@ -377,6 +384,8 @@ export class VttEngine implements EngineBridge {
     this.layoutCaptions();
     this.layoutMarkers();
     this.drawSelection();
+    this.drawHover();
+    this.drawMarquee();
     this.layoutTransient();
     this.fx?.wake();
     this.invalidate();
@@ -450,6 +459,8 @@ export class VttEngine implements EngineBridge {
     this.syncCaptions(objects);
     this.syncMarkers(objects);
     this.drawSelection();
+    this.drawHover();
+    this.drawMarquee();
     this.invalidate();
   }
 
@@ -602,6 +613,8 @@ export class VttEngine implements EngineBridge {
           this.layoutCaptions();
           this.layoutMarkers();
           this.drawSelection();
+          this.drawHover();
+          this.drawMarquee();
           this.invalidate();
         },
         () => {
@@ -1064,8 +1077,65 @@ export class VttEngine implements EngineBridge {
     };
   }
 
+  /** Os 4 cantos do objeto no mundo (nw, ne, se, sw), já girado. */
+  objectCorners(id: string): Point[] | null {
+    const handles = this.handlesOf(id);
+    return handles ? [handles.nw, handles.ne, handles.se, handles.sw] : null;
+  }
+
+  /** Tudo o que encosta na caixa, na ordem de cima para baixo. Pendentes não entram. */
+  objectsInBox(box: Box): string[] {
+    const { objects } = useVttStore.getState();
+    const found: string[] = [];
+    for (const object of this.drawOrder(objects)) {
+      const corners = this.objectCorners(object.id);
+      if (corners && polygonTouchesBox(corners, box)) found.push(object.id);
+    }
+    return found;
+  }
+
+  /** Só o contorno: nada de quadro contínuo. Mesmo id não redesenha. */
+  setHover(id: string | null) {
+    if (id === this.hoverId) return;
+    this.hoverId = id;
+    this.drawHover();
+    this.invalidate();
+  }
+
+  setMarquee(box: Box | null) {
+    this.marqueeBox = box;
+    this.drawMarquee();
+    this.invalidate();
+  }
+
+  private drawHover() {
+    const graphics = this.hoverOutline;
+    graphics.clear();
+    const id = this.hoverId;
+    // Selecionado já tem contorno forte.
+    if (!id || useVttStore.getState().selectedIds.includes(id)) return;
+    const corners = this.objectCorners(id);
+    if (!corners) return;
+    const unit = 1 / this.camera.zoom;
+    graphics
+      .poly(corners.flatMap((point) => [point.x, point.y]))
+      .stroke({ color: 0xf5e6c8, width: 1.5 * unit, alpha: 0.55 });
+  }
+
+  private drawMarquee() {
+    const graphics = this.marquee;
+    graphics.clear();
+    const box = this.marqueeBox;
+    if (!box) return;
+    const unit = 1 / this.camera.zoom;
+    graphics
+      .rect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0)
+      .fill({ color: CRIMSON, alpha: 0.12 })
+      .stroke({ color: CRIMSON, width: 1.5 * unit, alpha: 0.9 });
+  }
+
   handleAt(sx: number, sy: number): HandleId | null {
-    const { selectedId } = useVttStore.getState();
+    const selectedId = soleSelectedId(useVttStore.getState());
     if (!selectedId) return null;
     const handles = this.handlesOf(selectedId);
     if (!handles) return null;
@@ -1082,14 +1152,27 @@ export class VttEngine implements EngineBridge {
 
   /** Espessuras divididas pelo zoom: handle tem o mesmo tamanho em qualquer escala. */
   private drawSelection() {
-    const { selectedId, objects } = useVttStore.getState();
+    const state = useVttStore.getState();
     const graphics = this.selection;
     graphics.clear();
-    const handles =
-      selectedId && objects[selectedId] ? this.handlesOf(selectedId) : null;
+    const unit = 1 / this.camera.zoom;
+    const soleId = soleSelectedId(state);
+
+    // Vários: só o contorno de cada um. Alças só com um selecionado.
+    if (!soleId) {
+      for (const id of state.selectedIds) {
+        const corners = this.objectCorners(id);
+        if (!corners) continue;
+        graphics
+          .poly(corners.flatMap((point) => [point.x, point.y]))
+          .stroke({ color: CRIMSON, width: 2 * unit });
+      }
+      return;
+    }
+
+    const handles = state.objects[soleId] ? this.handlesOf(soleId) : null;
     if (!handles) return;
 
-    const unit = 1 / this.camera.zoom;
     const size = HANDLE_SCREEN_SIZE * this.handleScale * unit;
     const { nw, ne, se, sw, rotate } = handles;
     const topCenter = { x: (nw.x + ne.x) / 2, y: (nw.y + ne.y) / 2 };

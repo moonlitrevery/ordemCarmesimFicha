@@ -116,7 +116,8 @@ interface VttState {
   tool: VttTool;
   strokeColor: string;
   strokeWidth: number;
-  selectedId: string | null;
+  /** Seleção do canvas, na ordem em que entrou. Até 50 (`MAX_SELECTION`). */
+  selectedIds: string[];
   contextMenu: { id: string; x: number; y: number } | null;
   captionTargetId: string | null;
   npcLinkTargetId: string | null;
@@ -259,7 +260,7 @@ export const useVttStore = create<VttState>((set) => ({
   tool: 'select',
   strokeColor: '#e0525f',
   strokeWidth: 4,
-  selectedId: null,
+  selectedIds: [],
   contextMenu: null,
   captionTargetId: null,
   npcLinkTargetId: null,
@@ -312,7 +313,7 @@ export const useVttStore = create<VttState>((set) => ({
       placements: [],
       // Espectador não seleciona nada: o que sobra para arrastar é o mapa.
       tool: snapshot.me.role === 'espectador' ? 'pan' : 'select',
-      selectedId: null,
+      selectedIds: [],
       contextMenu: null,
       captionTargetId: null,
       npcLinkTargetId: null,
@@ -367,7 +368,7 @@ export const useVttStore = create<VttState>((set) => ({
     set({
       calibrating: true,
       calibrationPixels: null,
-      selectedId: null,
+      selectedIds: [],
       armedAsset: null,
       attachingId: null,
       tool: 'select',
@@ -378,4 +379,9 @@ export const useVttStore = create<VttState>((set) => ({
 /** A cor da pessoa fora do React (ping, régua). */
 export function personColor(userId: string): string {
   return useVttStore.getState().peopleColors[userId] ?? userColor(userId);
+}
+
+/** O único selecionado, para o que só faz sentido com um (alças, legenda, anexar). */
+export function soleSelectedId(state: { selectedIds: string[] }): string | null {
+  return state.selectedIds.length === 1 ? state.selectedIds[0] : null;
 }

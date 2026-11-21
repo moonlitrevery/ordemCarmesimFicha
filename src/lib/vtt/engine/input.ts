@@ -1,11 +1,20 @@
 import { distanceToStroke, simplifyToLimit } from '../geometry';
 import {
   canEditObjects,
-  effectiveParent,
   patchFromWorld,
   worldTransform,
 } from '../scene-rules';
-import { personColor, useVttStore } from '../store';
+import {
+  arrowDirection,
+  boxFrom,
+  limitSelection,
+  MAX_SELECTION,
+  mergeSelection,
+  nudgeStep,
+  selectionLimitMessage,
+  toggleInSelection,
+} from '../selection';
+import { personColor, soleSelectedId, useVttStore } from '../store';
 import type { SceneObject } from '../types';
 import { snapAngle, type Point } from '../transform';
 import { pinch, zoomAt } from './camera';
@@ -26,17 +35,25 @@ const ERASER_RADIUS_PX = 10;
 const MAX_STROKE_WIDTH = 200;
 const CONDITION_TIP_MS = 2500;
 
+/** Não há cursor nativo de girar: uma seta curva em SVG, com `grab` de reserva. */
+const ROTATE_CURSOR =
+  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f5e6c8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-3-6.7'/><polyline points='21 3 21 9 15 9'/></svg>\") 12 12, grab";
+
 type Gesture =
   | { kind: 'none' }
   | { kind: 'pan'; lastX: number; lastY: number }
   | { kind: 'pinch'; cx: number; cy: number; distance: number }
   | {
+      /** Um ou vários: `ids` são as raízes (anexado a outro selecionado vai com o pai). */
       kind: 'drag';
-      id: string;
-      offsetX: number;
-      offsetY: number;
+      ids: string[];
+      /** Onde foi o clique: sem arrastar, clicar num item de um grupo seleciona só ele. */
+      clickId: string;
+      startX: number;
+      startY: number;
+      starts: Record<string, Point>;
+      befores: Record<string, SceneObject>;
       moved: boolean;
-      before: SceneObject;
     }
   | {
       kind: 'scale';
@@ -48,7 +65,20 @@ type Gesture =
   | { kind: 'rotate'; id: string; before: SceneObject }
   | { kind: 'stroke'; points: number[]; width: number }
   | { kind: 'erase' }
-  | { kind: 'ruler'; x1: number; y1: number; x2: number; y2: number };
+  | { kind: 'ruler'; x1: number; y1: number; x2: number; y2: number }
+  /** Caixa de seleção. Só vale (`active`) depois de passar da folga do clique. */
+  | {
+      kind: 'marquee';
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      additive: boolean;
+      base: string[];
+      active: boolean;
+    }
+  /** Toque no vazio: segurar vira caixa de seleção; soltar sem mexer limpa a seleção. */
+  | { kind: 'tap-empty'; world: Point };
 
 function store() {
   return useVttStore.getState();
@@ -76,6 +106,9 @@ export class EngineInput {
   private tipTimer: ReturnType<typeof setTimeout> | undefined;
   /** Onde o mouse está, para o Ctrl+V. Fora do canvas (sobre o HUD) é nulo. */
   private cursor: Point | null = null;
+  /** Hover: no máximo um hit-test por quadro, nunca um por evento de mouse. */
+  private hoverAt: Point | null = null;
+  private hoverRaf = 0;
 
   constructor(
     private engine: VttEngine,
@@ -103,6 +136,8 @@ export class EngineInput {
     listen('pointercancel', (e) => this.onCancel(e));
     listen('pointerleave', () => {
       this.cursor = null;
+      this.hoverAt = null;
+      engine.setHover(null);
       engine.revealCaption(null);
       this.showConditionTip(null, { x: 0, y: 0 });
     });
@@ -125,6 +160,7 @@ export class EngineInput {
           state.armedAsset !== prev.armedAsset ||
           state.calibrating !== prev.calibrating
         ) {
+          this.engine.setHover(null);
           this.updateCursor();
         }
       })
@@ -132,6 +168,7 @@ export class EngineInput {
   }
 
   destroy() {
+    cancelAnimationFrame(this.hoverRaf);
     this.clearTimers();
     clearTimeout(this.tipTimer);
     this.cleanup.forEach((remove) => remove());
@@ -199,6 +236,7 @@ export class EngineInput {
     if (event.pointerType === 'touch') this.armTouchTimers(at, world);
 
     const state = store();
+    this.engine.setHover(null);
 
     if (state.armedAsset && this.canEdit()) {
       void state.sync?.placeAsset(state.armedAsset, world.x, world.y);
@@ -261,41 +299,93 @@ export class EngineInput {
         }
         return;
       default:
-        this.startSelect(at, world);
+        this.startSelect(at, world, event);
     }
   }
 
-  private startSelect(at: Point, world: Point) {
+  /** Troca a seleção. Passou de 50: fica com os primeiros e avisa, sem cortar calado. */
+  private select(ids: string[]) {
+    const limited = limitSelection(ids);
+    if (limited.truncated) store().showToast(selectionLimitMessage(limited.total));
+    useVttStore.setState({ selectedIds: limited.ids });
+  }
+
+  private startSelect(at: Point, world: Point, event: PointerEvent) {
     if (!this.canEdit()) return;
-    const { selectedId, objects, sync } = store();
+    const state = store();
+    const sole = soleSelectedId(state);
 
     const handle = this.engine.handleAt(at.x, at.y);
-    if (handle && selectedId && objects[selectedId]) {
-      this.startHandle(handle, selectedId, world);
+    if (handle && sole && state.objects[sole]) {
+      this.startHandle(handle, sole, world);
       return;
     }
 
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     const hit = this.engine.objectAt(world.x, world.y);
     if (!hit) {
-      if (selectedId) useVttStore.setState({ selectedId: null });
+      // Toque: segurar no vazio faz a caixa (arrastar com um dedo não faz nada sozinho).
+      if (event.pointerType === 'touch') {
+        this.gesture = { kind: 'tap-empty', world };
+        return;
+      }
+      this.gesture = {
+        kind: 'marquee',
+        x1: world.x,
+        y1: world.y,
+        x2: world.x,
+        y2: world.y,
+        additive,
+        base: additive ? state.selectedIds : [],
+        active: false,
+      };
       return;
     }
-    if (hit.id !== selectedId) useVttStore.setState({ selectedId: hit.id });
-    const current = worldTransform(hit, objects);
+
+    if (additive) {
+      const next = toggleInSelection(state.selectedIds, hit.id);
+      if (next.length > MAX_SELECTION) {
+        state.showToast(selectionLimitMessage(next.length));
+        return;
+      }
+      useVttStore.setState({ selectedIds: next });
+      return;
+    }
+
+    const ids = state.selectedIds.includes(hit.id) ? state.selectedIds : [hit.id];
+    if (ids !== state.selectedIds) useVttStore.setState({ selectedIds: ids });
+    this.startDrag(ids, hit.id, world);
+  }
+
+  /** Pega o grupo: guarda onde cada raiz estava e segura todas contra evento de fora. */
+  private startDrag(ids: string[], clickId: string, world: Point) {
+    const { objects, sync } = store();
+    if (!sync) return;
+    const roots = sync.rootsOf(ids);
+    const starts: Record<string, Point> = {};
+    const befores: Record<string, SceneObject> = {};
+    for (const id of roots) {
+      const current = worldTransform(objects[id], objects);
+      starts[id] = { x: current.x, y: current.y };
+      befores[id] = objects[id];
+    }
+    sync.hold(roots);
     this.gesture = {
       kind: 'drag',
-      id: hit.id,
-      offsetX: current.x - world.x,
-      offsetY: current.y - world.y,
+      ids: roots,
+      clickId,
+      startX: world.x,
+      startY: world.y,
+      starts,
+      befores,
       moved: false,
-      before: objects[hit.id],
     };
-    if (sync) sync.interactingId = hit.id;
+    this.canvas.style.cursor = 'grabbing';
   }
 
   private startHandle(handle: HandleId, id: string, world: Point) {
     const { objects, sync } = store();
-    if (sync) sync.interactingId = id;
+    sync?.hold([id]);
     if (handle === 'rotate') {
       this.gesture = { kind: 'rotate', id, before: objects[id] };
       return;
@@ -327,6 +417,22 @@ export class EngineInput {
       return;
     }
     this.longPress = setTimeout(() => {
+      // Segurar no vazio com Selecionar: vira caixa de seleção a partir dali.
+      if (this.gesture.kind === 'tap-empty') {
+        const start = this.gesture.world;
+        this.gesture = {
+          kind: 'marquee',
+          x1: start.x,
+          y1: start.y,
+          x2: start.x,
+          y2: start.y,
+          additive: false,
+          base: [],
+          active: true,
+        };
+        navigator.vibrate?.(15);
+        return;
+      }
       this.abortGesture();
       this.openMenuAt(at);
     }, LONG_PRESS_MS);
@@ -338,7 +444,14 @@ export class EngineInput {
     if (event.pointerType !== 'touch') this.cursor = at;
 
     if (!known) {
-      this.hover(at, event);
+      if (event.pointerType === 'touch') return;
+      this.hoverAt = at;
+      if (!this.hoverRaf) {
+        this.hoverRaf = requestAnimationFrame(() => {
+          this.hoverRaf = 0;
+          if (this.hoverAt) this.hover(this.hoverAt);
+        });
+      }
       return;
     }
     this.pointers.set(event.pointerId, at);
@@ -385,6 +498,16 @@ export class EngineInput {
         gesture.y2 = world.y;
         this.showRuler(gesture);
         return;
+      case 'marquee':
+        gesture.x2 = world.x;
+        gesture.y2 = world.y;
+        if (!gesture.active && Math.hypot(at.x - this.downAt.x, at.y - this.downAt.y) > TAP_SLOP_PX) {
+          gesture.active = true;
+        }
+        if (gesture.active) {
+          this.engine.setMarquee(boxFrom({ x: gesture.x1, y: gesture.y1 }, { x: gesture.x2, y: gesture.y2 }));
+        }
+        return;
       default:
     }
   }
@@ -400,28 +523,73 @@ export class EngineInput {
     });
   }
 
-  private hover(at: Point, event: PointerEvent) {
-    if (event.pointerType === 'touch') return;
+  /**
+   * Mouse parado sobre o mapa (no máximo uma vez por quadro): cursor, contorno de
+   * hover, dica de condição e, para a mestra, legenda ofuscada.
+   */
+  private hover(at: Point) {
     this.showConditionTip(this.engine.conditionAt(at.x, at.y), at);
-    // Só a mestra: passar o mouse revela a legenda ofuscada.
-    if (store().me?.role !== 'mestre') return;
+    const state = store();
     const world = this.engine.toWorld(at.x, at.y);
-    this.engine.revealCaption(this.engine.objectAt(world.x, world.y)?.id ?? null);
+    const hit = this.engine.objectAt(world.x, world.y);
+    // Só a mestra: passar o mouse revela a legenda ofuscada.
+    if (state.me?.role === 'mestre') this.engine.revealCaption(hit?.id ?? null);
+
+    const selecting =
+      state.tool === 'select' &&
+      !this.spaceDown &&
+      !state.attachingId &&
+      !state.armedAsset &&
+      !state.calibrating;
+    // Mão, outras ferramentas e espectador: nada recebe hover. O mapa nunca recebe.
+    if (!selecting || !this.canEdit()) {
+      this.engine.setHover(null);
+      this.updateCursor();
+      return;
+    }
+
+    const handle = this.engine.handleAt(at.x, at.y);
+    if (handle) {
+      this.engine.setHover(null);
+      this.canvas.style.cursor = this.handleCursor(handle);
+      return;
+    }
+    this.engine.setHover(hit?.id ?? null);
+    this.canvas.style.cursor = hit ? 'grab' : 'default';
   }
 
+  /** Cursor de redimensionar na diagonal certa, mesmo com o objeto girado. */
+  private handleCursor(handle: HandleId): string {
+    if (handle === 'rotate') return ROTATE_CURSOR;
+    const id = soleSelectedId(store());
+    const handles = id ? this.engine.handlesOf(id) : null;
+    if (!handles) return 'nwse-resize';
+    const center = { x: (handles.nw.x + handles.se.x) / 2, y: (handles.nw.y + handles.se.y) / 2 };
+    const corner = handles[handle];
+    return (corner.x - center.x) * (corner.y - center.y) > 0 ? 'nwse-resize' : 'nesw-resize';
+  }
+
+  /** Arrasta o grupo inteiro pelo mesmo deslocamento: a posição relativa não muda. */
   private moveDrag(gesture: Extract<Gesture, { kind: 'drag' }>, world: Point) {
     const { objects, sync } = store();
-    const object = objects[gesture.id];
-    if (!object || !sync) return;
-    const current = worldTransform(object, objects);
-    const patch = patchFromWorld(object, objects, {
-      ...current,
-      x: world.x + gesture.offsetX,
-      y: world.y + gesture.offsetY,
-    });
-    sync.setLocal(gesture.id, patch);
-    const own = patch.local ?? { x: patch.x as number, y: patch.y as number };
-    sync.emitDrag(gesture.id, own.x, own.y);
+    if (!sync) return;
+    const dx = world.x - gesture.startX;
+    const dy = world.y - gesture.startY;
+    const patches: { id: string; patch: ReturnType<typeof patchFromWorld> }[] = [];
+    const items: { id: string; x: number; y: number }[] = [];
+    for (const id of gesture.ids) {
+      const object = objects[id];
+      const start = gesture.starts[id];
+      if (!object || !start) continue;
+      const current = worldTransform(object, objects);
+      const patch = patchFromWorld(object, objects, { ...current, x: start.x + dx, y: start.y + dy });
+      patches.push({ id, patch });
+      const own = patch.local ?? { x: patch.x as number, y: patch.y as number };
+      items.push({ id, x: own.x, y: own.y });
+    }
+    // Um setState e um broadcast para o grupo todo, com o throttle de sempre.
+    sync.setLocalMany(patches);
+    sync.emitDragMany(items);
   }
 
   private moveScale(gesture: Extract<Gesture, { kind: 'scale' }>, world: Point) {
@@ -528,15 +696,36 @@ export class EngineInput {
         this.updateCursor();
         return;
       case 'drag':
+        this.updateCursor();
         if (gesture.moved) {
-          this.commit(gesture.id, gesture.before);
-        } else if (sync) {
-          sync.interactingId = null;
+          sync?.commitTransforms(gesture.befores);
+        } else {
+          sync?.release(gesture.ids);
+          // Clique sem arrastar num item de um grupo: fica só ele.
+          if (store().selectedIds.length > 1) useVttStore.setState({ selectedIds: [gesture.clickId] });
         }
         return;
       case 'scale':
       case 'rotate':
-        this.commit(gesture.id, gesture.before);
+        sync?.commitTransforms({ [gesture.id]: gesture.before });
+        return;
+      case 'marquee': {
+        this.engine.setMarquee(null);
+        if (!gesture.active) {
+          // Clique no vazio, sem arrastar: limpa (com Shift/Ctrl, mantém).
+          if (!gesture.additive && store().selectedIds.length > 0) useVttStore.setState({ selectedIds: [] });
+          return;
+        }
+        const found = this.engine.objectsInBox(
+          boxFrom({ x: gesture.x1, y: gesture.y1 }, { x: gesture.x2, y: gesture.y2 })
+        );
+        this.select(mergeSelection(gesture.base, found));
+        return;
+      }
+      case 'tap-empty':
+        if (at && Math.hypot(at.x - this.downAt.x, at.y - this.downAt.y) <= TAP_SLOP_PX) {
+          if (store().selectedIds.length > 0) useVttStore.setState({ selectedIds: [] });
+        }
         return;
       case 'stroke': {
         this.engine.drawLiveStroke([], '#000000', 1);
@@ -591,27 +780,6 @@ export class EngineInput {
     }
   }
 
-  private commit(id: string, before: SceneObject) {
-    const { objects, sync } = store();
-    const object = objects[id];
-    if (!object || !sync) return;
-    // O `interactingId` só sai quando o banco responder: evento de fora não desfaz.
-    void sync.changeObject(
-      id,
-      effectiveParent(object, objects) && object.local
-        ? { local: object.local }
-        : {
-            x: object.x,
-            y: object.y,
-            rotation: object.rotation,
-            scale: object.scale,
-            flip_x: object.flip_x,
-            flip_y: object.flip_y,
-          },
-      before
-    );
-  }
-
   private onCancel(event: PointerEvent) {
     this.pointers.delete(event.pointerId);
     this.clearTimers();
@@ -623,17 +791,15 @@ export class EngineInput {
     const { gesture } = this;
     this.gesture = { kind: 'none' };
     const { sync, me } = store();
-    if (
-      gesture.kind === 'drag' ||
-      gesture.kind === 'scale' ||
-      gesture.kind === 'rotate'
-    ) {
+    if (gesture.kind === 'drag' || gesture.kind === 'scale' || gesture.kind === 'rotate') {
       if (sync) {
-        sync.interactingId = null;
+        sync.release(gesture.kind === 'drag' ? gesture.ids : [gesture.id]);
         // Toque longo cai aqui sem ter mexido em nada: não precisa reler.
         if (gesture.kind !== 'drag' || gesture.moved) void sync.reload();
       }
+      this.updateCursor();
     }
+    if (gesture.kind === 'marquee') this.engine.setMarquee(null);
     if (gesture.kind === 'stroke') this.engine.drawLiveStroke([], '#000000', 1);
     if (gesture.kind === 'ruler' && me) {
       this.engine.showRuler(me.userId, '', null);
@@ -706,26 +872,31 @@ export class EngineInput {
     const hit = this.engine.objectAt(world.x, world.y);
     if (!hit) return;
     const rect = this.canvas.getBoundingClientRect();
+    const { selectedIds } = store();
+    // Clique direito num item do grupo: o menu vale para o grupo inteiro.
     useVttStore.setState({
-      selectedId: hit.id,
+      selectedIds: selectedIds.includes(hit.id) ? selectedIds : [hit.id],
       contextMenu: { id: hit.id, x: at.x + rect.left, y: at.y + rect.top },
     });
   }
 
   private onKeyDown(event: KeyboardEvent) {
     if (isTyping(event.target)) return;
+    // Overlay de Páginas por cima: Delete, setinhas e atalhos não mexem no mapa escondido.
+    if (store().pagesOpen) return;
     if (event.code === 'Space') {
       this.spaceDown = true;
       this.updateCursor();
       event.preventDefault();
       return;
     }
-    const { selectedId, sync } = store();
+    const { selectedIds, sync } = store();
     if (this.onHistoryKey(event)) return;
+    if (this.onSelectAllKey(event)) return;
     if (this.onClipboardKey(event)) return;
     if (event.key === 'Escape') {
       useVttStore.setState({
-        selectedId: null,
+        selectedIds: [],
         contextMenu: null,
         attachingId: null,
         armedAsset: null,
@@ -735,14 +906,38 @@ export class EngineInput {
       this.abortGesture();
       return;
     }
-    if (!selectedId || !sync || !this.canEdit()) return;
-    if (event.key === 'Delete' || event.key === 'Backspace') {
-      void sync.deleteObject(selectedId);
-    } else if (event.key === 'q' || event.key === 'Q') {
-      sync.rotateBy(selectedId, -QUARTER_TURN);
-    } else if (event.key === 'e' || event.key === 'E') {
-      sync.rotateBy(selectedId, QUARTER_TURN);
+    if (selectedIds.length === 0 || !sync || !this.canEdit()) return;
+    const direction = arrowDirection(event.key);
+    // Só com o foco no mapa: na barra lateral as setinhas rolam a lista.
+    if (direction && this.focusOnMap(event)) {
+      event.preventDefault();
+      const scene = store().scenes.find((item) => item.id === store().viewedSceneId);
+      const step = nudgeStep(scene?.meters_per_px, this.engine.camera.zoom, event.shiftKey);
+      sync.nudge(selectedIds, direction.x * step, direction.y * step);
+      return;
     }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      void sync.deleteObjects(selectedIds);
+    } else if (event.key === 'q' || event.key === 'Q') {
+      sync.rotateMany(selectedIds, -QUARTER_TURN);
+    } else if (event.key === 'e' || event.key === 'E') {
+      sync.rotateMany(selectedIds, QUARTER_TURN);
+    }
+  }
+
+  /** Foco no mapa (ou em lugar nenhum): fora disso a tecla é da página. */
+  private focusOnMap(event: KeyboardEvent): boolean {
+    return event.target === this.canvas || event.target === document.body;
+  }
+
+  /** Ctrl+A: tudo o que a pessoa pode mexer na página (o mapa nunca é objeto). */
+  private onSelectAllKey(event: KeyboardEvent): boolean {
+    if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'a') return false;
+    if (!this.canEdit() || !this.focusOnMap(event)) return false;
+    event.preventDefault();
+    this.select(Object.keys(store().objects));
+    if (store().tool !== 'select') useVttStore.setState({ tool: 'select' });
+    return true;
   }
 
   /** Ctrl+C e Ctrl+V. Texto marcado (uma mensagem do chat) continua sendo do navegador. */
@@ -750,11 +945,11 @@ export class EngineInput {
     if (!event.ctrlKey && !event.metaKey) return false;
     const key = event.key.toLowerCase();
     if (key !== 'c' && key !== 'v') return false;
-    const { sync, selectedId } = store();
+    const { sync, selectedIds } = store();
     if (!sync || !this.canEdit() || this.gesture.kind !== 'none') return false;
     if (key === 'c') {
-      if (!selectedId || window.getSelection()?.toString()) return false;
-      sync.copyObject(selectedId);
+      if (selectedIds.length === 0 || window.getSelection()?.toString()) return false;
+      sync.copyObjects(selectedIds);
       return true;
     }
     if (!sync.hasCopy) return false;

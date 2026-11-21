@@ -222,7 +222,7 @@ function GmControls({ hiddenRolls, setHiddenRolls }: {
   setHiddenRolls: (hidden: boolean) => void;
 }) {
   const sync = useVttStore((s) => s.initiativeSync);
-  const selectedId = useVttStore((s) => s.selectedId);
+  const selectedIds = useVttStore((s) => s.selectedIds);
   const notation = useVttStore((s) => s.initiative.notation);
   const [picking, setPicking] = useState(false);
   const [manual, setManual] = useState('');
@@ -248,11 +248,15 @@ function GmControls({ hiddenRolls, setHiddenRolls }: {
         <button
           type="button"
           className="btn-ghost min-h-11 flex-1 px-2 py-1 text-xs desk:min-h-0"
-          disabled={!selectedId}
-          title={selectedId ? undefined : 'Selecione um token no mapa'}
-          onClick={() => selectedId && void sync?.addObjects([selectedId])}
+          disabled={selectedIds.length === 0}
+          title={selectedIds.length > 0 ? undefined : 'Selecione um ou mais tokens no mapa'}
+          onClick={() => {
+            // Iniciativa é só de token: adereço e addon da seleção ficam de fora.
+            const { objects } = useVttStore.getState();
+            void sync?.addObjects(selectedIds.filter((id) => objects[id]?.kind === 'token'));
+          }}
         >
-          Token selecionado
+          {selectedIds.length > 1 ? `${selectedIds.length} selecionados` : 'Token selecionado'}
         </button>
         <button
           type="button"

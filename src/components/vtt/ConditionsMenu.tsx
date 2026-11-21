@@ -45,19 +45,31 @@ function ConditionRow({
   );
 }
 
-/** Fica aberto ao ligar: é comum marcar mais de uma condição de uma vez. */
+/**
+ * Fica aberto ao ligar: é comum marcar mais de uma condição de uma vez. Com vários
+ * objetos (Fase 12b), marcada = todos têm; tocar liga em todos se algum não tem.
+ */
 export function ConditionsMenu({
-  object,
+  objects,
   onBack,
 }: {
-  object: SceneObject;
+  objects: SceneObject[];
   onBack: () => void;
 }) {
   const [text, setText] = useState('');
   const [emoji, setEmoji] = useState(CUSTOM_EMOJI_CHOICES[0]);
   const sync = useVttStore((s) => s.sync);
-
-  const customs = resolveConditions(object.conditions).filter((c) => c.emoji);
+  const ids = objects.map((object) => object.id);
+  const allHave = (key: string) => objects.every((object) => object.conditions.includes(key));
+  const toggle = (key: string) =>
+    ids.length === 1 ? sync?.toggleCondition(ids[0], key) : sync?.toggleConditionMany(ids, key);
+  // Só o que vale para todos os tipos da seleção (addon tem menos condições que token).
+  const kinds = Array.from(new Set(objects.map((object) => object.kind)));
+  const standard = conditionsForKind(kinds[0]).filter(({ id }) =>
+    kinds.every((kind) => conditionsForKind(kind).some((condition) => condition.id === id))
+  );
+  const customKeys = Array.from(new Set(objects.flatMap((object) => object.conditions)));
+  const customs = resolveConditions(customKeys).filter((c) => c.emoji);
 
   function addCustom(event: FormEvent) {
     event.preventDefault();
@@ -66,7 +78,7 @@ export function ConditionsMenu({
       useVttStore.getState().showToast('Escreva um nome e escolha um emoji.');
       return;
     }
-    if (!object.conditions.includes(key)) sync?.toggleCondition(object.id, key);
+    if (!allHave(key)) toggle(key);
     setText('');
   }
 
@@ -77,21 +89,11 @@ export function ConditionsMenu({
         Condições
       </button>
       <hr className="my-1 border-ink-border" />
-      {conditionsForKind(object.kind).map(({ id }) => (
-        <ConditionRow
-          key={id}
-          conditionKey={id}
-          active={object.conditions.includes(id)}
-          onToggle={() => sync?.toggleCondition(object.id, id)}
-        />
+      {standard.map(({ id }) => (
+        <ConditionRow key={id} conditionKey={id} active={allHave(id)} onToggle={() => toggle(id)} />
       ))}
       {customs.map(({ key }) => (
-        <ConditionRow
-          key={key}
-          conditionKey={key}
-          active
-          onToggle={() => sync?.toggleCondition(object.id, key)}
-        />
+        <ConditionRow key={key} conditionKey={key} active={allHave(key)} onToggle={() => toggle(key)} />
       ))}
       <hr className="my-1 border-ink-border" />
       <form onSubmit={addCustom} className="space-y-2 p-2">

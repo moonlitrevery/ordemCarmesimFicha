@@ -331,3 +331,46 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 - Último grupo aberto em `localStorage` (`vm:last-group`, com try/catch).
 - Seletor de membro com busca (foto, nome, nome do perfil); fica aberto para adicionar vários; quem já está no grupo aparece marcado.
 - Estados: sem grupos (botão "Criar primeiro grupo"), seção vazia (botão "+ Adicionar PJ/NPC" no título da seção), erro de carga com "Tentar de novo".
+
+## 14. Hover e seleção múltipla (Fase 12b)
+
+### Hover
+
+- Só com a ferramenta **Selecionar**, mouse (no touch não há hover) e quem pode editar (espectador não). O `EngineInput` guarda a última posição e faz **no máximo um hit-test por quadro** (`requestAnimationFrame`), com os mesmos bounds de `objectAt`; parado, nada roda.
+- Cursor: `grab` sobre objeto, `grabbing` arrastando; nas alças, `nwse-resize`/`nesw-resize` conforme a diagonal real do canto (vale com o objeto girado) e uma seta curva em SVG (`ROTATE_CURSOR`, reserva `grab`) na alça de giro; `default` no resto. Com a Mão (ou Espaço), sempre `grab`/`grabbing` e nada recebe hover. Outras ferramentas, anexar, colocar e calibrar continuam em `crosshair`.
+- Contorno de hover (`VttEngine.setHover`): um `Graphics` próprio na `uiLayer`, cor pergaminho com alpha 0,55, mais fino que o de seleção, redesenhado só quando muda o objeto sob o mouse (ou o objeto/zoom muda). Objeto já selecionado não ganha hover. O **mapa nunca** recebe hover: não é objeto.
+- Jogador recebe hover e pega **qualquer objeto que vê**, como sempre (SPEC §4: mover é de todos; apagar, só o que criou).
+
+### Seleção
+
+- `store.selectedIds: string[]` substituiu `selectedId`. `soleSelectedId(state)` dá o único selecionado, para o que só faz sentido com um (alças, legenda, anexar).
+- Clique seleciona só o objeto. **Shift ou Ctrl/Cmd + clique** põe ou tira da seleção, sem arrastar. Clique sem arrastar num item de um grupo, no soltar, deixa só ele.
+- **Caixa de seleção** (mouse): arrastar no vazio. Só vale depois da folga do clique (10 px); antes disso é clique, e clique no vazio limpa a seleção (com Shift/Ctrl, mantém). Retângulo crimson com preenchimento de 12% (`VttEngine.setMarquee`). Ao soltar, entra tudo que **encosta** na caixa: teste de separação de eixos entre os 4 cantos girados do objeto e a caixa (`polygonTouchesBox`, `src/lib/vtt/selection.ts`), então o canto vazio de um objeto girado não conta. Com Shift/Ctrl, soma à seleção que havia.
+- **Touch:** toque seleciona; **segurar 450 ms no vazio** e arrastar faz a caixa (vibra de leve, se o aparelho deixar); segurar sobre objeto continua abrindo o menu; arrastar um dedo no vazio sem segurar não faz nada; dois dedos continuam pan e pinça.
+- **Esc** limpa. **Ctrl+A** (Cmd+A) seleciona todos os objetos da página e passa para Selecionar.
+- **Limite de 50** (`MAX_SELECTION`, o mesmo da RPC). Caixa e Ctrl+A que passem disso ficam com os 50 primeiros (de cima para baixo) e mostram o aviso "Seleção limitada a 50 objetos (havia N)."; Shift+clique além do limite não entra e mostra o mesmo aviso.
+- Desenho: com vários, cada um ganha o contorno crimson; as alças só aparecem com exatamente um.
+- **Teclado só no mapa:** setinhas e Ctrl+A só valem com o foco no mapa (ou em lugar nenhum); na barra lateral as setinhas rolam a lista e o Ctrl+A seleciona texto. Com o overlay de Páginas aberto, nenhum atalho do mapa vale (Delete não apaga nada escondido atrás dele).
+
+### Grupo
+
+- **Raízes:** objeto anexado a outro que também está na seleção vai junto com o pai e não se move sozinho (`selectionRoots`); senão andaria duas vezes. Copiar, duplicar e girar também usam as raízes.
+- **Arrastar** qualquer selecionado move todas as raízes pelo mesmo deslocamento no mundo, mantendo a posição relativa. Não há snap na grade (não existia).
+- **Delete/Backspace:** apaga o que a pessoa pode apagar; o resto fica, com aviso ("Apagando 2 de 5: você só pode apagar o que criou.").
+- **Q/E** giram cada raiz em torno do próprio centro.
+- **Setinhas** (novo): 1 quadrado (1,5 m) com a régua calibrada, ou 10 px de tela sem ela; **Shift** dá o passo fino (2 px de tela). Movem na hora e transmitem como arraste; gravam uma vez, 350 ms depois da última tecla (`SceneSync.nudge`), num passo só.
+- **Ctrl+C / Ctrl+V / Duplicar:** copia cada família (raiz + anexos) e cola mantendo a posição relativa ao primeiro; a seleção vira o que foi colado.
+- **Menu de contexto** num item do grupo (2 ou mais): "N objetos selecionados", girar, duplicar, Condições ▸ (só as que valem para todos os tipos; marcada = todos têm; tocar liga em todos se algum não tem, desliga se todos têm), Ocultar/Mostrar todos (mestra, leva as famílias), Apagar N (ou "N de M"). Legenda, anexar, NPC, magias, efeitos e transformações só com um. "Token selecionado" na Iniciativa aceita vários (só os do tipo token).
+- **Desfazer:** mover, girar, setinhas, condição, ocultar, apagar, colar e duplicar um grupo são **um passo só** (`batch`). Desfazer/refazer um `batch` só de patches grava numa chamada.
+
+### Rede
+
+- **Arrastando:** `obj:drag-many {sceneId, items: [{id, x, y}]}`, até 50, com o mesmo throttle de 50 ms do arraste de um: um broadcast por tique para o grupo inteiro (um objeto só continua saindo como `obj:drag`). Objeto oculto ou página sem plateia não entra no evento, como antes. Quem recebe valida (array, até 50, números finitos), ignora o que está na própria mão e aplica num `setState` só.
+- **Ao soltar:** a RPC `patch_scene_objects(p_patches jsonb)` (migração 023) grava o grupo inteiro numa chamada e devolve as linhas; sai **um** `obj:upsert-many {objects}` com as linhas visíveis de página com plateia, e um `scene:refresh` por página para o que é segredo. Quem recebe valida cada linha (`isValidObject`), aplica last-write-wins e faz um `setState` só.
+- A RPC é `security invoker`: roda com as permissões de quem chama, então o RLS de `scene_objects`, o privilégio por coluna e o trigger `guard_scene_object` valem como num update comum (jogador não oculta, espectador não muda nada, linha que o RLS esconde não muda nem volta). Grava só `x, y, rotation, scale, flip_x, flip_y, local, hidden, conditions`; lote com outro campo cai para um update por objeto. Recusa mais de 50 itens ou formato errado (`invalid_patches`). Sem a migração, o cliente faz um update por objeto em paralelo e avisa uma vez.
+- `SceneSync.interacting` é um conjunto: tudo o que está na mão (arrasto, alças, setinhas) não aceita evento de fora até o banco responder, e a releitura mantém esses objetos como estão na tela.
+- Ocultar uma família com mais de 50 grava em partes de 50, mas continua um passo só.
+
+### Banco (migração 023)
+
+- Só a função `patch_scene_objects(jsonb) returns setof scene_objects`, `security invoker`, `execute` só para `authenticated`. Nenhuma política nem privilégio mudou. Testes em `supabase/rls.test.ts` ("seleção múltipla").

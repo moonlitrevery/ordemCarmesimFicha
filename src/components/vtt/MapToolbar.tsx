@@ -136,7 +136,7 @@ export function MapToolbar() {
             icon={t.icon}
             label={t.label}
             active={tool === t.id}
-            onClick={() => useVttStore.setState({ tool: t.id, selectedId: null })}
+            onClick={() => useVttStore.setState({ tool: t.id, selectedIds: [] })}
           />
           {tool === t.id && t.id === 'draw' && <DrawOptions isGm={isGm} />}
           {tool === t.id && t.id === 'erase' && <EraseOptions isGm={isGm} />}

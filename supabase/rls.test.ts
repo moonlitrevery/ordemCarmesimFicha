@@ -1200,3 +1200,73 @@ describe('V.M. (migração 023)', () => {
     await db.exec(readSql('migrations', '023_gm_view.sql'));
   });
 });
+
+describe('seleção múltipla (migração 023)', () => {
+  const PATCH = `select id, x, y, hidden, conditions from public.patch_scene_objects($1::jsonb) order by x`;
+  let a: string;
+  let b: string;
+  let elsewhere: string;
+
+  beforeAll(async () => {
+    a = (await insertOne(GM, INSERT_OBJECT, [defaultScene, approvedToken, GM, false])).id;
+    b = (await insertOne(GM, INSERT_OBJECT, [defaultScene, approvedToken, GM, false])).id;
+    elsewhere = (await insertOne(GM, INSERT_OBJECT, [otherScene, approvedToken, GM, false])).id;
+  });
+
+  it('jogador move dois objetos visíveis numa chamada só', async () => {
+    const rows = await asUser(PLAYER, PATCH, [
+      JSON.stringify([
+        { id: a, patch: { x: 10, y: 20 } },
+        { id: b, patch: { x: 30, y: 40, conditions: ['caido'] } },
+      ]),
+    ]);
+    expect(rows).toEqual([
+      { id: a, x: 10, y: 20, hidden: false, conditions: [] },
+      { id: b, x: 30, y: 40, hidden: false, conditions: ['caido'] },
+    ]);
+  });
+
+  it('o que o RLS não mostra não muda nem volta', async () => {
+    expect(await asUser(PLAYER, PATCH, [JSON.stringify([{ id: elsewhere, patch: { x: 1 } }])])).toEqual([]);
+    expect(await asUser(OUTSIDER, PATCH, [JSON.stringify([{ id: a, patch: { x: 1 } }])])).toEqual([]);
+    expect(await asUser(SPECTATOR, PATCH, [JSON.stringify([{ id: a, patch: { x: 1 } }])])).toEqual([]);
+  });
+
+  it('o trigger continua valendo: jogador não oculta', async () => {
+    await expect(
+      asUser(PLAYER, PATCH, [JSON.stringify([{ id: a, patch: { hidden: true } }])])
+    ).rejects.toThrow(/forbidden/);
+    const rows = await asUser(GM, PATCH, [
+      JSON.stringify([
+        { id: a, patch: { hidden: true } },
+        { id: b, patch: { hidden: true } },
+      ]),
+    ]);
+    expect(rows.map((row) => (row as { hidden: boolean }).hidden)).toEqual([true, true]);
+    await asUser(GM, PATCH, [
+      JSON.stringify([
+        { id: a, patch: { hidden: false } },
+        { id: b, patch: { hidden: false } },
+      ]),
+    ]);
+  });
+
+  it('recusa lote grande ou malformado, e anon não chama', async () => {
+    const many = Array.from({ length: 51 }, () => ({ id: a, patch: { x: 1 } }));
+    await expect(asUser(GM, PATCH, [JSON.stringify(many)])).rejects.toThrow(/invalid_patches/);
+    await expect(asUser(GM, PATCH, [JSON.stringify({ id: a })])).rejects.toThrow(/invalid_patches/);
+    await expect(asUser(GM, PATCH, [JSON.stringify([{ id: a, patch: 3 }])])).rejects.toThrow(/invalid_patches/);
+    await db.exec('set role anon');
+    try {
+      await expect(db.query(`select public.patch_scene_objects('[]'::jsonb)`)).rejects.toMatchObject({
+        code: '42501',
+      });
+    } finally {
+      await db.exec('reset role');
+    }
+  });
+
+  it('a migração roda de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '023_vtt_batch_patch.sql'));
+  });
+});

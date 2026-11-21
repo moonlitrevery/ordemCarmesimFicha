@@ -27,10 +27,13 @@ import { conditionsForKind } from '@/lib/vtt/conditions';
 import { supportsEffects } from '@/lib/vtt/fx/rules';
 import { canDeleteObject } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
+import type { SceneObject } from '@/lib/vtt/types';
 import { ConditionsMenu } from './ConditionsMenu';
 import { SpellsMenu, TokenEffectsMenu } from './EffectsMenus';
 
 const QUARTER_TURN = Math.PI / 2;
+const NO_IDS: string[] = [];
+const NO_OBJECTS: Record<string, SceneObject> = {};
 
 function Item({
   icon: Icon,
@@ -77,6 +80,9 @@ export function TokenContextMenu() {
   );
   const me = useVttStore((s) => s.me);
   const sync = useVttStore((s) => s.sync);
+  // Só com o menu aberto: fechado, arrastar não re-renderiza este componente.
+  const selectedIds = useVttStore((s) => (s.contextMenu ? s.selectedIds : NO_IDS));
+  const allObjects = useVttStore((s) => (s.contextMenu ? s.objects : NO_OBJECTS));
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
   const [view, setView] = useState<'main' | 'conditions' | 'spells' | 'effects'>('main');
@@ -123,6 +129,11 @@ export function TokenContextMenu() {
 
   const { kind } = object;
   const backToMain = () => setView('main');
+  // Menu aberto num item de um grupo selecionado: vale para todos (Fase 12b).
+  const group =
+    selectedIds.length > 1 && selectedIds.includes(id)
+      ? selectedIds.map((selected) => allObjects[selected]).filter(Boolean)
+      : null;
 
   if (view !== 'main') {
     return (
@@ -140,7 +151,7 @@ export function TokenContextMenu() {
         style={position}
         onContextMenu={(e) => e.preventDefault()}
       >
-        {view === 'conditions' && <ConditionsMenu object={object} onBack={backToMain} />}
+        {view === 'conditions' && <ConditionsMenu objects={group ?? [object]} onBack={backToMain} />}
         {view === 'spells' && supportsEffects(kind) && (
           <SpellsMenu object={object} target={kind} onBack={backToMain} />
         )}
@@ -150,6 +161,68 @@ export function TokenContextMenu() {
   }
 
   const isToken = kind === 'token';
+
+  if (group) {
+    const ids = group.map((item) => item.id);
+    const deletable = group.filter((item) => canDeleteObject(item, me.role, me.userId)).length;
+    const allHidden = group.every((item) => item.hidden);
+    const withConditions = group.every((item) => conditionsForKind(item.kind).length > 0);
+    return (
+      <div
+        ref={ref}
+        role="menu"
+        aria-label={`Ações de ${group.length} objetos`}
+        className="fixed z-50 max-h-[85vh] w-56 overflow-y-auto rounded-xl border border-ink-border bg-ink-raised p-1 shadow-panel"
+        style={position}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <p className="px-2 py-1 text-xs text-ink-muted">{group.length} objetos selecionados</p>
+        <Item
+          icon={RotateCcw}
+          label="Girar à esquerda"
+          hint="Q"
+          onClick={run(() => sync.rotateMany(ids, -QUARTER_TURN))}
+        />
+        <Item
+          icon={RotateCw}
+          label="Girar à direita"
+          hint="E"
+          onClick={run(() => sync.rotateMany(ids, QUARTER_TURN))}
+        />
+        <Item
+          icon={Copy}
+          label="Duplicar"
+          hint="Ctrl+C / V"
+          onClick={run(() => void sync.duplicateObjects(ids))}
+        />
+        {withConditions && (
+          <Item icon={Zap} label="Condições" hint="▸" onClick={() => setView('conditions')} />
+        )}
+        {isGm && (
+          <>
+            <Separator />
+            <Item
+              icon={allHidden ? Eye : EyeOff}
+              label={allHidden ? 'Mostrar todos' : 'Ocultar todos'}
+              onClick={run(() => void sync.setHiddenMany(ids, !allHidden))}
+            />
+          </>
+        )}
+        {deletable > 0 && (
+          <>
+            <Separator />
+            <Item
+              icon={Trash2}
+              label={deletable === group.length ? `Apagar ${deletable}` : `Apagar ${deletable} de ${group.length}`}
+              danger
+              hint="Del"
+              onClick={run(() => void sync.deleteObjects(ids))}
+            />
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

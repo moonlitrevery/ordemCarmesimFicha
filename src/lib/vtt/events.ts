@@ -20,7 +20,11 @@ export type VttEvent =
   | { type: 'scene:refresh'; sceneId: string }
   /** Durante o arraste: transformação própria do objeto, sem gravar. */
   | { type: 'obj:drag'; sceneId: string; id: string; x: number; y: number }
+  /** Grupo sendo arrastado (Fase 12b): um evento por tique para todos, até 50. */
+  | { type: 'obj:drag-many'; sceneId: string; items: { id: string; x: number; y: number }[] }
   | { type: 'obj:upsert'; object: SceneObject }
+  /** Grupo gravado numa chamada só (`patch_scene_objects`): as linhas que o banco devolveu. */
+  | { type: 'obj:upsert-many'; objects: SceneObject[] }
   | { type: 'obj:delete'; sceneId: string; id: string }
   /** A mestra mudou a iniciativa: todos relêem `tables.initiative`. */
   | { type: 'initiative:refresh' }
