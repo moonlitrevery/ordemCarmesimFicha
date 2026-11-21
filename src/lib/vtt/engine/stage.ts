@@ -1134,17 +1134,52 @@ export class VttEngine implements EngineBridge {
       .stroke({ color: CRIMSON, width: 1.5 * unit, alpha: 0.9 });
   }
 
+  /**
+   * Caixa do grupo (Fase 12b): retângulo alinhado aos eixos que envolve todos os
+   * selecionados. Só os 4 cantos, sem giro: arrastar um canto escala o grupo.
+   */
+  groupBounds(): { nw: Point; ne: Point; se: Point; sw: Point; center: Point } | null {
+    const { selectedIds } = useVttStore.getState();
+    if (selectedIds.length < 2) return null;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const id of selectedIds) {
+      for (const point of this.objectCorners(id) ?? []) {
+        x0 = Math.min(x0, point.x);
+        y0 = Math.min(y0, point.y);
+        x1 = Math.max(x1, point.x);
+        y1 = Math.max(y1, point.y);
+      }
+    }
+    if (!Number.isFinite(x0)) return null;
+    return {
+      nw: { x: x0, y: y0 },
+      ne: { x: x1, y: y0 },
+      se: { x: x1, y: y1 },
+      sw: { x: x0, y: y1 },
+      center: { x: (x0 + x1) / 2, y: (y0 + y1) / 2 },
+    };
+  }
+
+  /** Alças da seleção atual: as do objeto (com giro) ou os 4 cantos do grupo. */
+  selectionHandles(): Partial<Record<HandleId, Point>> | null {
+    const sole = soleSelectedId(useVttStore.getState());
+    if (sole) return this.handlesOf(sole);
+    const bounds = this.groupBounds();
+    return bounds ? { nw: bounds.nw, ne: bounds.ne, se: bounds.se, sw: bounds.sw } : null;
+  }
+
   handleAt(sx: number, sy: number): HandleId | null {
-    const selectedId = soleSelectedId(useVttStore.getState());
-    if (!selectedId) return null;
-    const handles = this.handlesOf(selectedId);
+    const handles = this.selectionHandles();
     if (!handles) return null;
     const grab = (HANDLE_SCREEN_SIZE * this.handleScale) + 6;
     const world = this.toWorld(sx, sy);
     for (const id of ['rotate', 'nw', 'ne', 'se', 'sw'] as HandleId[]) {
-      const distance =
-        Math.hypot(handles[id].x - world.x, handles[id].y - world.y) *
-        this.camera.zoom;
+      const handle = handles[id];
+      if (!handle) continue;
+      const distance = Math.hypot(handle.x - world.x, handle.y - world.y) * this.camera.zoom;
       if (distance <= grab) return id;
     }
     return null;
@@ -1158,13 +1193,26 @@ export class VttEngine implements EngineBridge {
     const unit = 1 / this.camera.zoom;
     const soleId = soleSelectedId(state);
 
-    // Vários: só o contorno de cada um. Alças só com um selecionado.
+    // Vários: o contorno de cada um e a caixa do grupo, com os 4 cantos para escalar.
     if (!soleId) {
       for (const id of state.selectedIds) {
         const corners = this.objectCorners(id);
         if (!corners) continue;
         graphics
           .poly(corners.flatMap((point) => [point.x, point.y]))
+          .stroke({ color: CRIMSON, width: 2 * unit });
+      }
+      const bounds = this.groupBounds();
+      if (!bounds) return;
+      const size = HANDLE_SCREEN_SIZE * this.handleScale * unit;
+      const { nw, ne, se, sw } = bounds;
+      graphics
+        .poly([nw.x, nw.y, ne.x, ne.y, se.x, se.y, sw.x, sw.y])
+        .stroke({ color: CRIMSON, width: 1 * unit, alpha: 0.7 });
+      for (const corner of [nw, ne, se, sw]) {
+        graphics
+          .rect(corner.x - size / 2, corner.y - size / 2, size, size)
+          .fill(0xf5e6c8)
           .stroke({ color: CRIMSON, width: 2 * unit });
       }
       return;

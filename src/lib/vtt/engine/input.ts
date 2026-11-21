@@ -63,6 +63,18 @@ type Gesture =
       before: SceneObject;
     }
   | { kind: 'rotate'; id: string; before: SceneObject }
+  /**
+   * Canto da caixa do grupo: escala todas as raízes a partir do centro do grupo.
+   * Cada uma cresce, e a distância até o centro cresce na mesma proporção.
+   */
+  | {
+      kind: 'group-scale';
+      ids: string[];
+      center: Point;
+      startDistance: number;
+      starts: Record<string, { x: number; y: number; scale: number }>;
+      befores: Record<string, SceneObject>;
+    }
   | { kind: 'stroke'; points: number[]; width: number }
   | { kind: 'erase' }
   | { kind: 'ruler'; x1: number; y1: number; x2: number; y2: number }
@@ -320,6 +332,10 @@ export class EngineInput {
       this.startHandle(handle, sole, world);
       return;
     }
+    if (handle && !sole && handle !== 'rotate') {
+      this.startGroupScale(world);
+      return;
+    }
 
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     const hit = this.engine.objectAt(world.x, world.y);
@@ -381,6 +397,57 @@ export class EngineInput {
       moved: false,
     };
     this.canvas.style.cursor = 'grabbing';
+  }
+
+  private startGroupScale(world: Point) {
+    const { objects, selectedIds, sync } = store();
+    const bounds = this.engine.groupBounds();
+    if (!sync || !bounds) return;
+    const roots = sync.rootsOf(selectedIds);
+    const starts: Record<string, { x: number; y: number; scale: number }> = {};
+    const befores: Record<string, SceneObject> = {};
+    for (const id of roots) {
+      const current = worldTransform(objects[id], objects);
+      starts[id] = { x: current.x, y: current.y, scale: current.scale };
+      befores[id] = objects[id];
+    }
+    sync.hold(roots);
+    this.gesture = {
+      kind: 'group-scale',
+      ids: roots,
+      center: bounds.center,
+      startDistance: Math.max(1, Math.hypot(world.x - bounds.center.x, world.y - bounds.center.y)),
+      starts,
+      befores,
+    };
+  }
+
+  private moveGroupScale(gesture: Extract<Gesture, { kind: 'group-scale' }>, world: Point) {
+    const { objects, sync } = store();
+    if (!sync) return;
+    const distance = Math.hypot(world.x - gesture.center.x, world.y - gesture.center.y);
+    // Nenhum objeto fica menor que o mínimo de sempre.
+    const smallest = Math.min(...Object.values(gesture.starts).map((start) => start.scale));
+    const factor = Math.max(MIN_OBJECT_SCALE / Math.max(smallest, MIN_OBJECT_SCALE), distance / gesture.startDistance);
+    const { x: cx, y: cy } = gesture.center;
+    const patches: { id: string; patch: ReturnType<typeof patchFromWorld> }[] = [];
+    for (const id of gesture.ids) {
+      const object = objects[id];
+      const start = gesture.starts[id];
+      if (!object || !start) continue;
+      const current = worldTransform(object, objects);
+      patches.push({
+        id,
+        patch: patchFromWorld(object, objects, {
+          ...current,
+          x: cx + (start.x - cx) * factor,
+          y: cy + (start.y - cy) * factor,
+          scale: start.scale * factor,
+        }),
+      });
+    }
+    // Como na alça de um objeto só: os outros veem o resultado ao soltar.
+    sync.setLocalMany(patches);
   }
 
   private startHandle(handle: HandleId, id: string, world: Point) {
@@ -484,6 +551,9 @@ export class EngineInput {
       case 'scale':
         this.moveScale(gesture, world);
         return;
+      case 'group-scale':
+        this.moveGroupScale(gesture, world);
+        return;
       case 'rotate':
         this.moveRotate(gesture, world, event.shiftKey);
         return;
@@ -561,11 +631,10 @@ export class EngineInput {
   /** Cursor de redimensionar na diagonal certa, mesmo com o objeto girado. */
   private handleCursor(handle: HandleId): string {
     if (handle === 'rotate') return ROTATE_CURSOR;
-    const id = soleSelectedId(store());
-    const handles = id ? this.engine.handlesOf(id) : null;
-    if (!handles) return 'nwse-resize';
+    const handles = this.engine.selectionHandles();
+    const corner = handles?.[handle];
+    if (!handles?.nw || !handles.se || !corner) return 'nwse-resize';
     const center = { x: (handles.nw.x + handles.se.x) / 2, y: (handles.nw.y + handles.se.y) / 2 };
-    const corner = handles[handle];
     return (corner.x - center.x) * (corner.y - center.y) > 0 ? 'nwse-resize' : 'nesw-resize';
   }
 
@@ -709,6 +778,10 @@ export class EngineInput {
       case 'rotate':
         sync?.commitTransforms({ [gesture.id]: gesture.before });
         return;
+      case 'group-scale':
+        // Uma gravação e um passo de desfazer para o grupo inteiro.
+        sync?.commitTransforms(gesture.befores);
+        return;
       case 'marquee': {
         this.engine.setMarquee(null);
         if (!gesture.active) {
@@ -791,9 +864,14 @@ export class EngineInput {
     const { gesture } = this;
     this.gesture = { kind: 'none' };
     const { sync, me } = store();
-    if (gesture.kind === 'drag' || gesture.kind === 'scale' || gesture.kind === 'rotate') {
+    if (
+      gesture.kind === 'drag' ||
+      gesture.kind === 'scale' ||
+      gesture.kind === 'rotate' ||
+      gesture.kind === 'group-scale'
+    ) {
       if (sync) {
-        sync.release(gesture.kind === 'drag' ? gesture.ids : [gesture.id]);
+        sync.release(gesture.kind === 'drag' || gesture.kind === 'group-scale' ? gesture.ids : [gesture.id]);
         // Toque longo cai aqui sem ter mexido em nada: não precisa reler.
         if (gesture.kind !== 'drag' || gesture.moved) void sync.reload();
       }

@@ -350,6 +350,7 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 - **Esc** limpa. **Ctrl+A** (Cmd+A) seleciona todos os objetos da página e passa para Selecionar.
 - **Limite de 50** (`MAX_SELECTION`, o mesmo da RPC). Caixa e Ctrl+A que passem disso ficam com os 50 primeiros (de cima para baixo) e mostram o aviso "Seleção limitada a 50 objetos (havia N)."; Shift+clique além do limite não entra e mostra o mesmo aviso.
 - Desenho: com vários, cada um ganha o contorno crimson; as alças só aparecem com exatamente um.
+- **Escalar o grupo** (acréscimo): com 2 ou mais, aparece também a caixa do grupo (retângulo alinhado aos eixos que envolve todos, `VttEngine.groupBounds`) com 4 cantos, sem alça de giro. Arrastar um canto escala todas as raízes a partir do centro da caixa: cada uma multiplica a escala pelo mesmo fator, e a distância até o centro também, então ninguém encosta em ninguém. Nenhum objeto passa do mínimo de escala de sempre. Os outros veem o resultado ao soltar (como na alça de um objeto só), numa gravação e num passo de desfazer.
 - **Teclado só no mapa:** setinhas e Ctrl+A só valem com o foco no mapa (ou em lugar nenhum); na barra lateral as setinhas rolam a lista e o Ctrl+A seleciona texto. Com o overlay de Páginas aberto, nenhum atalho do mapa vale (Delete não apaga nada escondido atrás dele).
 
 ### Grupo
