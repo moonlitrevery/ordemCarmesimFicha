@@ -11,6 +11,7 @@ import { conditionArc, resolveConditions, splitVisibleConditions } from '../cond
 import { FxManager } from '../fx/manager';
 import { FpsMonitor } from '../fx/rules';
 import { formatRulerDistance } from '../geometry';
+import { gridCellPx } from '../pages';
 import { currentEntry } from '../initiative';
 import type { EngineBridge } from '../scene-sync';
 import {
@@ -143,6 +144,9 @@ export class VttEngine implements EngineBridge {
   private mapSprite: Sprite | null = null;
   private mapUrl: string | null = null;
   private mapBackdrop = new Graphics();
+  /** Grade de 1,5 m, desenhada só quando muda: parada não pede quadro. */
+  private grid = new Graphics();
+  private gridKey = '';
   private mapSize = { width: EMPTY_MAP_SIZE, height: EMPTY_MAP_SIZE };
   private fittedSceneId: string | null = null;
   private sceneId: string | null = null;
@@ -221,6 +225,8 @@ export class VttEngine implements EngineBridge {
     );
     this.app.stage.addChild(this.world);
     this.mapLayer.addChild(this.mapBackdrop);
+    // A grade fica por cima do mapa e abaixo de tudo o que é interativo.
+    this.mapLayer.addChild(this.grid);
     this.drawingsLayer.addChild(this.liveStroke);
     this.uiLayer.addChild(this.selection);
     this.propsLayer.sortableChildren = true;
@@ -428,6 +434,7 @@ export class VttEngine implements EngineBridge {
       ? state.sceneAssets[scene.map_asset_id]
       : undefined;
     this.syncMap(mapAsset?.url ?? null, mapAsset?.width, mapAsset?.height);
+    this.syncGrid(scene?.grid_visible ? gridCellPx(scene.meters_per_px) : null);
 
     const objects = this.renderedObjects();
     for (const [id, node] of Array.from(this.nodes.entries())) {
@@ -472,8 +479,11 @@ export class VttEngine implements EngineBridge {
               if (this.destroyed || this.mapUrl !== url) return;
               this.mapSprite = new Sprite(texture);
               this.mapSize = { width: texture.width, height: texture.height };
-              this.mapLayer.addChild(this.mapSprite);
+              // Logo acima do fundo, abaixo da grade. O mapa nunca é clicável:
+              // `objectAt` só olha objetos, e nada aqui o move.
+              this.mapLayer.addChildAt(this.mapSprite, 1);
               this.drawBackdrop();
+              this.redrawGrid();
               this.fitOnce();
               this.invalidate();
             },
@@ -490,6 +500,31 @@ export class VttEngine implements EngineBridge {
     if (!this.sceneId || this.fittedSceneId === this.sceneId) return;
     this.fittedSceneId = this.sceneId;
     this.fitCamera();
+  }
+
+  private gridCell: number | null = null;
+
+  private syncGrid(cell: number | null) {
+    this.gridCell = cell;
+    this.redrawGrid();
+  }
+
+  /** Linhas finas no espaço do mundo, alinhadas ao canto do mapa (como sai do Dungeon Alchemist). */
+  private redrawGrid() {
+    const cell = this.gridCell;
+    const { width, height } = this.mapSize;
+    const key = cell ? `${cell}:${width}:${height}` : '';
+    if (key === this.gridKey) return;
+    this.gridKey = key;
+    this.grid.clear();
+    if (!cell) {
+      this.invalidate();
+      return;
+    }
+    for (let x = cell; x < width; x += cell) this.grid.moveTo(x, 0).lineTo(x, height);
+    for (let y = cell; y < height; y += cell) this.grid.moveTo(0, y).lineTo(width, y);
+    this.grid.stroke({ width: Math.max(1, cell / 40), color: 0xffffff, alpha: 0.22 });
+    this.invalidate();
   }
 
   private drawBackdrop() {

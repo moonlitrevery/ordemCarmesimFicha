@@ -1065,3 +1065,72 @@ describe('documentos e relatórios', () => {
     await db.exec(readSql('migrations', '021_vtt_docs.sql'));
   });
 });
+
+describe('páginas (migração 022)', () => {
+  const MAP = '9a1f3c2e-5b6d-4e7f-8a9b-0c1d2e3f4a5b';
+
+  it('jogador lê arquivada e grade da própria página; só a mestra grava', async () => {
+    const update = `update public.scenes set archived = $1, grid_visible = $1 where id = $2 returning archived`;
+    expect(await asUser(PLAYER, update, [true, defaultScene])).toEqual([]);
+    expect(await asUser(GM, update, [true, defaultScene])).toEqual([{ archived: true }]);
+    expect(
+      await asUser(PLAYER, `select archived, grid_visible from public.scenes where id = $1`, [defaultScene])
+    ).toEqual([{ archived: true, grid_visible: true }]);
+    await asUser(GM, update, [false, defaultScene]);
+  });
+
+  it('pastas: só a mestra grava, e o formato é conferido', async () => {
+    const update = `update public.tables set scene_folders = $1::jsonb where id = $2 returning scene_folders`;
+    expect(await asUser(PLAYER, update, ['["Hack"]', openTable])).toEqual([]);
+    expect(await asUser(GM, update, ['["Cidade","Masmorra"]', openTable])).toEqual([
+      { scene_folders: ['Cidade', 'Masmorra'] },
+    ]);
+    await expect(asUser(GM, update, ['[1]', openTable])).rejects.toThrow(/tables_scene_folders_check/);
+    await expect(asUser(GM, update, ['[""]', openTable])).rejects.toThrow(/tables_scene_folders_check/);
+    await expect(asUser(GM, update, ['{}', openTable])).rejects.toThrow(/tables_scene_folders_check/);
+  });
+
+  it('calibração do mapa: mestra grava e relê; jogador não lê nem grava', async () => {
+    await insertOne(
+      GM,
+      `insert into public.map_calibrations (asset_id, meters_per_px) values ($1, 0.02)
+       on conflict (asset_id) do update set meters_per_px = excluded.meters_per_px
+       returning asset_id as id`,
+      [MAP]
+    );
+    expect(
+      await asUser(GM, `select meters_per_px from public.map_calibrations where asset_id = $1`, [MAP])
+    ).toEqual([{ meters_per_px: 0.02 }]);
+    expect(await asUser(PLAYER, `select * from public.map_calibrations`)).toEqual([]);
+    await expect(
+      asUser(PLAYER, `insert into public.map_calibrations (asset_id, meters_per_px) values ($1, 1)`, [
+        crypto.randomUUID(),
+      ])
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      asUser(GM, `insert into public.map_calibrations (asset_id, meters_per_px) values ($1, 0)`, [
+        crypto.randomUUID(),
+      ])
+    ).rejects.toThrow(/check/);
+  });
+
+  it('duplicar leva a grade e a cópia nasce fora do arquivo', async () => {
+    // Um teste acima roda a 019 de novo, que redefine duplicate_scene sem a grade.
+    await db.exec(readSql('migrations', '022_vtt_pages.sql'));
+    await asUser(GM, `update public.scenes set archived = true, grid_visible = true where id = $1`, [otherScene]);
+    const [{ duplicate_scene: copy }] = await asUser<{ duplicate_scene: string }>(
+      GM,
+      `select public.duplicate_scene($1)`,
+      [otherScene]
+    );
+    expect(
+      await asUser(GM, `select archived, grid_visible from public.scenes where id = $1`, [copy])
+    ).toEqual([{ archived: false, grid_visible: true }]);
+    await asUser(GM, `delete from public.scenes where id = $1`, [copy]);
+    await asUser(GM, `update public.scenes set archived = false, grid_visible = false where id = $1`, [otherScene]);
+  });
+
+  it('a migração roda de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '022_vtt_pages.sql'));
+  });
+});

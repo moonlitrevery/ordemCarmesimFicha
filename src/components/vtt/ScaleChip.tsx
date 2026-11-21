@@ -1,13 +1,13 @@
 'use client';
 
 import { Ruler } from 'lucide-react';
-import { formatScale } from '@/lib/vtt/geometry';
+import { formatTileScale } from '@/lib/vtt/pages';
 import { useVttStore } from '@/lib/vtt/store';
 import { FLOATING } from './hud';
 
 const CHIP =
   FLOATING +
-  ' absolute bottom-16 right-2 z-10 flex min-h-11 items-center gap-1.5 px-3 text-xs desk:bottom-2 desk:min-h-8 ';
+  ' absolute bottom-2 right-[calc(var(--vtt-right,0px)_+_0.5rem)] z-10 flex min-h-11 items-center gap-1.5 px-3 text-xs desk:min-h-8 ';
 
 /** Canto inferior direito. Para a mestra, é a porta de entrada da calibração. */
 export function ScaleChip() {
@@ -15,7 +15,7 @@ export function ScaleChip() {
   const metersPerPx = useVttStore(
     (s) => s.scenes.find((scene) => scene.id === s.viewedSceneId)?.meters_per_px ?? null
   );
-  const text = metersPerPx ? formatScale(metersPerPx) : 'Régua não calibrada';
+  const text = metersPerPx ? formatTileScale(metersPerPx) : 'Régua não calibrada';
   const tone = metersPerPx ? 'text-parchment' : 'text-ink-muted';
 
   if (!isGm) {
@@ -24,8 +24,8 @@ export function ScaleChip() {
         className={CHIP + tone}
         title={
           metersPerPx
-            ? 'Escala da régua nesta cena'
-            : 'A mestra ainda não calibrou a régua desta cena'
+            ? 'Escala da régua nesta página'
+            : 'A mestra ainda não calibrou a régua desta página'
         }
       >
         <Ruler size={14} aria-hidden />
@@ -37,7 +37,7 @@ export function ScaleChip() {
   return (
     <button
       type="button"
-      title={metersPerPx ? 'Calibrar de novo' : 'Calibrar a régua desta cena'}
+      title={metersPerPx ? 'Calibrar de novo' : 'Calibrar a régua desta página'}
       className={CHIP + tone + ' hover:text-parchment'}
       onClick={() => useVttStore.getState().startCalibration()}
     >

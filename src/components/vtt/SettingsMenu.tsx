@@ -71,7 +71,7 @@ export function SettingsMenu() {
   useDismiss(ref, open, close);
 
   return (
-    <div ref={ref} className="absolute bottom-16 left-2 z-20 desk:bottom-2">
+    <div ref={ref} className="absolute bottom-2 left-2 z-20">
       <div className={FLOATING + ' p-0.5'}>
         <IconButton
           icon={MoreHorizontal}

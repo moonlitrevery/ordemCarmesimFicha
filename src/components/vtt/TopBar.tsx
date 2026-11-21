@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import { userColor } from '@/lib/vtt/scene-rules';
 import { useVttStore } from '@/lib/vtt/store';
 import type { VttPresence } from '@/lib/vtt/types';
+import { GmHud } from './GmHud';
 import { FLOATING_PANEL, PersonAvatar, useDismiss } from './hud';
 import { MembersPanel } from './MembersPanel';
 
@@ -114,31 +115,35 @@ export function TopBar({
   const sessionLabel = sessionOpen ? 'Sessão aberta' : 'Sessão fechada';
 
   return (
-    <header className="pointer-events-none absolute inset-x-2 top-2 z-30 flex items-start justify-between gap-2">
-      <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full bg-ink/60 pr-3">
-        <Link
-          href="/mesa"
-          title="Voltar para Minhas mesas"
-          aria-label="Voltar para Minhas mesas"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-parchment hover:bg-ink-raised desk:h-8 desk:w-8"
-        >
-          <ArrowLeft size={18} aria-hidden />
-        </Link>
-        <h1 className="min-w-0 max-w-[10rem] truncate font-display text-base leading-tight text-parchment desk:max-w-[14rem]">
-          {tableName}
-        </h1>
-        <span
-          role="img"
-          aria-label={sessionLabel}
-          title={sessionLabel}
-          className={
-            'h-2 w-2 shrink-0 rounded-full ' +
-            (sessionOpen ? 'bg-emerald-400' : 'bg-ink-muted')
-          }
-        />
-        {connection === 'offline' && (
-          <span className="shrink-0 text-xs text-crimson-soft">Reconectando…</span>
-        )}
+    <header className="pointer-events-none absolute left-2 right-[calc(var(--vtt-right,0px)_+_0.5rem)] top-2 z-30 flex items-start justify-between gap-2">
+      {/* Título e sessão; logo abaixo (ao lado, no celular), os botões da mestra. */}
+      <div className="flex min-w-0 items-start gap-1.5 desk:flex-col">
+        <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full bg-ink/60 pr-3">
+          <Link
+            href="/mesa"
+            title="Voltar para Minhas mesas"
+            aria-label="Voltar para Minhas mesas"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-parchment hover:bg-ink-raised desk:h-8 desk:w-8"
+          >
+            <ArrowLeft size={18} aria-hidden />
+          </Link>
+          <h1 className="min-w-0 max-w-[10rem] truncate font-display text-base leading-tight text-parchment desk:max-w-[14rem]">
+            {tableName}
+          </h1>
+          <span
+            role="img"
+            aria-label={sessionLabel}
+            title={sessionLabel}
+            className={
+              'h-2 w-2 shrink-0 rounded-full ' +
+              (sessionOpen ? 'bg-emerald-400' : 'bg-ink-muted')
+            }
+          />
+          {connection === 'offline' && (
+            <span className="shrink-0 text-xs text-crimson-soft">Reconectando…</span>
+          )}
+        </div>
+        {isGm && <GmHud />}
       </div>
 
       <div className="pointer-events-auto flex shrink-0 items-center gap-2 rounded-full bg-ink/60 px-1">

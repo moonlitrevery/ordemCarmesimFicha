@@ -16,7 +16,8 @@ import {
 import { useVttStore } from '@/lib/vtt/store';
 import type { VttScene } from '@/lib/vtt/types';
 
-function LightingSection({ scene }: { scene: VttScene }) {
+/** Também nas Configurações da página (Fase 12). */
+export function LightingSection({ scene }: { scene: VttScene }) {
   const sync = useVttStore((s) => s.sync);
   const lighting = parseLighting(scene.lighting);
   const change = (patch: Partial<LightingState>) =>
@@ -96,7 +97,7 @@ export function WeatherPanel() {
   if (!scene) {
     return (
       <p className="text-sm text-ink-muted">
-        Nenhuma cena aberta. Crie ou abra uma em Cenas para ligar o clima.
+        Nenhuma página aberta. Crie ou abra uma em Páginas, abaixo do nome da mesa.
       </p>
     );
   }
@@ -110,7 +111,7 @@ export function WeatherPanel() {
   return (
     <div className="space-y-4 text-sm text-parchment">
       <p className="text-xs text-ink-muted">
-        Vale para a cena {scene.name}. Fica salvo nela, e os efeitos se somam.
+        Vale para a página {scene.name}. Fica salvo nela, e os efeitos se somam.
       </p>
       {WEATHER_TYPES.map((type) => {
         const entry = entries.find((item) => item.type === type);

@@ -8,8 +8,27 @@ import type {
   VttScene,
 } from './types';
 
-export const SCENE_COLUMNS =
+/** Sem as colunas da Fase 12 (migração 022): a Mesa continua abrindo sem ela. */
+const SCENE_COLUMNS_BASE =
   'id, table_id, name, folder, sort, map_asset_id, meters_per_px, weather, lighting, created_at';
+
+export const SCENE_COLUMNS = `${SCENE_COLUMNS_BASE}, archived, grid_visible`;
+
+/** 42703: coluna que não existe. PGRST204: o cache do PostgREST não a conhece. */
+export function isMissingColumn(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '42703' || error?.code === 'PGRST204';
+}
+
+let pagesColumnsMissing = false;
+
+/** A migração 022 ainda não rodou: arquivar e grade não funcionam. */
+export function pagesMigrationMissing(): boolean {
+  return pagesColumnsMissing;
+}
+
+function withPageDefaults(rows: Partial<VttScene>[]): VttScene[] {
+  return rows.map((row) => ({ archived: false, grid_visible: false, ...row }) as VttScene);
+}
 
 export const OBJECT_COLUMNS =
   'id, scene_id, asset_id, kind, x, y, rotation, scale, flip_x, flip_y, z, parent_id, local, caption, effects, conditions, character_id, npc_id, hidden, created_by, updated_at';
@@ -30,14 +49,22 @@ export async function fetchScenes(
   supabase: SupabaseClient,
   tableId: string
 ): Promise<VttScene[]> {
-  const { data, error } = await supabase
-    .from('scenes')
-    .select(SCENE_COLUMNS)
-    .eq('table_id', tableId)
-    .order('sort')
-    .order('created_at');
+  const query = (columns: string) =>
+    supabase
+      .from('scenes')
+      .select(columns)
+      .eq('table_id', tableId)
+      .order('sort')
+      .order('created_at');
+  if (!pagesColumnsMissing) {
+    const { data, error } = await query(SCENE_COLUMNS);
+    if (!error) return withPageDefaults((data ?? []) as Partial<VttScene>[]);
+    if (!isMissingColumn(error)) throw error;
+    pagesColumnsMissing = true;
+  }
+  const { data, error } = await query(SCENE_COLUMNS_BASE);
   if (error) throw error;
-  return (data ?? []) as VttScene[];
+  return withPageDefaults((data ?? []) as Partial<VttScene>[]);
 }
 
 export async function fetchAssets(

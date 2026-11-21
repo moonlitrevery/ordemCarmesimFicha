@@ -103,7 +103,7 @@ function RulerHint({ isGm }: { isGm: boolean }) {
           </button>
         </>
       ) : (
-        <span>A mestra ainda não calibrou a régua desta cena.</span>
+        <span>A mestra ainda não calibrou a régua desta página.</span>
       )}
     </div>
   );
@@ -125,7 +125,9 @@ export function MapToolbar() {
       aria-label="Ferramentas do mapa"
       className={
         FLOATING +
-        ' absolute left-1/2 top-16 z-20 flex -translate-x-1/2 items-center gap-0.5 p-1 desk:top-2'
+        // Centrada no que sobra do mapa ao lado da barra direita; no desktop, nunca por
+        // cima do título da mesa, no canto esquerdo.
+        ' absolute left-[calc((100%_-_var(--vtt-right,0px))/2)] top-16 z-20 flex -translate-x-1/2 items-center gap-0.5 p-1 desk:left-[max(calc((100%_-_var(--vtt-right,0px))/2),30rem)] desk:top-2'
       }
     >
       {TOOLS.filter((t) => canEdit || !t.edit).map((t) => (

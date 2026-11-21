@@ -3,18 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import {
-  FileText,
-  Images,
-  Map as MapIcon,
-  MessageSquare,
-  ScrollText,
-  Skull,
-  Sparkles,
-  Swords,
-  UserRound,
-  Volume2,
-} from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { AudioSync } from '@/lib/vtt/audio/audio-sync';
 import { unlockAudio } from '@/lib/vtt/audio/unlock';
@@ -22,43 +10,25 @@ import { fetchTableSnapshot } from '@/lib/vtt/queries';
 import { joinTableChannel, type TableChannel } from '@/lib/vtt/realtime';
 import { ChatSync } from '@/lib/vtt/chat-sync';
 import { DocSync } from '@/lib/vtt/docs/doc-sync';
-import { countPendingDocuments } from '@/lib/vtt/docs/rules';
 import { InitiativeSync } from '@/lib/vtt/initiative-sync';
 import { LibrarySync } from '@/lib/vtt/library-sync';
 import { NpcSync } from '@/lib/vtt/npc-sync';
-import { perfPanelOpened } from '@/lib/vtt/perf';
 import { SceneSync } from '@/lib/vtt/scene-sync';
 import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
+import { isTypingTarget } from '@/lib/vtt/ui-prefs';
 import { CalibrationGuide } from './CalibrationGuide';
 import { CaptionModal } from './CaptionModal';
-import { ChatPanel } from './ChatPanel';
-import { DocumentsPanel } from './docs/DocumentsPanel';
-import { ReportsPanel } from './docs/ReportsPanel';
-import { useIsDesk } from './hud';
-import { InitiativePanel } from './InitiativePanel';
-import { LibraryPanel } from './LibraryPanel';
 import { MapToolbar } from './MapToolbar';
 import { NpcLinkModal } from './NpcLinkModal';
-import { NpcPanel } from './NpcPanel';
-import {
-  IconRail,
-  PanelHost,
-  RailBottomBar,
-  type RailItem,
-  type RailSide,
-} from './PanelRail';
-import { QuickSheet } from './QuickSheet';
+import { RightSidebar } from './RightSidebar';
 import { ScaleChip } from './ScaleChip';
-import { ScenesPanel } from './ScenesPanel';
 import { SceneTransitionOverlay } from './SceneTransitionOverlay';
 import { SceneViewBanner } from './SceneViewBanner';
 import { SettingsMenu } from './SettingsMenu';
-import { SoundPanel } from './SoundPanel';
 import { TokenContextMenu } from './TokenContextMenu';
 import { TopBar } from './TopBar';
-import { WeatherPanel } from './WeatherPanel';
 
 // ssr: false e import dinâmico: Pixi só existe no navegador e só nesta rota.
 const MapCanvas = dynamic(
@@ -72,20 +42,11 @@ const DocumentViewer = dynamic(
   { ssr: false }
 );
 
-const DOCS_ITEMS: RailItem[] = [
-  {
-    id: 'docs',
-    label: 'Documentos',
-    icon: FileText,
-    content: <DocumentsPanel />,
-  },
-  {
-    id: 'reports',
-    label: 'Relatórios',
-    icon: ScrollText,
-    content: <ReportsPanel />,
-  },
-];
+// Só da mestra, e só baixa quando ela abre Páginas pela primeira vez.
+const PagesOverlay = dynamic(
+  () => import('./pages/PagesOverlay').then((module) => module.PagesOverlay),
+  { ssr: false }
+);
 
 export function VttShell({ initial }: { initial: TableSnapshot }) {
   const router = useRouter();
@@ -97,23 +58,15 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const audioUnlocked = useVttStore((s) => s.audioUnlocked);
   const setAudioUnlocked = useVttStore((s) => s.setAudioUnlocked);
   const setSessionOpen = useVttStore((s) => s.setSessionOpen);
-  const pendingCount = useVttStore(
-    (s) => s.pendingAssets.length + countPendingDocuments(s.documents)
-  );
   const docViewerOpen = useVttStore((s) => s.docViewer !== null);
   const role = useVttStore((s) => s.me?.role) ?? initial.me.role;
 
   const toast = useVttStore((s) => s.toast);
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
-  const chatUnread = useVttStore((s) => s.chatUnread);
+  const pagesOpen = useVttStore((s) => s.pagesOpen);
   const conditionTip = useVttStore((s) => s.conditionTip);
   const lightModePrompt = useVttStore((s) => s.lightModePrompt);
   const setLightMode = useVttStore((s) => s.setLightMode);
-  const isDesk = useIsDesk();
-  const [openPanels, setOpenPanels] = useState<Record<RailSide, string | null>>({
-    left: null,
-    right: null,
-  });
   const [sessionBusy, setSessionBusy] = useState(false);
 
   const { table, me } = initial;
@@ -279,13 +232,18 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     };
   }, [tableId, userId, isGm, router]);
 
-  const chatVisible = openPanels.right === 'chat';
+  // P abre e fecha Páginas (só a mestra). Não vale em campo de texto nem com Ctrl/Alt.
   useEffect(() => {
-    useVttStore.setState((s) => ({
-      chatVisible,
-      chatUnread: chatVisible ? 0 : s.chatUnread,
-    }));
-  }, [chatVisible]);
+    if (!isGm) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'p' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.repeat || isTypingTarget(event.target)) return;
+      event.preventDefault();
+      useVttStore.setState((s) => ({ pagesOpen: !s.pagesOpen }));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isGm]);
 
   const notifyMemberChanged = useCallback(async (changedId: string) => {
     channelRef.current?.emit({ type: 'member:changed', userId: changedId });
@@ -316,100 +274,6 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     setAudioUnlocked(true);
   }
 
-  /** Um por lado com mouse; no touch a folha cobre a tela, então um só no total. */
-  function togglePanel(side: RailSide, id: string) {
-    if (id === 'library') perfPanelOpened('painel da Biblioteca');
-    setOpenPanels((current) => {
-      const next = current[side] === id ? null : id;
-      return isDesk
-        ? { ...current, [side]: next }
-        : { left: null, right: null, [side]: next };
-    });
-  }
-
-  const closePanel = (side: RailSide) =>
-    setOpenPanels((current) => ({ ...current, [side]: null }));
-
-  // No touch a folha cobre o mapa: sai da frente para o toque que coloca o token.
-  const onArmed = () => {
-    if (!isDesk) setOpenPanels({ left: null, right: null });
-  };
-
-  const rightItems: RailItem[] = [
-    {
-      id: 'chat',
-      label: 'Chat',
-      icon: MessageSquare,
-      content: <ChatPanel />,
-      badge: chatUnread,
-      quietBadge: true,
-    },
-    // Espectador não tem ficha nem coloca nada no mapa.
-    ...(role === 'espectador'
-      ? []
-      : [
-          {
-            id: 'sheet',
-            label: 'Ficha Rápida',
-            icon: UserRound,
-            content: <QuickSheet />,
-          },
-          {
-            id: 'library',
-            label: 'Biblioteca',
-            icon: Images,
-            content: <LibraryPanel onArmed={onArmed} />,
-            badge: isGm ? pendingCount : 0,
-          },
-        ]),
-    // A mestra edita pelo trilho dela; aqui é só para ver.
-    ...(isGm
-      ? []
-      : [
-          {
-            id: 'initiative',
-            label: 'Iniciativa',
-            icon: Swords,
-            content: <InitiativePanel />,
-          },
-        ]),
-    ...DOCS_ITEMS,
-  ];
-
-  const leftItems: RailItem[] = isGm
-    ? [
-        {
-          id: 'scenes',
-          label: 'Cenas',
-          icon: MapIcon,
-          content: <ScenesPanel />,
-        },
-        {
-          id: 'npcs',
-          label: 'NPCs',
-          icon: Skull,
-          content: <NpcPanel />,
-        },
-        {
-          id: 'initiative',
-          label: 'Iniciativa',
-          icon: Swords,
-          content: <InitiativePanel />,
-        },
-        {
-          id: 'sound',
-          label: 'Som',
-          icon: Volume2,
-          content: <SoundPanel />,
-        },
-        {
-          id: 'fx',
-          label: 'Efeitos de tela',
-          icon: Sparkles,
-          content: <WeatherPanel />,
-        },
-      ]
-    : [];
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-ink text-parchment">
@@ -424,26 +288,25 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
             <CalibrationGuide />
           </>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-4 pb-20 text-center">
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-4 pr-[calc(var(--vtt-right,0px)_+_1rem)] text-center">
             {isGm ? (
               <>
                 <p className="max-w-sm text-sm text-ink-muted">
-                  Nenhuma cena ainda — crie uma em Cenas,{' '}
-                  {isDesk ? 'no trilho esquerdo' : 'na barra inferior'}.
+                  Nenhuma página ainda. Crie uma em Páginas, logo abaixo do nome da mesa (atalho P).
                 </p>
                 <button
                   type="button"
                   className="btn-primary min-h-11 px-3 py-1 text-sm desk:min-h-0"
-                  onClick={() => togglePanel('left', 'scenes')}
+                  onClick={() => useVttStore.setState({ pagesOpen: true })}
                 >
-                  Abrir Cenas
+                  Abrir Páginas
                 </button>
               </>
             ) : (
               <>
                 <p className="font-display text-2xl text-ink-muted">
                   {sessionOpen
-                    ? 'A mestra ainda não abriu uma cena'
+                    ? 'A mestra ainda não abriu uma página'
                     : 'A sessão ainda não começou'}
                 </p>
                 <p className="max-w-sm text-sm text-ink-muted">
@@ -468,46 +331,14 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
       <SettingsMenu />
 
-      {isGm && (
-        <>
-          <IconRail
-            side="left"
-            items={leftItems}
-            activeId={openPanels.left}
-            onToggle={(id) => togglePanel('left', id)}
-          />
-          <PanelHost
-            side="left"
-            items={leftItems}
-            activeId={openPanels.left}
-            onClose={() => closePanel('left')}
-          />
-        </>
-      )}
-      <IconRail
-        side="right"
-        items={rightItems}
-        activeId={openPanels.right}
-        onToggle={(id) => togglePanel('right', id)}
-      />
-      <PanelHost
-        side="right"
-        items={rightItems}
-        activeId={openPanels.right}
-        onClose={() => closePanel('right')}
-      />
-      <RailBottomBar
-        left={leftItems}
-        right={rightItems}
-        activeLeft={openPanels.left}
-        activeRight={openPanels.right}
-        onToggle={togglePanel}
-      />
+      <RightSidebar isGm={isGm} canUseSheet={role !== 'espectador'} />
+
+      {isGm && pagesOpen && <PagesOverlay />}
 
       {toast && (
         <p
           role="status"
-          className="pointer-events-none absolute bottom-16 left-1/2 z-40 max-w-[calc(100vw-1rem)] -translate-x-1/2 rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-center text-xs text-parchment desk:bottom-4"
+          className="pointer-events-none absolute bottom-16 left-[calc((100%_-_var(--vtt-right,0px))/2)] z-40 max-w-[calc(100vw-1rem)] -translate-x-1/2 rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-center text-xs text-parchment desk:bottom-4"
         >
           {toast}
         </p>
@@ -517,7 +348,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         <div
           role="alertdialog"
           aria-label="Ativar modo leve?"
-          className="absolute bottom-16 left-1/2 z-40 w-72 max-w-[calc(100vw-1rem)] -translate-x-1/2 space-y-2 rounded-md border border-ink-border bg-ink-raised p-3 text-xs text-parchment desk:bottom-4"
+          className="absolute bottom-16 left-[calc((100%_-_var(--vtt-right,0px))/2)] z-40 w-72 max-w-[calc(100vw-1rem)] -translate-x-1/2 space-y-2 rounded-md border border-ink-border bg-ink-raised p-3 text-xs text-parchment desk:bottom-4"
         >
           <p>O mapa está travando. Ativar modo leve? Dá para mudar depois em ⋯, no canto.</p>
           <div className="flex justify-end gap-2">

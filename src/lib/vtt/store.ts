@@ -101,6 +101,12 @@ interface VttState {
   scenes: VttScene[];
   /** Cena aberta pela mestra para preparar. É local dela. */
   gmSceneChoice: string | null;
+  /** Pastas das Páginas na ordem salva (`tables.scene_folders`). Só a mestra usa. */
+  pageFolders: string[];
+  /** Calibração salva em cada mapa (`map_calibrations`). `null` até a mestra carregar. */
+  mapCalibrations: Record<string, number> | null;
+  /** Overlay de Páginas aberto (só a mestra). */
+  pagesOpen: boolean;
   viewedSceneId: string | null;
   objects: Record<string, SceneObject>;
   drawings: Record<string, Drawing>;
@@ -242,6 +248,9 @@ export const useVttStore = create<VttState>((set) => ({
   rollHidden: false,
   scenes: [],
   gmSceneChoice: null,
+  pageFolders: [],
+  mapCalibrations: null,
+  pagesOpen: false,
   viewedSceneId: null,
   objects: {},
   drawings: {},
@@ -293,6 +302,9 @@ export const useVttStore = create<VttState>((set) => ({
       rollHidden: false,
       scenes: [],
       gmSceneChoice: null,
+      pageFolders: [],
+      mapCalibrations: null,
+      pagesOpen: false,
       viewedSceneId: null,
       objects: {},
       drawings: {},

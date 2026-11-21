@@ -190,7 +190,7 @@ function AmbientSection() {
   if (!scene) {
     return (
       <p className="text-xs text-ink-muted">
-        Nenhuma cena aberta. Crie ou abra uma em Cenas para montar o ambiente.
+        Nenhuma página aberta. Crie ou abra uma em Páginas, abaixo do nome da mesa.
       </p>
     );
   }

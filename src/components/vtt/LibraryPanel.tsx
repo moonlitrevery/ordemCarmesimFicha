@@ -43,7 +43,7 @@ const GM_KINDS: AssetKind[] = [
   ...FIRST_KINDS,
   ...ASSET_KINDS.filter((kind) => !FIRST_KINDS.includes(kind)),
 ];
-/** Jogador vê só o que consegue colocar: mapa entra pela mestra, em Cenas. */
+/** Jogador vê só o que consegue colocar: mapa entra pela mestra, em Páginas. */
 const PLAYER_LIST_KINDS: AssetKind[] = ['token', 'adereco', 'addon'];
 
 function AssetEditor({
@@ -523,7 +523,7 @@ export function LibraryPanel({ onArmed }: { onArmed: () => void }) {
       )}
       {kind === 'mapa' && (
         <p className="shrink-0 text-xs text-ink-muted">
-          Mapas entram em jogo pelo painel Cenas, da mestra.
+          Mapas entram em jogo por Páginas: crie uma página a partir do mapa.
         </p>
       )}
       {error && <p className="shrink-0 text-xs text-crimson-soft">{error}</p>}

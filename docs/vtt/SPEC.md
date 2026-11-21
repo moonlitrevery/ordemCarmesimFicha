@@ -149,6 +149,8 @@ Sessão **fechada**: canvas mostra "A sessão ainda não começou" pra jogadores
 
 ## 7A. Interface da Mesa
 
+> **Fase 12:** o layout abaixo (trilhos, painel de Cenas) foi reorganizado no estilo Roll20. O que vale agora está na seção 13; o resto desta seção continua valendo onde a 13 não diz outra coisa.
+
 Mapa sempre em tela cheia; nada empurra o canvas. Tudo flutua por cima (`FLOATING` e `FLOATING_PANEL`, em `src/components/vtt/hud.tsx`), com o visual do site. Blur só com mouse: no tablet ele pesaria sobre o WebGL.
 
 - **Barra superior** (`TopBar`): voltar, nome, bolinha da sessão; à direita, avatares online (na mestra, abrem Membros e código) e Abrir/Encerrar sessão.
@@ -224,3 +226,58 @@ Mapas táticos top-down gerados a partir de YAML, no estilo dos mapas do Dungeon
 - **Regras invioláveis:** nenhum texto, número, logotipo ou letra legível (placa, cartaz, jornal e viatura têm só manchas e faixas); sem grade; vista exatamente de cima.
 - **Texturas:** só CC0, de Poly Haven e ambientCG, 1K, cor + AO (multiplicada na cor). `size_m` de cada textura é o tamanho real: é ela que põe 25 cm de tijolo em 25 cm. Textura que faltar vira cor lisa com aviso.
 - **Novo tipo:** objeto em `maps/src/props/*.ts` (registro `PropDef`: `needs`, `size`, `phase`, `draw`), feature em `features.ts`, vegetação em `vegetation.ts` (`SPECIES`), material em `textures.json`. O schema lê os registros: tipo novo já valida.
+
+## 13. Interface no estilo Roll20 (Fase 12)
+
+Reorganização de layout e fluxo. Realtime, banco, assets, áudio, chat e rolagens não mudaram: os painéis são os mesmos componentes, em outro lugar.
+
+### Layout
+
+- **Saíram** os trilhos (`PanelRail`: `IconRail`, `PanelHost`, `RailBottomBar`) e o painel de Cenas (`ScenesPanel`). No celular não há mais barra inferior.
+- **Canto superior esquerdo** (`TopBar`): voltar, nome e bolinha da sessão. Logo abaixo (ao lado, no celular), só para a mestra, `GmHud`: botão do **HUD da mestra** e botão **Páginas** (atalho `P`, ignorado em campo de texto e com Ctrl/Alt/Cmd).
+- **Barra lateral direita** (`RightSidebar`): fixa na direita, ícones-aba no topo. Recolhida, vira uma tira de 48 px com os ícones; aberta, tem largura de 280 a 560 px (arrastar a borda esquerda, padrão 360). Aberta/fechada e largura em `vtt:ui:sidebar`, aba ativa em `vtt:ui:sidebar-tab` (`localStorage`, try/catch).
+  - A barra **flutua sobre o mapa**: o canvas continua em tela cheia e não é redimensionado ao abrir, fechar ou mudar a largura. O espaço ocupado vai para a variável CSS `--vtt-right` no elemento raiz da Mesa (escrita direto no DOM, sem re-render do `VttShell`), usada pela barra de ferramentas (centralizada no que sobra; no desktop nunca à esquerda de 30rem, para não cobrir o título), pela faixa de avisos, pelo chip de escala, pelo grupo direito do topo e pelos toasts. Arrastar a borda só mexe no estilo e grava no `pointerup`.
+  - **Celular** (fora da variante `desk`): fechada por padrão (não lê o "aberta" salvo), com a tira de ícones no meio da borda direita. Aberta, é uma gaveta de até 26rem por cima do mapa, com fundo que fecha ao tocar. Colocar um item pela Biblioteca fecha a gaveta.
+  - Cada aba (e subaba) só monta na primeira abertura e depois fica montada, como antes.
+- **Abas**, nesta ordem: **Chat** (`ChatPanel`, padrão, badge de não lido); **Ficha rápida** (`QuickSheet` + `QuickBackpack`; espectador não tem); **Biblioteca** (só mestra, contador de aprovações); **Documentos e relatórios** (subabas `DocumentsPanel` e `ReportsPanel`, `vtt:ui:docs-tab`); **Som e efeitos de tela** (só mestra, subabas `SoundPanel` e `WeatherPanel`, `vtt:ui:media-tab`). Jogador vê Chat, Ficha rápida e Documentos e relatórios. `chatVisible` = barra aberta na aba Chat. `EffectsMenus` continua sendo o menu de magias/efeitos do token (menu de contexto), não um painel.
+- **Jogador perdeu a Biblioteca** (antes colocava token, adereço e addon por ela). Soltar arquivo direto no mapa continua funcionando no desktop.
+- **HUD da mestra** (`GmHud`): painel flutuante, não modal, com subabas Iniciativa (`InitiativePanel`) e NPCs (`NpcPanel`; `NpcLinkModal` continua montado no `VttShell`). Fecha no botão ou no X. Aberto e subaba em `vtt:ui:gm-hud`. No celular vira folha inferior de 60%.
+- **Iniciativa do jogador** (`InitiativeStrip`): sem a aba, quem não é a mestra vê uma faixa compacta, só leitura, sob a barra de ferramentas, só quando há entradas: rodada e até 6 nomes a partir do turno atual, "+N" para o resto. Os nomes já vêm da coluna (`???` para oculto/ofuscado).
+- **Para onde foi o resto:** Membros e código continuam nos avatares do topo (mestra); Aprovações continuam na Biblioteca; ⋯ (cor, modo leve, volume) no canto inferior esquerdo; chip de escala no canto inferior direito.
+
+### Páginas
+
+No banco continua `scenes`; na interface é **Página**. A "cena padrão" (`tables.default_scene_id`) é a **fita dos jogadores** (Party Ribbon).
+
+- **Overlay** (`pages/PagesOverlay`, import dinâmico, só a mestra; `store.pagesOpen`): modal quase em tela cheia. Esc fecha o que estiver por cima (menu, modal, depois o overlay); campo de texto não fecha. Coluna esquerda: Todas, pastas (um nível só) com contador, Nova pasta, Arquivadas. Topo: busca (sem acento nem caixa) e "+ Criar página". Centro: grade de cards médios (~10,5rem) com a miniatura do mapa (a de 96/256 px que já existe, `object-cover`). Em "Todas" sem busca, as pastas aparecem como cards de pasta e só as páginas soltas aparecem; com busca, procura em tudo do lado escolhido (arquivadas ou não). Regras puras em `src/lib/vtt/pages.ts` (testes em `pages.test.ts`).
+- **Clicar num card leva só a mestra** (`gmSceneChoice`) e fecha o overlay. Os jogadores não mudam.
+- **Fita:** bandeirinha amarela "Jogadores" no card da página da fita. Arrastar a fita para outro card, ou "Mover jogadores para cá", chama `SceneSync.movePartyTo`: zera `table_members.scene_id` de todos e grava `default_scene_id`, com um único `scene:assign`. Cada cliente aplica a transição configurada sozinho, como antes.
+- **Separar grupo saiu da interface.** `table_members.scene_id` continua no banco (e no RLS) sem uso pela UI; `movePartyTo` o limpa.
+- **Menu do card** (⋯ no hover, sempre visível no touch, e clique direito): Mover jogadores para cá, Configurações, Renomear (no próprio card), Duplicar, Mover para pasta, Arquivar/Desarquivar, Apagar. A página da fita não pode ser arquivada nem apagada (menu desabilitado, e `SceneSync.setArchived`/`deleteScene` recusam com aviso). Apagar e apagar pasta pedem confirmação em `ConfirmDialog` (nunca `window.confirm`).
+- **Arrastar e soltar** (só mouse; no touch ficam as opções do menu): card sobre card reordena (`reorderScenes`; em outra pasta, leva para a pasta do alvo); card sobre pasta (card ou coluna) move para ela; sobre "Todas", tira da pasta; sobre "Arquivadas", arquiva. Tipos próprios no `dataTransfer` (`application/x-vtt-page`, `application/x-vtt-ribbon`).
+- **Pastas:** a ordem e as pastas vazias ficam em `tables.scene_folders` (jsonb, lista de nomes); `scenes.folder` continua sendo o nome da pasta de cada página. Renomear pasta atualiza as páginas e a lista; apagar pasta devolve as páginas para "Todas" (nenhuma página é apagada). Pasta que só existe em alguma página (de antes da Fase 12) entra no fim da lista, em ordem alfabética. Pastas e calibrações são lidas por `SceneSync.loadPagesMeta` a cada abertura do overlay.
+- **Arquivar:** `scenes.archived`. Arquivar a página aberta pela mestra a devolve para onde está a fita.
+- **Faixa "Você está em / Jogadores em"** (`SceneViewBanner`): só para a mestra, quando a página vista não é a da fita. Botões "Voltar para os jogadores" (limpa `gmSceneChoice`) e "Trazer jogadores pra cá" (`movePartyTo`).
+- **Criar página** (`pages/CreatePageModal`): nome, pasta (padrão: a pasta aberta) e "Em branco" (sem mapa, fundo neutro de 2000 px) ou "A partir de um mapa" (grade de miniaturas da Biblioteca, só mapas, com busca; escolher preenche o nome se estiver vazio). Depois de criar, só a mestra vai para a página nova; a fita só se mexe se for a primeira página da mesa.
+- **Configurações da página** (`pages/PageSettingsModal`): nome e pasta; mapa (trocar ou remover, com confirmação); escala e grade; iluminação (`LightingSection`, a mesma do painel de Efeitos); nota sobre o som ambiente (já era da página, `scenes.ambient`: monta-se na aba Som com a página aberta); transição.
+- **Transição continua da mesa inteira** (`tables.scene_transition`), agora nas Configurações da página com a nota "vale para todas as páginas". Por página não funcionaria: o cliente do jogador escolhe a cobertura antes de ler a página nova, e o RLS só deixa ele ler a página depois de estar nela.
+
+### Escala automática (Dungeon Alchemist)
+
+- Padrão da mesa: **1 quadrado = 1,5 m** (`TILE_METERS`). O chip mostra "1 quadrado (1,5 m) ≈ X px".
+- **Não dá para inferir pelo pixel:** os exports do Dungeon Alchemist chegam reduzidos (os de `public/vtt/jogadores/mapas/` têm 4096×2309; o upload e o manifest cortam em 4096 px), então o tamanho do quadrado em pixels se perde, e o nome do arquivo não traz nada. Nenhuma heurística.
+- **A calibração fica no mapa:** tabela `map_calibrations (asset_id, meters_per_px)`, sem FK (vale para id de `assets` e do manifest), só a mestra lê e grava. Calibrar a página (régua, chip, configurações) grava `scenes.meters_per_px` e também o mapa (`SceneSync.saveScale`).
+- **Ao criar a página ou trocar o mapa**, a escala vem de `map_calibrations` e, sem ela, do `meters_per_px` do manifest (mapas do gerador, seção 12). Sem nenhuma, a página nasce e abre o guia de calibração uma vez.
+- **Guia de calibração** (`CalibrationGuide`): arrastar e dizer a medida em **quadrados** (padrão) ou metros; ou digitar a **largura do mapa inteiro em quadrados** (o Dungeon Alchemist mostra esse número, e ele continua valendo depois de reduzir a imagem): `meters_per_px = quadrados × 1,5 / largura da imagem` (`metersPerPxFromTiles`). O mesmo campo está nas Configurações da página.
+
+### Grade e mapa travado
+
+- **Grade** (`scenes.grid_visible`, toggle nas Configurações, só com régua calibrada): `Graphics` no `mapLayer`, acima do mapa e abaixo de tudo o que é interativo, linhas a cada 1,5 m a partir do canto do mapa. Redesenhada só quando muda (célula ou tamanho do mapa); parada não pede quadro. Quadrado menor que 8 px na imagem não desenha.
+- **Mapa sempre travado:** a imagem fica no `mapLayer` e nunca é objeto: `objectAt` só olha `scene_objects`, e `isPlaceableKind` recusa `mapa`. Nem a mestra seleciona, arrasta ou redimensiona. Trocar só pelas Configurações da página.
+
+### Banco (migração 022)
+
+- `scenes.archived boolean not null default false` e `scenes.grid_visible boolean not null default false`, com `grant select` (privilégio por coluna). `duplicate_scene` copia `grid_visible`; a cópia nasce desarquivada.
+- `tables.scene_folders jsonb not null default '[]'`, conferida por `is_valid_scene_folders` (lista de textos de 1 a 80 caracteres, até 4 KB), com `grant select/update`. Fica fora de `TABLE_COLUMNS`.
+- `map_calibrations`, RLS `is_mestre()` em tudo, `anon` sem privilégio.
+- **Sem a migração** a Mesa continua abrindo: `fetchScenes` cai para as colunas antigas (`42703`/`PGRST204`) e preenche `archived`/`grid_visible` com `false`; arquivar, grade e pastas avisam qual arquivo rodar. Nenhuma política existente mudou.

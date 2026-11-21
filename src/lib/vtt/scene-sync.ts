@@ -25,9 +25,17 @@ import {
   fetchAssets,
   fetchSceneBundle,
   fetchScenes,
+  isMissingColumn,
   OBJECT_COLUMNS,
-  SCENE_COLUMNS,
+  pagesMigrationMissing,
 } from './scene-queries';
+import {
+  addFolderIn,
+  cleanFolderName,
+  folderList,
+  parseFolders,
+  renameFolderIn,
+} from './pages';
 import {
   allowPerKey,
   attachPatch,
@@ -68,6 +76,8 @@ const SCENE_FX_SAVE_MS = 250;
 const PASTE_OFFSET_PX = 24;
 
 const SAVE_ERROR = 'Não foi possível salvar. Tente de novo.';
+const PAGES_MIGRATION_HINT =
+  'Falta rodar supabase/migrations/022_vtt_pages.sql no Supabase para usar isso.';
 const SKIPPED_STEP = 'Esse passo foi pulado: o que ele mudava já não existe.';
 
 /** `skipped`: sumiu por ação de outra pessoa, e não há o que desfazer. */
@@ -1169,45 +1179,196 @@ export class SceneSync {
     this.channel.emit({ type: 'scene:assign' });
   }
 
-  /** Mapa do gerador já sabe a própria escala: a régua nasce calibrada. */
-  private mapPresetScale(mapAssetId: string | null): number | null {
+  /**
+   * Escala com que uma página nasce com este mapa: a calibração salva no mapa
+   * (`map_calibrations`) ou, sem ela, a que o gerador de mapas traz no manifest.
+   */
+  mapPresetScale(mapAssetId: string | null): number | null {
     if (!mapAssetId) return null;
+    const saved = store().mapCalibrations?.[mapAssetId];
+    if (saved && saved > 0) return saved;
     return presetMetersPerPx(store().library?.find((asset) => asset.id === mapAssetId));
   }
 
-  async createScene(name: string, folder: string, mapAssetId: string | null) {
+  /** Pastas e calibrações dos mapas: só a mestra lê, e só quando precisa. */
+  async loadPagesMeta(): Promise<void> {
+    const [folders, calibrations] = await Promise.all([
+      this.supabase.from('tables').select('scene_folders').eq('id', this.tableId).maybeSingle(),
+      this.supabase.from('map_calibrations').select('asset_id, meters_per_px'),
+    ]);
+    if (this.stopped) return;
+    const map: Record<string, number> = {};
+    for (const row of (calibrations.data ?? []) as { asset_id: string; meters_per_px: number }[]) {
+      map[row.asset_id] = row.meters_per_px;
+    }
+    useVttStore.setState({
+      // Sem a migração 022: as pastas vêm só das páginas, e nada quebra.
+      pageFolders: folders.error
+        ? store().pageFolders
+        : parseFolders((folders.data as { scene_folders?: unknown } | null)?.scene_folders),
+      mapCalibrations: map,
+    });
+  }
+
+  /** Cria a página e leva **só a mestra** até ela; a fita não se mexe. */
+  async createScene(name: string, folder: string, mapAssetId: string | null): Promise<string | null> {
+    if (mapAssetId && store().mapCalibrations === null) await this.loadPagesMeta();
     const { scenes, table } = store();
+    const metersPerPx = this.mapPresetScale(mapAssetId);
     const { data, error } = await this.supabase
       .from('scenes')
       .insert({
         table_id: this.tableId,
         name,
-        folder,
+        folder: cleanFolderName(folder),
         map_asset_id: mapAssetId,
-        meters_per_px: this.mapPresetScale(mapAssetId),
+        meters_per_px: metersPerPx,
         sort: scenes.reduce((max, s) => Math.max(max, s.sort), 0) + 1,
       })
-      .select(SCENE_COLUMNS)
+      .select('id')
       .single();
     if (error || !data) {
       store().showToast(
         error?.code === '42P01' || error?.code === 'PGRST205'
           ? 'Tabela de cenas não encontrada. Rode supabase/migrations/010_vtt_scenes.sql no Supabase.'
-          : 'Não foi possível criar a cena.'
+          : 'Não foi possível criar a página.'
       );
-      return;
+      return null;
     }
-    const scene = data as VttScene;
-    // A primeira cena vira a padrão: senão os jogadores não teriam o que ver.
-    if (!table?.default_scene_id) await this.setDefaultScene(scene.id);
-    useVttStore.setState({ gmSceneChoice: scene.id });
+    const id = (data as { id: string }).id;
+    // A primeira página recebe a fita: senão os jogadores não teriam o que ver.
+    if (!table?.default_scene_id) await this.setDefaultScene(id);
+    useVttStore.setState({ gmSceneChoice: id });
     await this.reload();
     this.announceAssign();
+    // Mapa sem escala conhecida: calibra uma vez, e a calibração fica no mapa.
+    if (mapAssetId && metersPerPx === null) store().startCalibration();
+    return id;
+  }
+
+  /**
+   * Fita dos jogadores: todo mundo vai para esta página. Ninguém fica separado
+   * (a Fase 12 tirou "Separar grupo" da interface), e sai um aviso só.
+   */
+  async movePartyTo(sceneId: string): Promise<boolean> {
+    const cleared = await this.supabase
+      .from('table_members')
+      .update({ scene_id: null })
+      .eq('table_id', this.tableId)
+      .not('scene_id', 'is', null);
+    const moved = await this.supabase
+      .from('tables')
+      .update({ default_scene_id: sceneId })
+      .eq('id', this.tableId);
+    if (cleared.error || moved.error) {
+      store().showToast(SAVE_ERROR);
+      return false;
+    }
+    useVttStore.setState((s) => ({
+      members: s.members.map((member) => (member.sceneId ? { ...member, sceneId: null } : member)),
+    }));
+    await this.refreshTable();
+    this.announceAssign();
+    return true;
+  }
+
+  async setArchived(id: string, archived: boolean): Promise<boolean> {
+    if (archived && store().table?.default_scene_id === id) {
+      store().showToast('Os jogadores estão nesta página. Mova a fita antes de arquivar.');
+      return false;
+    }
+    if (pagesMigrationMissing()) {
+      store().showToast(PAGES_MIGRATION_HINT);
+      return false;
+    }
+    const saved = await this.updateScene(id, { archived });
+    // Arquivou a página que estava aberta: volta para onde os jogadores estão.
+    if (saved && archived && store().gmSceneChoice === id) {
+      useVttStore.setState({ gmSceneChoice: null });
+    }
+    return saved;
+  }
+
+  async setGridVisible(id: string, gridVisible: boolean): Promise<boolean> {
+    if (pagesMigrationMissing()) {
+      store().showToast(PAGES_MIGRATION_HINT);
+      return false;
+    }
+    return this.updateScene(id, { grid_visible: gridVisible });
+  }
+
+  async removeMap(id: string) {
+    const patch: Parameters<SceneSync['updateScene']>[1] = { map_asset_id: null, meters_per_px: null };
+    if (!pagesMigrationMissing()) patch.grid_visible = false;
+    await this.updateScene(id, patch);
+  }
+
+  /** Grava a lista de pastas da mesa. Sem a migração, avisa e não muda nada. */
+  private async saveFolders(folders: string[]): Promise<boolean> {
+    const previous = store().pageFolders;
+    useVttStore.setState({ pageFolders: folders });
+    const { error } = await this.supabase
+      .from('tables')
+      .update({ scene_folders: folders })
+      .eq('id', this.tableId);
+    if (error) {
+      useVttStore.setState({ pageFolders: previous });
+      store().showToast(isMissingColumn(error) ? PAGES_MIGRATION_HINT : SAVE_ERROR);
+      return false;
+    }
+    return true;
+  }
+
+  async createFolder(name: string): Promise<boolean> {
+    const { pageFolders, scenes } = store();
+    return this.saveFolders(addFolderIn(folderList(pageFolders, scenes), name));
+  }
+
+  /** Renomeia a pasta e leva junto as páginas dela. */
+  async renameFolder(from: string, to: string): Promise<boolean> {
+    const target = cleanFolderName(to);
+    if (!target || target === from) return false;
+    const { pageFolders, scenes } = store();
+    const { error } = await this.supabase
+      .from('scenes')
+      .update({ folder: target })
+      .eq('table_id', this.tableId)
+      .eq('folder', from);
+    if (error) {
+      store().showToast(SAVE_ERROR);
+      return false;
+    }
+    await this.saveFolders(renameFolderIn(folderList(pageFolders, scenes), from, target));
+    await this.reload();
+    return true;
+  }
+
+  /** Apagar pasta devolve as páginas para "Todas": nenhuma página é apagada. */
+  async deleteFolder(name: string): Promise<boolean> {
+    const { pageFolders, scenes } = store();
+    const { error } = await this.supabase
+      .from('scenes')
+      .update({ folder: '' })
+      .eq('table_id', this.tableId)
+      .eq('folder', name);
+    if (error) {
+      store().showToast(SAVE_ERROR);
+      return false;
+    }
+    await this.saveFolders(folderList(pageFolders, scenes).filter((folder) => folder !== name));
+    await this.reload();
+    return true;
+  }
+
+  async moveToFolder(id: string, folder: string): Promise<boolean> {
+    return this.updateScene(id, { folder: cleanFolderName(folder) });
   }
 
   async updateScene(
     id: string,
-    patch: Partial<Pick<VttScene, 'name' | 'folder' | 'map_asset_id' | 'meters_per_px' | 'sort'>>
+    patch: Partial<
+      Pick<VttScene, 'name' | 'folder' | 'map_asset_id' | 'meters_per_px' | 'sort' | 'archived' | 'grid_visible'>
+    >
   ): Promise<boolean> {
     const { error } = await this.supabase.from('scenes').update(patch).eq('id', id);
     if (error) {
@@ -1240,26 +1401,27 @@ export class SceneSync {
   async duplicateScene(id: string) {
     const { error } = await this.supabase.rpc('duplicate_scene', { p_scene: id });
     if (error) {
-      store().showToast('Não foi possível duplicar a cena.');
+      store().showToast('Não foi possível duplicar a página.');
       return;
     }
     await this.reload();
   }
 
-  async deleteScene(id: string) {
-    const { scenes, table } = store();
-    if (table?.default_scene_id === id) {
-      const next = scenes.find((scene) => scene.id !== id);
-      await this.setDefaultScene(next?.id ?? null);
+  async deleteScene(id: string): Promise<boolean> {
+    if (store().table?.default_scene_id === id) {
+      store().showToast('Os jogadores estão nesta página. Mova a fita antes de apagar.');
+      return false;
     }
     const { error } = await this.supabase.from('scenes').delete().eq('id', id);
     if (error) {
-      store().showToast('Não foi possível apagar a cena.');
-      return;
+      store().showToast('Não foi possível apagar a página.');
+      return false;
     }
+    if (store().gmSceneChoice === id) useVttStore.setState({ gmSceneChoice: null });
     await this.refreshTable();
     await this.reload();
     this.announceAssign();
+    return true;
   }
 
   private async refreshTable() {
@@ -1314,10 +1476,34 @@ export class SceneSync {
 
   /** Grava `meters_per_px` da cena aberta a partir do trecho medido. */
   async saveCalibration(worldPixels: number, meters: number): Promise<boolean> {
-    const sceneId = store().viewedSceneId;
     const value = calibrate(worldPixels, meters);
-    if (!sceneId || value === null) return false;
-    return this.updateScene(sceneId, { meters_per_px: value });
+    return value === null ? false : this.saveScale(value);
+  }
+
+  /**
+   * Escala da página aberta (ou de `sceneId`). Também fica guardada no mapa, para
+   * toda página futura com ele já nascer calibrada.
+   */
+  async saveScale(metersPerPx: number, sceneId = store().viewedSceneId): Promise<boolean> {
+    const scene = store().scenes.find((item) => item.id === sceneId);
+    if (!scene || !(metersPerPx > 0)) return false;
+    const saved = await this.updateScene(scene.id, { meters_per_px: metersPerPx });
+    if (saved && scene.map_asset_id) await this.saveMapCalibration(scene.map_asset_id, metersPerPx);
+    return saved;
+  }
+
+  private async saveMapCalibration(assetId: string, metersPerPx: number) {
+    const { error } = await this.supabase
+      .from('map_calibrations')
+      .upsert({ asset_id: assetId, meters_per_px: metersPerPx, updated_at: new Date().toISOString() });
+    if (error) {
+      // A página já ficou calibrada; só as próximas com este mapa não herdam.
+      if (error.code === '42P01' || error.code === 'PGRST205') store().showToast(PAGES_MIGRATION_HINT);
+      return;
+    }
+    useVttStore.setState((s) => ({
+      mapCalibrations: { ...(s.mapCalibrations ?? {}), [assetId]: metersPerPx },
+    }));
   }
 
   // ---------- Aprovação (mestra) ----------

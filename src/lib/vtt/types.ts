@@ -74,6 +74,10 @@ export interface VttScene {
   weather: unknown;
   /** Iluminação salva. Ler com `parseLighting`. */
   lighting: unknown;
+  /** Fora da grade de Páginas, em "Arquivadas". */
+  archived: boolean;
+  /** Grade de quadrados de 1,5 m sobre o mapa. Só desenha com a régua calibrada. */
+  grid_visible: boolean;
   created_at: string;
 }
 
