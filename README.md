@@ -36,9 +36,11 @@ Arquivos em `content/lore/*.mdx` e `content/regras/*.mdx` têm placeholders `{/*
 
 ## Nota Windows
 
-Para ver o que pesa em cada rota: `ANALYZE=true npm run build` gera os relatórios em `.next/analyze/`. A coluna First Load JS do build não soma os chunks do layout raiz, então não serve para comparar rotas.
-
 Neste ambiente, o build do Next.js pode falhar no `realpath` nativo. O script `scripts/patch-next-realpath.mjs` (rodado no `postinstall`/`dev`/`build`) corrige isso automaticamente.
+
+## Análise de bundle
+
+Para ver o que pesa em cada rota: `ANALYZE=true npm run build` gera os relatórios em `.next/analyze/`. A coluna First Load JS do build não soma os chunks do layout raiz, então não serve para comparar rotas.
 
 ## Deploy na Vercel
 
