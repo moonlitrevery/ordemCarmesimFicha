@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import { m } from 'framer-motion';
+import { DUR, EASE_ENTER } from '@/lib/motion-tokens';
 import { readableTextOn } from '@/lib/vtt/scene-rules';
 
 /** Fundo do que flutua sobre o mapa. Blur só com mouse: no tablet pesa sobre o WebGL. */
@@ -30,6 +32,7 @@ export function IconButton({
   quietBadge = false,
   tooltip = 'bottom',
   danger = false,
+  highlightId,
   onClick,
 }: {
   icon: LucideIcon;
@@ -42,6 +45,11 @@ export function IconButton({
   /** `native`: dentro de área com rolagem, onde o balão seria cortado. */
   tooltip?: TooltipSide | 'native';
   danger?: boolean;
+  /**
+   * Abas (Fase 15): o fundo do ativo é um só, com este `layoutId`, e desliza de um
+   * ícone para o outro. Precisa do `MotionProvider full` (a Mesa tem).
+   */
+  highlightId?: string;
   onClick?: () => void;
 }) {
   return (
@@ -57,13 +65,21 @@ export function IconButton({
         (disabled
           ? 'cursor-not-allowed text-ink-muted/40'
           : active
-            ? 'bg-crimson/40 text-parchment'
+            ? (highlightId ? '' : 'bg-crimson/40 ') + 'text-parchment'
             : danger
               ? 'text-crimson-soft hover:bg-ink-raised'
               : 'text-ink-muted hover:bg-ink-raised hover:text-parchment')
       }
     >
-      <Icon size={18} aria-hidden />
+      {active && highlightId && (
+        <m.span
+          aria-hidden
+          layoutId={highlightId}
+          transition={{ duration: DUR.slow, ease: EASE_ENTER }}
+          className="pointer-events-none absolute inset-0 rounded-lg bg-crimson/40"
+        />
+      )}
+      <Icon size={18} aria-hidden className="relative" />
       {Boolean(badge) && (
         <span
           className={

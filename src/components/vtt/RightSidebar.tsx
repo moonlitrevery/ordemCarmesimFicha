@@ -226,6 +226,7 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
         quietBadge={tab.quietBadge}
         // A fileira do topo rola na horizontal: o balão seria cortado.
         tooltip={vertical ? 'left' : 'native'}
+        highlightId={vertical ? undefined : 'sidebar-tab'}
         onClick={() => pick(tab.id)}
       />
     ));
