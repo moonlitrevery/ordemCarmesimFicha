@@ -16,6 +16,7 @@ import {
 } from '@/lib/vtt/pages';
 import { useVttStore } from '@/lib/vtt/store';
 import { isTypingTarget } from '@/lib/vtt/ui-prefs';
+import { HoldButton } from '@/components/fx/HoldButton';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { FLOATING_PANEL, IconButton, useDismiss } from '../hud';
 import { CreatePageModal } from './CreatePageModal';
@@ -25,7 +26,6 @@ import { PageSettingsModal } from './PageSettingsModal';
 type Modal =
   | { kind: 'create' }
   | { kind: 'settings'; id: string }
-  | { kind: 'delete'; id: string }
   | { kind: 'deleteFolder'; name: string };
 
 interface Menu {
@@ -113,7 +113,16 @@ function PageMenu({
       {archived
         ? item('unarchive', 'Desarquivar')
         : item('archive', 'Arquivar', hasParty, blocked)}
-      {item('delete', 'Apagar', hasParty, blocked)}
+      {/* Fase 15: apagar é segurar (sem modal); separado do resto do menu. */}
+      <hr className="my-1 border-ink-border" />
+      <HoldButton
+        className={MENU_ITEM + ' text-crimson-soft'}
+        disabled={hasParty}
+        title={blocked ?? 'Segure para apagar. A página, os objetos e os desenhos somem de vez; para só tirar da grade, use Arquivar.'}
+        label="Apagar (segure)"
+        holdingLabel="Apagando…"
+        onConfirm={() => onAction('delete')}
+      />
     </div>
   );
 }
@@ -250,7 +259,7 @@ export function PagesOverlay() {
         await sync.setArchived(id, false);
         break;
       case 'delete':
-        setModal({ kind: 'delete', id });
+        await sync.deleteScene(id);
         break;
     }
   }
@@ -357,7 +366,6 @@ export function PagesOverlay() {
   // ---------- Tela ----------
 
   const menuScene = menu ? scenes.find((scene) => scene.id === menu.id) : undefined;
-  const deleting = modal?.kind === 'delete' ? scenes.find((scene) => scene.id === modal.id) : undefined;
   const currentFolder = view.kind === 'folder' ? view.name : '';
 
   return (
@@ -595,21 +603,6 @@ export function PagesOverlay() {
         )}
       </section>
 
-      {deleting && (
-        <ConfirmDialog
-          title={`Apagar "${deleting.name}"?`}
-          confirmLabel="Apagar"
-          danger
-          onCancel={() => setModal(null)}
-          onConfirm={() => {
-            setModal(null);
-            void sync?.deleteScene(deleting.id);
-          }}
-        >
-          A página, os objetos e os desenhos dela somem de vez. Para só tirar da grade, use
-          Arquivar.
-        </ConfirmDialog>
-      )}
       {modal?.kind === 'deleteFolder' && (
         <ConfirmDialog
           title={`Apagar a pasta "${modal.name}"?`}

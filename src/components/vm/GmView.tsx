@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ConfirmDialog } from '@/components/vtt/ConfirmDialog';
+import { HoldButton } from '@/components/fx/HoldButton';
 import { fetchGroups, type VmGroup, type VmMember, type VmPickOption, type VmSection } from '@/lib/vm/data';
 import { moveInList } from '@/lib/vm/card';
 import { CharacterCard, NpcCard, type CardActions } from './VmCard';
@@ -35,7 +35,6 @@ function bySortOrder<T extends { sort_order: number }>(a: T, b: T) {
 type Modal =
   | { kind: 'create' }
   | { kind: 'rename' }
-  | { kind: 'delete' }
   | { kind: 'pick'; section: VmSection }
   | null;
 
@@ -318,7 +317,6 @@ export function GmView({ userId }: { userId: string }) {
                         run: () => void moveGroup(1),
                         disabled: groupIndex >= groups.length - 1,
                       },
-                      { label: 'Apagar grupo', run: () => setModal({ kind: 'delete' }), danger: true },
                     ].map((item) => (
                       <button
                         key={item.label}
@@ -327,7 +325,7 @@ export function GmView({ userId }: { userId: string }) {
                         disabled={item.disabled}
                         className={
                           'block w-full px-3 py-2 text-left hover:bg-ink-raised disabled:opacity-40 disabled:hover:bg-transparent ' +
-                          (item.danger ? 'text-crimson-soft' : 'text-parchment')
+                          'text-parchment'
                         }
                         onClick={() => {
                           setMenuOpen(false);
@@ -337,6 +335,19 @@ export function GmView({ userId }: { userId: string }) {
                         {item.label}
                       </button>
                     ))}
+                    {/* Fase 15: apagar é segurar (sem modal). Fichas e NPCs não são apagados. */}
+                    <hr className="my-1 border-ink-border" />
+                    <HoldButton
+                      className="block w-full px-3 py-2 text-left text-crimson-soft hover:bg-ink-raised"
+                      title={`Segure para apagar o grupo ${selected.name}. Nenhuma ficha nem NPC é apagado.`}
+                      label="Apagar grupo (segure)"
+                      holdingLabel="Apagando…"
+                      disabled={busy}
+                      onConfirm={() => {
+                        setMenuOpen(false);
+                        void deleteGroup();
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -420,18 +431,6 @@ export function GmView({ userId }: { userId: string }) {
           onSubmit={(name) => void renameGroup(name)}
           onClose={closeModal}
         />
-      )}
-      {modal?.kind === 'delete' && selected && (
-        <ConfirmDialog
-          title="Apagar grupo?"
-          confirmLabel="Apagar"
-          danger
-          busy={busy}
-          onConfirm={() => void deleteGroup()}
-          onCancel={closeModal}
-        >
-          O grupo <strong className="text-parchment">{selected.name}</strong> some da V.M. Nenhuma ficha nem NPC é apagado.
-        </ConfirmDialog>
       )}
       {modal?.kind === 'pick' && (
         <MemberPicker
