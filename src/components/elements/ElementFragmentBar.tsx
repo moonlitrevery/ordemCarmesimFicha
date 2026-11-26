@@ -13,6 +13,7 @@ import {
   removeFragmentsFromElement,
 } from '@/lib/calculations';
 import type { CharacterElementRow, ElementType } from '@/types/database';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
 import { ElementSymbol } from '@/components/elements/ElementSymbol';
 
 export function ElementFragmentBar({
@@ -131,7 +132,7 @@ export function ElementFragmentBar({
             {ELEMENT_LABELS[element]}
           </p>
           <p className="font-display text-3xl leading-none text-parchment">
-            {row.level}
+            <AnimatedNumber value={row.level} />
             <span className="ml-1 text-sm text-ink-muted">nível</span>
           </p>
           </div>

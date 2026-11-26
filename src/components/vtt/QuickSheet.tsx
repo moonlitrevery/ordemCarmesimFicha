@@ -9,6 +9,9 @@ import {
 } from '@/lib/calculations';
 import { ALL_ELEMENTS, DEFAULT_SKILLS, ELEMENT_LABELS } from '@/lib/constants';
 import { ElementSymbol } from '@/components/elements/ElementSymbol';
+import { useAnimatedInputValue } from '@/components/fx/AnimatedNumber';
+import { GlitchLayers } from '@/components/fx/glitch';
+import { isSanityCritical, RESOURCE_TONE_COLOR } from '@/lib/vm/card';
 import {
   backpackToSave,
   mergeRemoteBackpack,
@@ -125,16 +128,22 @@ function ResourceRow({
   label,
   value,
   max,
+  sanity = false,
   onChange,
 }: {
   label: string;
   value: number;
   max: number;
+  sanity?: boolean;
   onChange: (value: number) => void;
 }) {
   // Rascunho: apagar o campo para digitar não pode virar 0 na hora.
   const [draft, setDraft] = useState<string | null>(null);
   const current = Math.min(value, max);
+  const critical = sanity && isSanityCritical(current, max);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const glitchRef = useRef<HTMLSpanElement>(null);
+  useAnimatedInputValue(inputRef, current, critical, glitchRef);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -147,8 +156,11 @@ function ResourceRow({
       >
         −
       </button>
+      <span ref={glitchRef} className="relative inline-block text-sm">
       <input
-        className="field min-h-11 w-16 px-1 py-1 text-center text-sm desk:min-h-8"
+        ref={inputRef}
+        className="field min-h-11 w-16 px-1 py-1 text-center text-sm tabular-nums desk:min-h-8"
+        style={critical ? { color: RESOURCE_TONE_COLOR.danger } : undefined}
         inputMode="numeric"
         aria-label={`${label} atual`}
         value={draft ?? current}
@@ -162,6 +174,10 @@ function ResourceRow({
         }}
         onBlur={() => setDraft(null)}
       />
+        {critical && (
+          <GlitchLayers text={String(current)} className="flex items-center justify-center tabular-nums" />
+        )}
+      </span>
       <button
         type="button"
         className={ROW_BUTTON + ' w-11 desk:w-8'}
@@ -654,6 +670,7 @@ export function QuickSheet() {
                   label={label}
                   value={resources[key]}
                   max={maxes[maxKey]}
+                  sanity={key === 'sanity_current'}
                   onChange={(value) => changeResource(key, value)}
                 />
               ))}

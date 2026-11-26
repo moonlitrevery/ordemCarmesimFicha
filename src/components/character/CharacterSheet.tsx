@@ -52,6 +52,8 @@ import { ElementsSection } from '@/components/character/ElementsSection';
 import { LevelProgression } from '@/components/character/LevelProgression';
 import { CharacterImage } from '@/components/ui/CharacterImage';
 import { SaveIndicator, type SaveStatus } from '@/components/ui/SaveIndicator';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
+import { isSanityCritical, RESOURCE_TONE_COLOR } from '@/lib/vm/card';
 import { SkillsList } from '@/components/character/SkillsList';
 import { SectionCard } from '@/components/ui/SectionCard';
 import { SheetTabs } from '@/components/ui/SheetTabs';
@@ -1040,7 +1042,8 @@ function ResourceBlock({
   onApply: (delta: number) => void;
 }) {
   const [amount, setAmount] = useState(1);
-  const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
+  const ratio = max > 0 ? Math.min(1, Math.max(0, current / max)) : 0;
+  const critical = label === 'Sanidade' && isSanityCritical(current, max);
   return (
     <div className="space-y-2 rounded-md border border-ink-border bg-ink-raised/30 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -1058,11 +1061,19 @@ function ResourceBlock({
         </label>
       </div>
       <p className="font-display text-2xl text-parchment">
-        {current}
+        <AnimatedNumber
+          value={current}
+          critical={critical}
+          style={critical ? { color: RESOURCE_TONE_COLOR.danger } : undefined}
+        />
         <span className="text-base text-ink-muted"> / {max}</span>
       </p>
       <div className="h-2.5 overflow-hidden rounded-full bg-ink">
-        <div className="h-full transition-all" style={{ width: pct + '%', backgroundColor: color }} />
+        {/* scaleX em vez de width: roda no compositor, sem layout a cada quadro. */}
+        <div
+          className="h-full origin-left transition-transform duration-slow ease-enter"
+          style={{ transform: `scaleX(${ratio})`, backgroundColor: color }}
+        />
       </div>
       <div className="flex items-center gap-1.5">
         <input

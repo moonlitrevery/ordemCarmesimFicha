@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { memo, useState, type ReactNode } from 'react';
 import { ElementSymbol } from '@/components/elements/ElementSymbol';
 import { ELEMENT_COLORS, ELEMENT_LABELS, isValidImageUrl } from '@/lib/constants';
-import { characterMaxes, elementTags, resourceTone, type ResourceTone } from '@/lib/vm/card';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
+import { characterMaxes, elementTags, RESOURCE_TONE_COLOR, resourceTone } from '@/lib/vm/card';
 import type { VmCharacter, VmNpc } from '@/lib/vm/data';
 import type { Attributes } from '@/types/database';
 
@@ -23,11 +24,6 @@ const RESOURCE_COLOR: Record<ResourceKind, string> = {
   hp: '#E06C75',
   mana: '#6FA8DC',
   sanity: '#B49BD6',
-};
-
-const TONE_COLOR: Record<Exclude<ResourceTone, 'normal'>, string> = {
-  warn: '#F2C94C',
-  danger: '#FF3B3B',
 };
 
 function Avatar({ url, name }: { url: string | null; name: string }) {
@@ -60,18 +56,20 @@ function Avatar({ url, name }: { url: string | null; name: string }) {
 
 function Resource({ kind, current, max }: { kind: ResourceKind; current: number; max: number }) {
   const tone = resourceTone(current, max);
-  const color = tone === 'normal' ? RESOURCE_COLOR[kind] : TONE_COLOR[tone];
+  const color = tone === 'normal' ? RESOURCE_COLOR[kind] : RESOURCE_TONE_COLOR[tone];
   return (
     <div className="flex flex-col items-center" title={`${current} / ${max}`}>
       <span className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-ink-muted">
         {RESOURCE_LABEL[kind]}
       </span>
-      <span
-        className="font-display text-3xl font-bold leading-none tabular-nums transition-colors"
+      {/* Na V.M. todo valor novo chegou por realtime: pulsa para chamar a atenção. */}
+      <AnimatedNumber
+        value={current}
+        pulse
+        critical={kind === 'sanity' && tone === 'danger'}
+        className="font-display text-3xl font-bold leading-none"
         style={{ color }}
-      >
-        {current}
-      </span>
+      />
       <span className="sr-only">de {max}</span>
     </div>
   );
@@ -119,7 +117,9 @@ function AttributeRow({ attributes }: { attributes: Attributes }) {
       {CARD_ATTRIBUTES.map((key) => (
         <div key={key} className="flex flex-col items-center">
           <dt className="text-[0.6rem] font-medium tracking-[0.1em] text-ink-muted">{key}</dt>
-          <dd className="text-sm font-semibold tabular-nums text-parchment">{attributes[key]}</dd>
+          <dd className="text-sm font-semibold text-parchment">
+            <AnimatedNumber value={attributes[key]} />
+          </dd>
         </div>
       ))}
     </dl>
