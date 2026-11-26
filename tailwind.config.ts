@@ -34,6 +34,17 @@ const config: Config = {
         display: ['var(--font-display)', 'Georgia', 'serif'],
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
       },
+      // Tokens de animação (Fase 15): os valores moram nas variáveis CSS de globals.css,
+      // que caem para 1 ms com "reduzir movimento" e no modo leve da Mesa.
+      transitionDuration: {
+        fast: 'var(--dur-fast)',
+        base: 'var(--dur-base)',
+        slow: 'var(--dur-slow)',
+      },
+      transitionTimingFunction: {
+        enter: 'var(--ease-enter)',
+        exit: 'var(--ease-exit)',
+      },
       boxShadow: {
         panel:
           '0 0 0 1px rgba(139, 30, 45, 0.25), 0 12px 40px rgba(0,0,0,0.45)',

@@ -1,0 +1,3 @@
+# Os símbolos são gerados pelo teste de ElementSymbol, em LF: no Windows (autocrlf)
+# o checkout em CRLF fazia o teste falhar sem o desenho ter mudado.
+public/simbolos/*.svg text eol=lf

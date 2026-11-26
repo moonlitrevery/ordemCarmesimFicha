@@ -5,6 +5,27 @@
 :root {
   --background: #0c0a0d;
   --foreground: #e8dfd0;
+  /* Tokens de animação (Fase 15). Espelho em TS: src/lib/motion-tokens.ts. */
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.55, 0, 1, 0.45);
+}
+
+/* Reduzir movimento (sistema) e modo leve da Mesa: transição vira troca quase instantânea. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+  }
+}
+
+[data-motion='reduced'] {
+  --dur-fast: 1ms;
+  --dur-base: 1ms;
+  --dur-slow: 1ms;
 }
 
 html {
@@ -38,11 +59,11 @@ body {
   }
 
   .field {
-    @apply w-full rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-[0.95rem] text-parchment outline-none transition focus:border-crimson/70 focus:ring-1 focus:ring-crimson/40;
+    @apply w-full rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-[0.95rem] text-parchment outline-none transition duration-fast ease-enter focus:border-crimson/70 focus:ring-1 focus:ring-crimson/40;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[0.95rem] font-medium transition disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[0.95rem] font-medium transition duration-fast ease-enter disabled:opacity-50;
   }
 
   .btn-primary {
