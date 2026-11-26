@@ -28,6 +28,19 @@
   --dur-slow: 1ms;
 }
 
+/* Animações CSS em loop do Tailwind também param (spinner, pulse). */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse {
+    animation: none;
+  }
+}
+
+[data-motion='reduced'] .animate-spin,
+[data-motion='reduced'] .animate-pulse {
+  animation: none;
+}
+
 html {
   color-scheme: dark;
   font-size: 16.5px;

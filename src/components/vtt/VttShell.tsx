@@ -19,6 +19,7 @@ import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
 import { isTypingTarget } from '@/lib/vtt/ui-prefs';
+import { MotionProvider } from '@/components/ui/MotionProvider';
 import { CalibrationGuide } from './CalibrationGuide';
 import { CaptionModal } from './CaptionModal';
 import { MapToolbar } from './MapToolbar';
@@ -67,6 +68,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const pagesOpen = useVttStore((s) => s.pagesOpen);
   const conditionTip = useVttStore((s) => s.conditionTip);
   const lightModePrompt = useVttStore((s) => s.lightModePrompt);
+  const lightMode = useVttStore((s) => s.lightMode);
   const setLightMode = useVttStore((s) => s.setLightMode);
   const [sessionBusy, setSessionBusy] = useState(false);
 
@@ -295,7 +297,12 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-ink text-parchment">
+    // Modo leve = movimento reduzido para a UI (Motion e tokens CSS): nada disputa o canvas.
+    <MotionProvider full reduced={lightMode}>
+    <div
+      className="fixed inset-0 z-50 overflow-hidden bg-ink text-parchment"
+      data-motion={lightMode ? 'reduced' : undefined}
+    >
       <main className="absolute inset-0">
         {viewedSceneId ? (
           <>
@@ -417,5 +424,6 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         </div>
       )}
     </div>
+    </MotionProvider>
   );
 }

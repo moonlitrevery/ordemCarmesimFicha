@@ -51,7 +51,9 @@ import { useDiceToast } from '@/components/dice/DiceToast';
 import { ElementsSection } from '@/components/character/ElementsSection';
 import { LevelProgression } from '@/components/character/LevelProgression';
 import { CharacterImage } from '@/components/ui/CharacterImage';
-import { SaveIndicator, type SaveStatus } from '@/components/ui/SaveIndicator';
+import type { SaveStatus } from '@/components/ui/SaveIndicator';
+import { SaveStatusPill } from '@/components/fx/SaveStatus';
+import { MotionProvider } from '@/components/ui/MotionProvider';
 import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
 import { isSanityCritical, RESOURCE_TONE_COLOR } from '@/lib/vm/card';
 import { SkillsList } from '@/components/character/SkillsList';
@@ -307,6 +309,7 @@ export function CharacterSheet({
         setBackpackNotice(
           'A mochila mudou em outro lugar enquanto você editava. Recarreguei; confira a última mudança.'
         );
+        reloadedRef.current = true;
         const rest: Record<string, unknown> = { ...payload };
         delete rest.inventory;
         delete rest.money;
@@ -364,6 +367,8 @@ export function CharacterSheet({
   // Um save de cada vez: dois em paralelo usariam a mesma versão da mochila e o
   // segundo daria conflito à toa. Na fila, o segundo já vê o que o primeiro gravou.
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  /** O último save releu a mochila (conflito de versão): o indicador avisa. */
+  const reloadedRef = useRef(false);
   const persistCharacter = useCallback(
     (next: SheetState, nextElements: CharacterElementRow[]) => {
       const run = saveQueueRef.current
@@ -521,7 +526,8 @@ export function CharacterSheet({
             setElements(merged);
           }
         }
-        setStatus('saved');
+        setStatus(reloadedRef.current ? 'reloaded' : 'saved');
+        reloadedRef.current = false;
       } catch {
         setStatus('error');
       }
@@ -530,10 +536,22 @@ export function CharacterSheet({
   }, [sheet, elements, ready, persistCharacter]);
 
   useEffect(() => {
-    if (status !== 'saved') return;
-    const t = setTimeout(() => setStatus('idle'), 1600);
+    if (status !== 'saved' && status !== 'reloaded') return;
+    const t = setTimeout(() => setStatus('idle'), status === 'saved' ? 1600 : 4000);
     return () => clearTimeout(t);
   }, [status]);
+
+  /** "Tentar de novo" do indicador: grava o estado atual na mesma fila. */
+  const retrySave = useCallback(() => {
+    setStatus('saving');
+    persistCharacter(sheetRef.current, elementsRef.current).then(
+      () => {
+        setStatus(reloadedRef.current ? 'reloaded' : 'saved');
+        reloadedRef.current = false;
+      },
+      () => setStatus('error')
+    );
+  }, [persistCharacter]);
 
   // Estável: as seções memorizadas não renderizam de novo só por causa do callback.
   const patch = useCallback<PatchSheet>((partial) => {
@@ -594,12 +612,13 @@ export function CharacterSheet({
   );
 
   return (
+    <MotionProvider full>
     <div className="relative space-y-5 pb-20">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-display text-3xl text-parchment md:text-4xl">
           {sheet.name || 'Sem nome'}
         </h1>
-        <SaveIndicator status={status} />
+        <SaveStatusPill status={status} onRetry={retrySave} floating />
       </div>
 
       <HeaderSection
@@ -766,6 +785,7 @@ export function CharacterSheet({
 
       <MemoFloatingDiceButton />
     </div>
+    </MotionProvider>
   );
 }
 
