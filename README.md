@@ -44,15 +44,28 @@ Para ver o que pesa em cada rota: `ANALYZE=true npm run build` gera os relatóri
 
 ## Deploy na Vercel
 
-1. No projeto da Vercel: **Settings → Environment Variables**, adicione (Production e Preview):
+1. No projeto da Vercel: **Settings → Environment Variables**, adicione em **Production**:
    - `NEXT_PUBLIC_SUPABASE_URL` = URL do projeto (Supabase → Settings → API)
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = chave `anon` / `public`
+
+   **Preview não usa o banco nem o Blob de produção.** Um deploy de preview roda o código de qualquer branch: com as variáveis de produção, um bug (ou um PR) mexe nas fichas de verdade. Para Preview, crie um segundo projeto Supabase (free) e um Blob separado e ponha as chaves deles só no ambiente Preview. Em **Settings → Deployment Protection**, deixe **Vercel Authentication** ligado para os previews.
 
 2. **Redeploy** depois de salvar as variáveis (o deploy anterior não as recebe sozinho).
 
 3. No Supabase → **Authentication → URL Configuration**:
    - Site URL: `https://seu-app.vercel.app`
    - Redirect URLs: `https://seu-app.vercel.app/**`
+
+4. No Supabase → **Authentication**, para o cadastro aberto:
+   - **Sign In / Providers → Email**: ligue **Confirm email**. Sem isso, qualquer um cria conta com e-mail alheio, e o cadastro revela quais e-mails já existem. O site já mostra "Confira seu e-mail" quando a confirmação está ligada.
+   - **Attack Protection**: ligue o CAPTCHA (Turnstile ou hCaptcha) se aparecer cadastro em massa, e confira a senha mínima (8+).
+   - **Rate Limits**: confira os limites de login, cadastro e e-mail por IP (o padrão já existe; não zere).
+
+## Segurança
+
+- O papel (`profiles.role`) só muda pelo SQL Editor: a migração 026 tira o privilégio de update dessa coluna.
+- Rode `supabase/migrations/027_rate_limits.sql` **antes** de publicar o site que usa `reserve_upload` (cota diária de envio do jogador e limite de tentativas de código de mesa).
+- A CSP completa está em `Content-Security-Policy-Report-Only` (`next.config.mjs`): abra o console numa sessão da Mesa e, sem avisos de bloqueio, troque para `Content-Security-Policy`.
 
 ## Testes
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { storage, StorageError } from '@/lib/storage';
-import { canDeleteAsset, type Asset } from '@/lib/vtt/assets/rules';
+import { canDeleteAsset, deletableAssetUrls, type Asset } from '@/lib/vtt/assets/rules';
 import { getUploadAccess } from '@/lib/vtt/assets/server';
 
 export async function DELETE(
@@ -14,12 +14,12 @@ export async function DELETE(
 
   const { data } = await access.supabase
     .from('assets')
-    .select('url, thumb_url, status, uploaded_by')
+    .select('kind, url, thumb_url, status, uploaded_by')
     .eq('id', params.id)
     .maybeSingle();
   const asset = data as Pick<
     Asset,
-    'url' | 'thumb_url' | 'status' | 'uploaded_by'
+    'kind' | 'url' | 'thumb_url' | 'status' | 'uploaded_by'
   > | null;
   if (!asset) {
     return NextResponse.json({ error: 'Arquivo não encontrado.' }, { status: 404 });
@@ -34,22 +34,29 @@ export async function DELETE(
     );
   }
 
+  // Linha apontando para fora da pasta do tipo: some a linha, o arquivo alheio fica.
+  const urls = deletableAssetUrls(asset, storage.ownsUrl);
+  const expected = asset.thumb_url ? 2 : 1;
+  if (urls.length < expected) {
+    console.warn('[upload] asset com URL fora da pasta do tipo; arquivo não apagado', params.id);
+  }
+
   // Blob primeiro: se falhar, a linha fica e dá para tentar de novo (del é idempotente).
-  try {
-    await storage.delete(
-      asset.thumb_url ? [asset.url, asset.thumb_url] : [asset.url]
-    );
-  } catch (error) {
-    console.error('[upload] falha ao apagar no storage', error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof StorageError
-            ? error.message
-            : 'Não foi possível apagar o arquivo. Tente de novo.',
-      },
-      { status: 502 }
-    );
+  if (urls.length > 0) {
+    try {
+      await storage.delete(urls);
+    } catch (error) {
+      console.error('[upload] falha ao apagar no storage', error);
+      return NextResponse.json(
+        {
+          error:
+            error instanceof StorageError
+              ? error.message
+              : 'Não foi possível apagar o arquivo. Tente de novo.',
+        },
+        { status: 502 }
+      );
+    }
   }
 
   const { error } = await access.supabase

@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server';
 import { storage, StorageError } from '@/lib/storage';
 import {
   canDeleteTableFile,
+  COLLECTION_KIND,
   COLLECTION_TABLE,
   isTableFileCollection,
   isUuid,
 } from '@/lib/vtt/docs/rules';
+import { blobPathname } from '@/lib/vtt/assets/rules';
 import { getTableFileAccess } from '@/lib/vtt/docs/server';
 
 export async function DELETE(
@@ -50,20 +52,30 @@ export async function DELETE(
     );
   }
 
+  // O check do banco já prende a URL à pasta; aqui é a segunda trava antes do `del`.
+  const ownFile =
+    storage.ownsUrl(row.url) &&
+    Boolean(blobPathname(row.url)?.startsWith(`${COLLECTION_KIND[collection]}/`));
+  if (!ownFile) {
+    console.warn('[table-files] URL fora da pasta da coleção; arquivo não apagado', id);
+  }
+
   // Blob primeiro: se falhar, a linha fica e dá para tentar de novo (del é idempotente).
-  try {
-    await storage.delete([row.url]);
-  } catch (error) {
-    console.error('[table-files] falha ao apagar no storage', error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof StorageError
-            ? error.message
-            : 'Não foi possível apagar o arquivo. Tente de novo.',
-      },
-      { status: 502 }
-    );
+  if (ownFile) {
+    try {
+      await storage.delete([row.url]);
+    } catch (error) {
+      console.error('[table-files] falha ao apagar no storage', error);
+      return NextResponse.json(
+        {
+          error:
+            error instanceof StorageError
+              ? error.message
+              : 'Não foi possível apagar o arquivo. Tente de novo.',
+        },
+        { status: 502 }
+      );
+    }
   }
 
   const { error } = await session.supabase.from(table).delete().eq('id', id);

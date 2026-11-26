@@ -56,6 +56,7 @@ export async function uploadTableFile<T>(
         tableId: target.tableId,
         category: target.category,
         mime: body.type,
+        size: body.size,
       }),
       contentType: body.type,
       onUploadProgress: ({ percentage }) => options.onProgress?.(percentage),

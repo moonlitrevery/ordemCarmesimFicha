@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { parseDiceExpression } from '@/lib/dice';
 
 /**
  * Roda o schema.sql de verdade num Postgres embutido. Cobre o `.insert().select()`
@@ -240,7 +241,11 @@ describe('INSERT com retorno', () => {
     });
 
     it('jogador recebe a própria rolagem oculta', async () => {
-      await insertOne(PLAYER, INSERT_MESSAGE, [openTable, PLAYER, 'roll', '', roll, true, null]);
+      await insertOne(
+        PLAYER,
+        `select id, author_name, kind, body from public.chat_roll($1, '1d20+2', 'Teste', true)`,
+        [openTable]
+      );
     });
 
     it('jogador recebe o próprio sussurro', async () => {
@@ -1523,5 +1528,155 @@ describe('dinheiro e party (migração 025)', () => {
     expect(
       await asUser(OUTSIDER, `select id from public.party_items where table_id = $1`, [openTable])
     ).toEqual([]);
+  });
+});
+
+describe('segurança (migrações 026 e 027)', () => {
+  it('ninguém muda o próprio papel; nome e cor continuam editáveis', async () => {
+    await expect(
+      asUser(OUTSIDER, `update public.profiles set role = 'mestre' where id = auth.uid()`)
+    ).rejects.toMatchObject({ code: '42501' });
+    expect(await asUser(OUTSIDER, `select public.is_mestre() as m`)).toEqual([{ m: false }]);
+    await expect(
+      asUser(OUTSIDER, `insert into public.profiles (id, display_name, role) values (gen_random_uuid(), 'x', 'mestre')`)
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      asUser(OUTSIDER, `delete from public.profiles where id = auth.uid()`)
+    ).rejects.toMatchObject({ code: '42501' });
+    expect(
+      await asUser(
+        OUTSIDER,
+        `update public.profiles set display_name = 'Fora', color = '#123456' where id = auth.uid() returning display_name`
+      )
+    ).toEqual([{ display_name: 'Fora' }]);
+    // Nome de outra pessoa: o RLS não devolve linha.
+    expect(
+      await asUser(OUTSIDER, `update public.profiles set display_name = 'x' where id = $1 returning id`, [PLAYER])
+    ).toEqual([]);
+  });
+
+  it('asset não aponta para arquivo de documento ou relatório', async () => {
+    for (const folder of ['documento', 'relatorio']) {
+      await expect(
+        asUser(
+          PLAYER,
+          `insert into public.assets (kind, name, storage_key, url, mime, size_bytes, status, uploaded_by)
+           values ('token', 'isca', 'x', $1, 'image/webp', 1, 'pending', auth.uid())`,
+          [`https://abc.public.blob.vercel-storage.com/${folder}/alvo.pdf`]
+        )
+      ).rejects.toMatchObject({ code: '23514' });
+    }
+  });
+
+  it('código novo tem 8 símbolos', async () => {
+    const [{ code }] = await asUser<{ code: string }>(GM, `select public.gen_table_code() as code`);
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+  });
+
+  it('código errado volta nulo e 10 erros em 15 min bloqueiam a conta', async () => {
+    const guesser = '55555555-5555-4555-8555-555555555555';
+    await db.query(`insert into auth.users (id, email) values ($1::uuid, 'chute@teste')`, [guesser]);
+    const join = `select public.join_table($1) as id`;
+    for (let i = 0; i < 10; i++) {
+      expect(await asUser(guesser, join, ['ZZZZZZZZ'])).toEqual([{ id: null }]);
+    }
+    await expect(asUser(guesser, join, ['ZZZZZZZZ'])).rejects.toThrow('too_many_attempts');
+    // Bloqueado até para o código certo.
+    const [{ code }] = await asUser<{ code: string }>(
+      GM,
+      `select code from public.get_my_table_codes() where table_id = $1`,
+      [openTable]
+    );
+    await expect(asUser(guesser, join, [code])).rejects.toThrow('too_many_attempts');
+    // Outra conta não é afetada, e ninguém lê as tentativas.
+    expect(await asUser(OUTSIDER, join, ['ZZZZZZZZ'])).toEqual([{ id: null }]);
+    await expect(
+      asUser(OUTSIDER, `select * from public.table_join_failures`)
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('cota diária de envio do jogador; mestra sem cota', async () => {
+    const MB = 1024 * 1024;
+    const reserve = `select public.reserve_upload($1) as ok`;
+    expect(await asUser(PLAYER, reserve, [250 * MB])).toEqual([{ ok: false }]); // acima de 50 MB por arquivo
+    for (let i = 0; i < 6; i++) {
+      expect(await asUser(PLAYER, reserve, [50 * MB])).toEqual([{ ok: true }]);
+    }
+    expect(await asUser(PLAYER, reserve, [1])).toEqual([{ ok: false }]);
+    expect(await asUser(GM, reserve, [50 * MB])).toEqual([{ ok: true }]);
+    expect(await asUser(SPECTATOR, reserve, [0])).toEqual([{ ok: false }]);
+    await expect(
+      asUser(PLAYER, `delete from public.upload_reservations`)
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('as migrações rodam de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '026_security_hardening.sql'));
+    await db.exec(readSql('migrations', '027_rate_limits.sql'));
+    await expect(
+      asUser(OUTSIDER, `update public.profiles set role = 'mestre' where id = auth.uid()`)
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('rolagem do chat: o banco sorteia, insert direto com resultado é recusado', async () => {
+    const forged = { notation: '1d20', groups: [{ sides: 20, results: [20] }], modifier: 0, total: 20, math: '20', label: '' };
+    await expect(
+      asUser(PLAYER, INSERT_MESSAGE, [openTable, PLAYER, 'roll', '', forged, false, null])
+    ).rejects.toMatchObject({ code: '42501' });
+
+    const [row] = await asUser<{ roll: { total: number; groups: { sides: number; results: number[] }[]; modifier: number; label: string; notation: string } }>(
+      PLAYER,
+      `select roll from public.chat_roll($1, '2d6 + 1d4 - 3', 'Ataque')`,
+      [openTable]
+    );
+    const dice = row.roll.groups.flatMap((g) => g.results);
+    expect(row.roll.groups.map((g) => g.sides)).toEqual([6, 4]);
+    expect(dice).toHaveLength(3);
+    expect(row.roll.modifier).toBe(-3);
+    expect(row.roll.total).toBe(dice.reduce((a, b) => a + b, 0) - 3);
+    expect(row.roll.label).toBe('Ataque');
+    expect(row.roll.notation).toBe('2d6+1d4-3');
+
+    const logged = await asUser<{ total: number }>(
+      PLAYER,
+      `select total from public.dice_rolls where roller_id = auth.uid() and label = 'Ataque'`
+    );
+    expect(logged.map((l) => l.total)).toEqual([row.roll.total]);
+
+    await expect(
+      asUser(OUTSIDER, `select public.chat_roll($1, '1d20')`, [openTable])
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(asUser(PLAYER, `select public.chat_roll($1, '1d20; drop')`, [openTable])).rejects.toThrow(
+      'invalid_notation'
+    );
+  });
+
+  it('roll_dice_expression aceita e recusa como o parseDiceExpression', async () => {
+    const parse = async (n: string) =>
+      (await asUser<{ r: unknown }>(PLAYER, `select public.roll_dice_expression($1) as r`, [n]))[0].r;
+    const cases = [
+      'd20', '1d20', '2D6+3', '3 + 1d8', '+1d6', '100d2', '1d1000-100000', '',
+      '20', '1d6 3', '-1d6', '1d6+-2', '0d6', '1d1', '1d1001', '101d2', '50d6+51d6',
+      '1d6+100001', 'abc', '1d99999999999', '1d6++2', '1d6-', 'd', '2d6+1d4-3',
+    ];
+    for (const notation of cases) {
+      const sql = await parse(notation);
+      const js = parseDiceExpression(notation);
+      expect(sql === null, notation).toBe(js === null);
+      if (js && sql) {
+        const r = sql as { modifier: number; groups: { sides: number; results: number[] }[] };
+        expect(r.modifier, notation).toBe(js.modifier);
+        expect(r.groups.map((g) => [g.sides, g.results.length]), notation).toEqual(
+          js.groups.map((g) => [g.sides, g.count])
+        );
+      }
+    }
+  });
+
+  it('a migração 028 roda de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '028_server_rolls.sql'));
+    expect(await asUser(PLAYER, `select (public.chat_roll($1, '1d4')).kind`, [openTable])).toEqual([
+      { kind: 'roll' },
+    ]);
   });
 });

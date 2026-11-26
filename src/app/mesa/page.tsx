@@ -71,7 +71,7 @@ export default async function MesaPage() {
           <div className="rounded-md border border-crimson/40 bg-crimson/10 px-4 py-3 text-sm text-crimson-soft">
             {error.message.includes('tables')
               ? 'Tabela de mesas não encontrada. Rode supabase/migrations/007_vtt_tables.sql no Supabase.'
-              : error.message}
+              : 'Não foi possível carregar as mesas. Recarregue a página.'}
           </div>
         ) : tables.length === 0 ? (
           <div className="panel p-8 text-center text-ink-muted">

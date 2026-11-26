@@ -40,7 +40,13 @@ export function JoinTableForm() {
       setBusy(false);
       return;
     }
-    router.push(`/mesa/${data as string}`);
+    // Desde a migração 027, código errado volta null (a tentativa fica registrada).
+    if (typeof data !== 'string') {
+      setError(joinErrorMessage('invalid_code'));
+      setBusy(false);
+      return;
+    }
+    router.push(`/mesa/${data}`);
     router.refresh();
   }
 
@@ -59,7 +65,7 @@ export function JoinTableForm() {
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          placeholder="ABC234"
+          placeholder="ABCD2345"
         />
         <button
           type="submit"

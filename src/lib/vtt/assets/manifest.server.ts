@@ -1,3 +1,4 @@
+import 'server-only';
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 import path from 'path';

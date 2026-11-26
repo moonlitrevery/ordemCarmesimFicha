@@ -53,7 +53,8 @@ export default function NovaFichaPage() {
 
     setLoading(false);
     if (err || !data) {
-      setError(err?.message ?? 'Falha ao criar ficha.');
+      if (err) console.error('Falha ao criar ficha', err);
+      setError('Falha ao criar ficha. Tente de novo.');
       return;
     }
     router.push(`/fichas/${data.id}`);

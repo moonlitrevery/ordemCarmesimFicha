@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const storage = vi.hoisted(() => ({
   isConfigured: vi.fn(),
   delete: vi.fn(),
+  ownsUrl: vi.fn(),
 }));
 const getTableFileAccess = vi.hoisted(() => vi.fn());
 
@@ -46,6 +47,21 @@ describe('DELETE /api/table-files/[collection]/[id]', () => {
     vi.clearAllMocks();
     storage.isConfigured.mockReturnValue(true);
     storage.delete.mockResolvedValue(undefined);
+    storage.ownsUrl.mockImplementation((url: string) =>
+      url.startsWith('https://abc.public.blob.vercel-storage.com/')
+    );
+  });
+
+  it('URL fora da pasta da coleção: apaga a linha, não o arquivo', async () => {
+    const value = session(
+      { url: 'https://abc.public.blob.vercel-storage.com/mapa/x.webp', table_id: 't', uploaded_by: 'u1' },
+      'player'
+    );
+    getTableFileAccess.mockResolvedValue(value);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    expect((await run()).status).toBe(200);
+    expect(storage.delete).not.toHaveBeenCalled();
+    expect(value.remove).toHaveBeenCalled();
   });
 
   it('mestra apaga o de qualquer pessoa', async () => {
@@ -58,7 +74,7 @@ describe('DELETE /api/table-files/[collection]/[id]', () => {
 
   it('jogador apaga o próprio, mesmo aprovado', async () => {
     getTableFileAccess.mockResolvedValue(
-      session({ url: FILE, table_id: 't', author_id: 'u1' }, 'player')
+      session({ url: FILE.replace('/documento/', '/relatorio/'), table_id: 't', author_id: 'u1' }, 'player')
     );
     expect((await run('reports')).status).toBe(200);
   });

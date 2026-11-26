@@ -34,8 +34,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
-.env*.local
+# env files: qualquer .env fica fora; só o exemplo (placeholders) entra
+.env*
+!.env.local.example
 
 # vercel
 .vercel

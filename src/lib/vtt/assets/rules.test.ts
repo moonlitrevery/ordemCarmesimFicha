@@ -4,6 +4,7 @@ import {
   buildAssetPathname,
   buildThumbPathname,
   canDeleteAsset,
+  deletableAssetUrls,
   fitWithin,
   hasThumb,
   isRequestedPathnameValid,
@@ -163,5 +164,31 @@ describe('uploadErrorMessage', () => {
     expect(uploadErrorMessage('Vercel Blob: File is too large')).toContain('limite');
     expect(uploadErrorMessage('Failed to  retrieve the client token')).toContain('recusou');
     expect(uploadErrorMessage('x')).toContain('Tente de novo');
+  });
+});
+
+describe('deletableAssetUrls', () => {
+  const HOST = 'https://abc.public.blob.vercel-storage.com/';
+  const owns = (url: string) => url.startsWith(HOST);
+
+  it('apaga arquivo e miniatura da pasta do tipo', () => {
+    expect(
+      deletableAssetUrls(
+        { kind: 'token', url: `${HOST}token/a.webp`, thumb_url: `${HOST}thumbs/token/a.webp` },
+        owns
+      )
+    ).toEqual([`${HOST}token/a.webp`, `${HOST}thumbs/token/a.webp`]);
+  });
+
+  it('não apaga documento, relatório, outro tipo nem outro storage', () => {
+    for (const url of [
+      `${HOST}documento/carta.pdf`,
+      `${HOST}relatorio/r.md`,
+      `${HOST}mapa/m.webp`,
+      `${HOST}token/../documento/carta.pdf`,
+      'https://outro.public.blob.vercel-storage.com/token/a.webp',
+    ]) {
+      expect(deletableAssetUrls({ kind: 'token', url, thumb_url: null }, owns)).toEqual([]);
+    }
   });
 });

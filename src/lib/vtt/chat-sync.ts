@@ -1,13 +1,19 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
-import { rollDiceExpression } from '../dice';
+import { parseDiceExpression, rollDiceExpression } from '../dice';
 import { logDiceRoll } from '../dice-log';
 import { parseChatInput, type WhisperTarget } from './chat-commands';
 import {
   CHAT_PAGE_SIZE,
+  isChatRoll,
   mergeChatMessages,
   type ChatMessage,
   type ChatRoll,
 } from './chat-rules';
+
+/** PostgREST não acha a função: a migração ainda não rodou. */
+function isMissingFunction(error: { code?: string } | null): boolean {
+  return error?.code === 'PGRST202' || error?.code === '42883';
+}
 import { useVttStore } from './store';
 
 const MESSAGE_COLUMNS =
@@ -184,6 +190,38 @@ export class ChatSync {
     label: string;
     hidden: boolean;
     /** Quem age não é a ficha escolhida (NPC, entrada da iniciativa). */
+    actor?: string;
+  }): Promise<ChatRoll | null> {
+    // Notação inválida nem sai do navegador.
+    if (!parseDiceExpression(input.notation)) return null;
+    const rollCharacterId = input.actor ? null : store().rollCharacter?.id ?? null;
+
+    // Desde a migração 028, o banco sorteia: ninguém inventa o próprio resultado.
+    const { data, error } = await this.supabase.rpc('chat_roll', {
+      p_table: this.tableId,
+      p_notation: input.notation,
+      p_label: input.label,
+      p_hidden: input.hidden,
+      p_character: rollCharacterId,
+      p_actor: input.actor ?? null,
+    });
+    if (this.stopped) return null;
+    if (!error && data) {
+      const message = data as unknown as ChatMessage;
+      useVttStore.setState((s) => ({
+        chatMessages: mergeChatMessages(s.chatMessages, [message]),
+      }));
+      return isChatRoll(message.roll) ? message.roll : null;
+    }
+    if (!isMissingFunction(error)) return null;
+    return this.rollLocally(input);
+  }
+
+  /** Banco sem a migração 028: o jeito antigo, sorteado no navegador. */
+  private async rollLocally(input: {
+    notation: string;
+    label: string;
+    hidden: boolean;
     actor?: string;
   }): Promise<ChatRoll | null> {
     const rolled = rollDiceExpression(input.notation);

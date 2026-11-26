@@ -4,7 +4,9 @@ import type { Drawing, SceneObject } from './types';
  * Eventos de broadcast do canal da mesa. Qualquer membro consegue enviar no
  * canal, então `session:state`, `member:changed`, `table:refresh`, `asset:*`, `scene:assign`,
  * `scene:refresh`, `initiative:refresh`, `npc:refresh`, `fx:weather`, `audio:*` e `doc:*` são só avisos: quem recebe relê o estado do banco. Os de
- * objeto e desenho levam a linha já gravada, validada na chegada.
+ * objeto e desenho levam a linha gravada, mas quem recebe só usa os ids: relê essas
+ * linhas do banco (scene-sync `confirmObjects`/`confirmDrawings`). Arraste, régua e
+ * ping são transitórios e não passam pelo banco.
  */
 export type VttEvent =
   | { type: 'session:state'; open: boolean }

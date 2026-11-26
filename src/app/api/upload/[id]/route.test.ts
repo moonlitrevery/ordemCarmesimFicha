@@ -4,6 +4,7 @@ import { StorageError } from '@/lib/storage/types';
 const storage = vi.hoisted(() => ({
   isConfigured: vi.fn(),
   delete: vi.fn(),
+  ownsUrl: vi.fn(),
 }));
 const getUploadAccess = vi.hoisted(() => vi.fn());
 
@@ -42,7 +43,7 @@ function access(
 const run = () =>
   DELETE(new Request('http://x', { method: 'DELETE' }), { params: { id: ID } });
 
-const APPROVED = { url: FILE, thumb_url: THUMB, status: 'approved', uploaded_by: 'u2' };
+const APPROVED = { kind: 'mapa', url: FILE, thumb_url: THUMB, status: 'approved', uploaded_by: 'u2' };
 
 describe('DELETE /api/upload/[id]', () => {
   beforeEach(() => {
@@ -50,6 +51,9 @@ describe('DELETE /api/upload/[id]', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     storage.isConfigured.mockReturnValue(true);
     storage.delete.mockResolvedValue(undefined);
+    storage.ownsUrl.mockImplementation((url: string) =>
+      url.startsWith('https://abc.public.blob.vercel-storage.com/')
+    );
   });
 
   it('mestra apaga o arquivo, a miniatura e a linha', async () => {
@@ -90,6 +94,29 @@ describe('DELETE /api/upload/[id]', () => {
     const res = await run();
     expect(res.status).toBe(404);
     expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('linha forjada apontando para documento: apaga a linha, não o arquivo', async () => {
+    const forged = {
+      kind: 'token',
+      url: 'https://abc.public.blob.vercel-storage.com/documento/carta.pdf',
+      thumb_url: null,
+      status: 'pending',
+      uploaded_by: 'u1',
+    };
+    const session = access(forged, { isMestre: false });
+    getUploadAccess.mockResolvedValue(session);
+    const res = await run();
+    expect(res.status).toBe(200);
+    expect(storage.delete).not.toHaveBeenCalled();
+    expect(session.remove).toHaveBeenCalled();
+  });
+
+  it('arquivo de outro storage não é apagado', async () => {
+    const session = access({ ...APPROVED, url: 'https://outro.public.blob.vercel-storage.com/mapa/a.webp' });
+    getUploadAccess.mockResolvedValue(session);
+    await run();
+    expect(storage.delete).toHaveBeenCalledWith([THUMB]);
   });
 
   it('sem sessão: 401', async () => {

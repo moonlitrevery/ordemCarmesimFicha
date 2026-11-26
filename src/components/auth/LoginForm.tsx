@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useState, useEffect } from 'react';
 import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
+import { safeNextPath } from '@/lib/safe-redirect';
+import { authErrorMessage } from '@/lib/auth-errors';
 
 export function LoginForm() {
   const router = useRouter();
   useEffect(() => preloadSupabase(), []);
   const search = useSearchParams();
-  const next = search.get('next') || '/fichas';
+  const next = safeNextPath(search.get('next'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +33,7 @@ export function LoginForm() {
     });
     setLoading(false);
     if (err) {
-      setError(err.message === 'Invalid login credentials'
-        ? 'E-mail ou senha inválidos.'
-        : err.message);
+      setError(authErrorMessage(err, 'Não foi possível entrar. Tente de novo.'));
       return;
     }
     router.push(next);

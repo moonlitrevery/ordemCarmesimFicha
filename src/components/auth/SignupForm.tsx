@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState, useEffect } from 'react';
 import { loadSupabase, preloadSupabase } from '@/lib/supabase/lazy';
+import { authErrorMessage } from '@/lib/auth-errors';
 
 export function SignupForm() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export function SignupForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmSent, setConfirmSent] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -24,20 +26,40 @@ export function SignupForm() {
       setLoading(false);
       return;
     }
-    const { error: err } = await supabase.auth.signUp({
+    const { data, error: err } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { display_name: displayName.trim() },
+        data: { display_name: displayName.trim().slice(0, 80) },
       },
     });
     setLoading(false);
     if (err) {
-      setError(err.message);
+      setError(authErrorMessage(err, 'Não foi possível criar a conta. Tente de novo.'));
+      return;
+    }
+    // Com confirmação de e-mail ligada no Supabase, não há sessão até clicar no link.
+    if (!data.session) {
+      setConfirmSent(true);
       return;
     }
     router.push('/fichas');
     router.refresh();
+  }
+
+  if (confirmSent) {
+    return (
+      <div className="panel mx-auto w-full max-w-md space-y-3 p-6">
+        <h1 className="font-display text-3xl text-parchment">Confira seu e-mail</h1>
+        <p className="text-sm text-ink-muted">
+          Se o endereço puder ser usado, enviamos um link de confirmação para {email}. Abra o
+          link e depois entre com sua senha.
+        </p>
+        <Link href="/login" className="btn-primary block w-full text-center">
+          Ir para o login
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -53,6 +75,7 @@ export function SignupForm() {
         <input
           className="field"
           required
+          maxLength={80}
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           autoComplete="nickname"
@@ -75,7 +98,7 @@ export function SignupForm() {
           className="field"
           type="password"
           required
-          minLength={6}
+          minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"

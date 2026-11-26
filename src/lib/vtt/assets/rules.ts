@@ -248,6 +248,39 @@ export function isUrlFromHost(url: string, host: string): boolean {
   }
 }
 
+/** Caminho do arquivo dentro do Blob, já normalizado (`a/../b` vira `b`). */
+export function blobPathname(url: string): string | null {
+  try {
+    return new URL(url).pathname.replace(/^\/+/, '');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O que apagar no Blob junto com a linha de `assets`. A linha pode ter sido inserida
+ * direto no PostgREST apontando para arquivo alheio (documento, relatório, outro
+ * storage): só sai do Blob o que está na pasta do próprio tipo, neste storage.
+ */
+export function deletableAssetUrls(
+  asset: Pick<Asset, 'kind' | 'url' | 'thumb_url'>,
+  ownsUrl: (url: string) => boolean
+): string[] {
+  if (!isAssetKind(asset.kind)) return [];
+  const urls: string[] = [];
+  if (ownsUrl(asset.url) && blobPathname(asset.url)?.startsWith(`${asset.kind}/`)) {
+    urls.push(asset.url);
+  }
+  if (
+    asset.thumb_url &&
+    ownsUrl(asset.thumb_url) &&
+    blobPathname(asset.thumb_url)?.startsWith(thumbPathPrefix(asset.kind))
+  ) {
+    urls.push(asset.thumb_url);
+  }
+  return urls;
+}
+
 export function sanitizeAssetName(name: string): string {
   return (name.trim() || 'Sem nome').slice(0, 120);
 }

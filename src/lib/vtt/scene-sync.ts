@@ -80,6 +80,8 @@ const DRAG_THROTTLE_MS = 50;
 const RULER_THROTTLE_MS = 100;
 const PING_INTERVAL_MS = 1000;
 const REFRESH_DELAY_MS = 300;
+/** Junta os avisos de objeto que chegam em rajada numa leitura só. */
+const CONFIRM_DELAY_MS = 40;
 const SCENE_FX_SAVE_MS = 250;
 const PASTE_OFFSET_PX = 24;
 
@@ -227,6 +229,7 @@ export class SceneSync {
     this.stopped = true;
     this.transition.stop();
     clearTimeout(this.refreshTimer);
+    clearTimeout(this.objectCheckTimer);
     this.unsubscribers.forEach((unsubscribe) => unsubscribe());
     this.unsubscribers = [];
     this.clearHistory();
@@ -388,14 +391,57 @@ export class SceneSync {
     this.setLocalMany(patches);
   }
 
+  // Qualquer membro (até espectador) envia no canal e o payload não diz quem mandou.
+  // Objeto e desenho recebidos são só o aviso de quais ids mudaram: o que vale é o
+  // que o banco (com RLS) devolver para esses ids.
   private onUpsert(event: VttEventOf<'obj:upsert'>) {
     if (!isValidObject(event.object)) return;
-    this.applyRow(event.object);
+    this.confirmObjects(event.object.scene_id, [event.object.id]);
   }
 
   private onUpsertMany(event: VttEventOf<'obj:upsert-many'>) {
     if (!Array.isArray(event.objects) || event.objects.length > MAX_SELECTION) return;
-    this.applyRows(event.objects.filter((row) => isValidObject(row)));
+    const rows = event.objects.filter((row) => isValidObject(row));
+    if (rows.length === 0) return;
+    this.confirmObjects(
+      rows[0].scene_id,
+      rows.filter((row) => row.scene_id === rows[0].scene_id).map((row) => row.id)
+    );
+  }
+
+  /** Ids da cena vista a conferir no banco, juntados por um instante. */
+  private objectChecks = new Set<string>();
+  private objectCheckTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private confirmObjects(sceneId: string, ids: string[]) {
+    if (sceneId !== store().viewedSceneId) return;
+    for (const id of ids) {
+      if (typeof id === 'string') this.objectChecks.add(id);
+    }
+    if (this.objectCheckTimer) return;
+    this.objectCheckTimer = setTimeout(() => {
+      this.objectCheckTimer = undefined;
+      void this.flushObjectChecks(sceneId);
+    }, CONFIRM_DELAY_MS);
+  }
+
+  private async flushObjectChecks(sceneId: string) {
+    const ids = Array.from(this.objectChecks).slice(0, MAX_SELECTION * 2);
+    this.objectChecks.clear();
+    if (ids.length === 0) return;
+    const { data, error } = await this.supabase
+      .from('scene_objects')
+      .select(OBJECT_COLUMNS)
+      .eq('scene_id', sceneId)
+      .in('id', ids);
+    if (this.stopped || error || store().viewedSceneId !== sceneId) return;
+    const rows = (data ?? []) as unknown as SceneObject[];
+    const found = new Set(rows.map((row) => row.id));
+    // Sumiu do banco ou ficou oculto para mim: some da tela também.
+    for (const id of ids) {
+      if (!found.has(id) && !this.interacting.has(id)) this.removeLocal(id);
+    }
+    this.applyRows(rows);
   }
 
   private applyRow(row: SceneObject) {
@@ -425,27 +471,43 @@ export class SceneSync {
   }
 
   private onDelete(event: VttEventOf<'obj:delete'>) {
-    if (event.sceneId !== store().viewedSceneId) return;
-    this.removeLocal(event.id);
+    this.confirmObjects(event.sceneId, [event.id]);
   }
 
   private onDrawAdd(event: VttEventOf<'draw:add'>) {
     const { drawing } = event;
-    if (!isValidDrawing(drawing) || drawing.scene_id !== store().viewedSceneId) {
-      return;
-    }
-    useVttStore.setState((s) => ({
-      drawings: { ...s.drawings, [drawing.id]: drawing },
-    }));
+    if (!isValidDrawing(drawing)) return;
+    void this.confirmDrawings(drawing.scene_id, [drawing.id]);
   }
 
   private onDrawDelete(event: VttEventOf<'draw:delete'>) {
     if (event.sceneId !== store().viewedSceneId) return;
+    // "Apagar todos" é raro: relê a cena inteira.
     if (event.id === null) {
-      useVttStore.setState({ drawings: {} });
+      this.scheduleRefresh();
       return;
     }
-    useVttStore.setState({ drawings: without(store().drawings, event.id) });
+    void this.confirmDrawings(event.sceneId, [event.id]);
+  }
+
+  /** Desenho não muda depois de criado: basta saber se a linha existe. */
+  private async confirmDrawings(sceneId: string, ids: string[]) {
+    if (sceneId !== store().viewedSceneId || ids.some((id) => typeof id !== 'string')) {
+      return;
+    }
+    const { data, error } = await this.supabase
+      .from('drawings')
+      .select(DRAWING_COLUMNS)
+      .eq('scene_id', sceneId)
+      .in('id', ids);
+    if (this.stopped || error || store().viewedSceneId !== sceneId) return;
+    const rows = ((data ?? []) as unknown as Drawing[]).filter((row) => isValidDrawing(row));
+    useVttStore.setState((s) => {
+      const drawings = { ...s.drawings };
+      for (const id of ids) delete drawings[id];
+      for (const row of rows) drawings[row.id] = row;
+      return { drawings };
+    });
   }
 
   private onPing(event: VttEventOf<'ping'>) {

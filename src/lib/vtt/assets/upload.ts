@@ -67,7 +67,7 @@ export async function uploadThumb(kind: AssetKind, thumb: Blob): Promise<string>
     {
       access: 'public',
       handleUploadUrl: '/api/upload',
-      clientPayload: JSON.stringify({ kind, thumb: true }),
+      clientPayload: JSON.stringify({ kind, thumb: true, size: thumb.size }),
       contentType: thumb.type,
     }
   ).catch((error: unknown) => {
@@ -131,7 +131,7 @@ export async function uploadAsset(
     {
       access: 'public',
       handleUploadUrl: '/api/upload',
-      clientPayload: JSON.stringify({ kind }),
+      clientPayload: JSON.stringify({ kind, size: body.size }),
       contentType: body.type,
       onUploadProgress: ({ percentage }) => options.onProgress?.(percentage),
     }
