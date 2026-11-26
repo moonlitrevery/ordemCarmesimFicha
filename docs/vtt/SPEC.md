@@ -207,7 +207,7 @@ src/lib/storage/
 ## 11. Desempenho do site fora da Mesa
 
 - **Supabase fora do primeiro carregamento:** componente cliente que só fala com o banco depois de montar ou de um clique usa `loadSupabase()` de `src/lib/supabase/lazy.ts`, nunca `import { createClient }` estático (~60 KB gz). Formulários chamam `preloadSupabase()` num `useEffect` (baixa no ocioso). O `Nav` já carrega o cliente por `import()` em toda página.
-- **Nada de framer-motion no primeiro carregamento** das páginas comuns: animação simples (largura de barra, entrada de aviso ou resultado) é CSS em `globals.css`, só `transform`/`opacity` (a largura da barra de fragmentos é a exceção, e só muda quando os fragmentos mudam). Toda animação CSS nova entra no bloco `prefers-reduced-motion` de lá. framer-motion fica para `MosaicFrame` e `DiceToastStack` (ambos `dynamic`) e `/rolagens`.
+- **Nada de framer-motion no primeiro carregamento** das páginas comuns (início, login, Lore, Regras, listas): animação simples (largura de barra, entrada de aviso ou resultado) é CSS em `globals.css`, só `transform`/`opacity` (a largura da barra de fragmentos é a exceção, e só muda quando os fragmentos mudam). Toda animação CSS nova entra no bloco `prefers-reduced-motion` de lá. Desde a Fase 15, a ficha, a V.M. e a Mesa carregam o núcleo do `m` (com `LazyMotion`: as features chegam depois); ver a seção 17.
 - **Ficha** (`CharacterSheet`): seções `memo` recebem só a fatia que usam, callbacks estáveis (`patch`, `handlers`), save agrupado de 700 ms; aba fora da ativa não monta. Coluna nova da ficha entra em `SHEET_COLUMNS` (`src/app/fichas/[id]/page.tsx`): nenhum `select('*')` em tela de usuário.
 - Fontes por `next/font` (`display: swap`), só pesos usados. Lexend e Cormorant são variáveis: tirar peso não reduz bytes, só o intervalo declarado.
 
@@ -237,7 +237,7 @@ Reorganização de layout e fluxo. Realtime, banco, assets, áudio, chat e rolag
 - **Canto superior esquerdo** (`TopBar`): voltar, nome e bolinha da sessão. Logo abaixo (ao lado, no celular), só para a mestra, `GmHud`: botão do **HUD da mestra** e botão **Páginas** (atalho `P`, ignorado em campo de texto e com Ctrl/Alt/Cmd).
 - **Barra lateral direita** (`RightSidebar`): fixa na direita, ícones-aba no topo. Recolhida, vira uma tira de 48 px com os ícones; aberta, tem largura de 280 a 560 px (arrastar a borda esquerda, padrão 360). Aberta/fechada e largura em `vtt:ui:sidebar`, aba ativa em `vtt:ui:sidebar-tab` (`localStorage`, try/catch).
   - A barra **flutua sobre o mapa**: o canvas continua em tela cheia e não é redimensionado ao abrir, fechar ou mudar a largura. O espaço ocupado vai para a variável CSS `--vtt-right` no elemento raiz da Mesa (escrita direto no DOM, sem re-render do `VttShell`), usada pela barra de ferramentas (centralizada no que sobra; no desktop nunca à esquerda de 30rem, para não cobrir o título), pela faixa de avisos, pelo chip de escala, pelo grupo direito do topo e pelos toasts. Arrastar a borda só mexe no estilo e grava no `pointerup`.
-  - **Celular** (fora da variante `desk`): fechada por padrão (não lê o "aberta" salvo), com a tira de ícones no meio da borda direita. Aberta, é uma gaveta de até 26rem por cima do mapa, com fundo que fecha ao tocar. Colocar um item pela Biblioteca fecha a gaveta.
+  - **Celular** (fora da variante `desk`): fechada por padrão (não lê o "aberta" salvo), com a tira de ícones no meio da borda direita. Aberta, é uma gaveta de até 26rem por cima do mapa, com fundo que fecha ao tocar. Colocar um item pela Biblioteca fecha a gaveta. Fase 15: a gaveta desliza (`transform`), fecha arrastando para a direita (pela alça da borda esquerda ou pelo título), no fundo ou com Esc, e nunca desmonta (as abas abertas continuam montadas).
   - Cada aba (e subaba) só monta na primeira abertura e depois fica montada, como antes.
 - **Abas**, nesta ordem: **Chat** (`ChatPanel`, padrão, badge de não lido); **Ficha rápida** (`QuickSheet` + `QuickBackpack`; espectador não tem); **Biblioteca** (só mestra, contador de aprovações); **Documentos e relatórios** (subabas `DocumentsPanel` e `ReportsPanel`, `vtt:ui:docs-tab`); **Som e efeitos de tela** (só mestra, subabas `SoundPanel` e `WeatherPanel`, `vtt:ui:media-tab`). Jogador vê Chat, Ficha rápida e Documentos e relatórios. `chatVisible` = barra aberta na aba Chat. `EffectsMenus` continua sendo o menu de magias/efeitos do token (menu de contexto), não um painel.
 - **Jogador perdeu a Biblioteca** (antes colocava token, adereço e addon por ela). Soltar arquivo direto no mapa continua funcionando no desktop.
@@ -253,7 +253,7 @@ No banco continua `scenes`; na interface é **Página**. A "cena padrão" (`tabl
 - **Clicar num card leva só a mestra** (`gmSceneChoice`) e fecha o overlay. Os jogadores não mudam.
 - **Fita:** bandeirinha amarela "Jogadores" no card da página da fita. Arrastar a fita para outro card, ou "Mover jogadores para cá", chama `SceneSync.movePartyTo`: zera `table_members.scene_id` de todos e grava `default_scene_id`, com um único `scene:assign`. Cada cliente aplica a transição configurada sozinho, como antes.
 - **Separar grupo saiu da interface.** `table_members.scene_id` continua no banco (e no RLS) sem uso pela UI; `movePartyTo` o limpa.
-- **Menu do card** (⋯ no hover, sempre visível no touch, e clique direito): Mover jogadores para cá, Configurações, Renomear (no próprio card), Duplicar, Mover para pasta, Arquivar/Desarquivar, Apagar. A página da fita não pode ser arquivada nem apagada (menu desabilitado, e `SceneSync.setArchived`/`deleteScene` recusam com aviso). Apagar e apagar pasta pedem confirmação em `ConfirmDialog` (nunca `window.confirm`).
+- **Menu do card** (⋯ no hover, sempre visível no touch, e clique direito): Mover jogadores para cá, Configurações, Renomear (no próprio card), Duplicar, Mover para pasta, Arquivar/Desarquivar, Apagar. A página da fita não pode ser arquivada nem apagada (menu desabilitado, e `SceneSync.setArchived`/`deleteScene` recusam com aviso). Apagar a página é **segurar** o item do menu (~1 s, Fase 15); apagar pasta (que não apaga páginas) pede confirmação em `ConfirmDialog` (nunca `window.confirm`).
 - **Arrastar e soltar** (só mouse; no touch ficam as opções do menu): card sobre card reordena (`reorderScenes`; em outra pasta, leva para a pasta do alvo); card sobre pasta (card ou coluna) move para ela; sobre "Todas", tira da pasta; sobre "Arquivadas", arquiva. Tipos próprios no `dataTransfer` (`application/x-vtt-page`, `application/x-vtt-ribbon`).
 - **Pastas:** a ordem e as pastas vazias ficam em `tables.scene_folders` (jsonb, lista de nomes); `scenes.folder` continua sendo o nome da pasta de cada página. Renomear pasta atualiza as páginas e a lista; apagar pasta devolve as páginas para "Todas" (nenhuma página é apagada). Pasta que só existe em alguma página (de antes da Fase 12) entra no fim da lista, em ordem alfabética. Pastas e calibrações são lidas por `SceneSync.loadPagesMeta` a cada abertura do overlay.
 - **Arquivar:** `scenes.archived`. Arquivar a página aberta pela mestra a devolve para onde está a fita.
@@ -327,7 +327,7 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 
 ### Interface (`GmView`)
 
-- Abas de grupo, **+ Novo grupo** e menu ⋯ (renomear, mover para esquerda/direita, apagar). Apagar confirma no `ConfirmDialog` da Mesa; renomear/criar e o seletor usam `VmModal`. Nenhum diálogo nativo.
+- Abas de grupo, **+ Novo grupo** e menu ⋯ (renomear, mover para esquerda/direita, apagar). Apagar é **segurar** o item do menu (~1 s, Fase 15); renomear/criar e o seletor usam `VmModal`. Nenhum diálogo nativo.
 - Último grupo aberto em `localStorage` (`vm:last-group`, com try/catch).
 - Seletor de membro com busca (foto, nome, nome do perfil); fica aberto para adicionar vários; quem já está no grupo aparece marcado.
 - Estados: sem grupos (botão "Criar primeiro grupo"), seção vazia (botão "+ Adicionar PJ/NPC" no título da seção), erro de carga com "Tentar de novo".
@@ -383,7 +383,7 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 ### Ligar, desligar e duplicar
 
 - A névoa é **por página** e fica em `scenes.fog`, a coluna que existia desde a 010 sem uso. Nula = sem névoa. **Página nova nasce sem névoa.**
-- Interruptor "Névoa de guerra" nas **Configurações da página** (`FogSection`, em `pages/PageSettingsModal`). **Ligar grava a máscara toda coberta**, do tamanho do mapa da página (ou 2000 px, página em branco). **Desligar pede confirmação** e grava nula: o que foi revelado se perde. Os traços de névoa daquela página saem da pilha de desfazer (`SceneSync.dropFogHistory`).
+- Interruptor "Névoa de guerra" nas **Configurações da página** (`FogSection`, em `pages/PageSettingsModal`). **Ligar grava a máscara toda coberta**, do tamanho do mapa da página (ou 2000 px, página em branco). **Desligar é segurar** o botão "Desligar a névoa" (~1 s, Fase 15) e grava nula: o que foi revelado se perde. Os traços de névoa daquela página saem da pilha de desfazer (`SceneSync.dropFogHistory`).
 - Página que não está aberta: as Configurações só perguntam se há névoa (`select('fog_w:fog->w')`), sem baixar a máscara.
 - **Duplicar página copia a névoa**: `duplicate_scene` já copiava `fog`.
 - Trocar o mapa da página não mexe na máscara: ela se estica sobre o mapa novo.
@@ -431,7 +431,7 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
   - **Pincel, Retângulo e Polígono**;
   - **Revelar / Cobrir**;
   - slider de tamanho do pincel (8 a 400 px **de tela**, como a espessura do desenho);
-  - **Revelar tudo** e **Cobrir tudo**, confirmados em `ConfirmDialog`, aberto por portal no `body` porque a barra tem `transform`;
+  - **Revelar tudo** e **Cobrir tudo**, confirmados **segurando** o botão (~1 s, Fase 15);
   - uma linha de ajuda.
 - **Pincel:** arrastar pinta, e um círculo segue o mouse. **`[` e `]`** mudam o tamanho um quarto por vez.
 - **Retângulo:** arrastar mostra a caixa, e soltar aplica.
@@ -479,7 +479,7 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 
 - **Por mesa.** Fica na aba Ficha rápida, em duas subabas no topo: **Minha ficha** e **Party** (`UI_KEYS.sheetTab`). Fora da Mesa não existe.
 - **Itens:** nome, quantidade, peso (opcional, só informativo, não conta pra carga de ninguém), observação (200 caracteres) e quem adicionou (`added_by_name`, posto pelo trigger: o cliente não escolhe).
-  - Ações: adicionar, editar inline, −/+ quantidade, remover (o primeiro toque vira "Remover mesmo").
+  - Ações: adicionar, editar inline, −/+ quantidade, remover (segurar o ícone, ~1 s, Fase 15).
   - Busca a partir de 16 itens.
 - **Caixa (US$):** o mesmo `MoneyControl`, sem campo editável. Gastar/Receber, e com uma ficha escolhida "Sacar pra X" / "Depositar de X". Histórico com quem mexeu e de qual ficha.
 - **Mover:**
@@ -523,3 +523,120 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 - As três tabelas da party entram na publication do Realtime.
 - **Sem a migração, a ficha não salva**, porque o save pede `backpack_rev`. Aplicar antes de subir o app.
 - Testes em `supabase/rls.test.ts` ("dinheiro e party (migração 025)"): versão e save com versão velha, saldo e histórico, permissões (jogador, mestra, espectador, de fora), mover com quantidade parcial, caixa, URL longa e rodar de novo.
+
+## 17. Animações e componentes animados (Fase 15)
+
+Só apresentação: nenhuma regra, permissão ou dado mudou, fora o que está marcado como *lógica* abaixo.
+
+### Regras
+
+- **Uma biblioteca só: a Motion**, que no projeto é o pacote `framer-motion` (o mesmo código do `motion`, com o nome antigo). Nada de anime.js, GSAP ou outra lib de animação. Onde a Motion pesaria no primeiro carregamento, vale CSS ou a API do navegador (`requestAnimationFrame`, Web Animations), que não são bibliotecas.
+- **Só `transform` e `opacity`** (e `stroke-dashoffset` com `pathLength` no SVG dos símbolos). Nada de animar `width`, `height`, `top`, `box-shadow` ou `filter`, e nada em loop. A barra de recurso da ficha passou de `width` para `scaleX`.
+- **`m.*` precisa de `MotionProvider`** (`src/components/ui/MotionProvider.tsx`: `LazyMotion` com as features por import dinâmico e `MotionConfig reducedMotion`). `full` carrega `domMax` (arrastar e `layoutId`); `reduced` força o movimento reduzido. A ficha (`CharacterSheet`) e a Mesa (`VttShell`) têm um em volta; a busca rápida tem o próprio. Um `MotionProvider` dentro de outro troca o `reducedMotion`: não aninhe na Mesa.
+- **Movimento reduzido:**
+  - O que liga: a preferência do sistema (`prefers-reduced-motion`) ou o **modo leve da Mesa**, que põe `data-motion="reduced"` na raiz da Mesa e usa `MotionProvider reduced`.
+  - O que faz: zera os tokens CSS (1 ms), para `animate-spin`/`animate-pulse` e faz a Motion cortar o `transform`.
+  - Animação feita à mão usa `useReducedFx()` (`src/components/fx/useReducedFx.ts`): o `useReducedMotionConfig` da Motion ignora o sistema quando não há `MotionConfig` acima.
+- **Peso:** componente pesado vai por `dynamic` (busca rápida, canvas da tinta). O motor imperativo (`animate()`, `useSpring`) nunca entra no primeiro carregamento: o número animado e o glitch usam rAF e Web Animations.
+
+### Tokens
+
+Ficam em `globals.css` (`:root`), com espelho em `src/lib/motion-tokens.ts`. No Tailwind: `duration-fast|base|slow` e `ease-enter|exit`.
+
+| Token | Valor | Uso |
+|---|---|---|
+| `--dur-fast` / `DUR.fast` | 120 ms | hover, toque, troca de estado, saída de toast |
+| `--dur-base` / `DUR.base` | 220 ms | popover, toast, pílula de salvamento |
+| `--dur-slow` / `DUR.slow` | 360 ms | gaveta, destaque de aba, borda do turno, barra de recurso |
+| `--ease-enter` / `EASE_ENTER` | `cubic-bezier(0.22, 1, 0.36, 1)` | entrar |
+| `--ease-exit` / `EASE_EXIT` | `cubic-bezier(0.55, 0, 1, 0.45)` | sair |
+
+Fora dos tokens, de propósito:
+- a contagem do número, 450 ms;
+- o desenho do símbolo, 900 ms;
+- as duas voltas da borda do turno, 2,4 s;
+- o segurar para confirmar, 1 s. É o tempo da confirmação, então continua igual com movimento reduzido.
+
+### O que faz o quê
+
+- **Números** (`fx/AnimatedNumber.tsx`)
+  - Vida, mana e sanidade contam até o valor novo na ficha, na Ficha rápida e na V.M. Na Ficha rápida a contagem acontece no próprio campo, enquanto ele não está em foco.
+  - O nível do elemento e os atributos da V.M. também contam, sem pulso.
+  - Na V.M., todo valor novo chegou por realtime, e o número pulsa.
+  - A cor transiciona (<50% amarelo, <25% vermelho, `RESOURCE_TONE_COLOR`).
+- **Glitch** (`fx/glitch.tsx`)
+  - Dura ~330 ms e acontece uma vez, quando a sanidade **cruza** os 25% para baixo (ficha, Ficha rápida e V.M.). Depois o número fica vermelho e parado.
+  - Sem glitch com movimento reduzido.
+- **Indicador de salvamento** (`fx/SaveStatus.tsx`)
+  - Na ficha fica fixo no canto inferior esquerdo; na Ficha rápida, ao lado do seletor.
+  - Mostra "Salvando…" → "Salvo" → some. Em erro, fica com "Tentar de novo", que grava o estado atual na mesma fila.
+  - Conflito de versão da mochila mostra "Mochila relida de outro lugar".
+  - *Lógica:* a Ficha rápida passou a expor o estado do save (antes só mostrava toasts de erro), e o tipo `SaveStatus` ganhou `reloaded`.
+- **Símbolos** (`fx/DrawnElementSymbol.tsx`, modo `draw` do `ElementSymbol`)
+  - O traço se desenha (`pathLength="1"`, CSS em `globals.css`) e o glow acende depois, por `opacity` de uma cópia com o filtro fixo.
+  - Na ficha, só no elemento ganho depois de abrir. Na Lore e nas Regras (MDX e `ElementsTable`), uma vez, ao entrar na tela.
+  - Tracejado e ponto cheio só aparecem, sem desenhar.
+  - Sem `draw`, o SVG é o mesmo de antes (teste de `public/simbolos/`). Os SVGs ficam em LF (`.gitattributes`).
+- **Rolagem no chat** (`ChatPanel`, `RollCard`)
+  - O número recua ~120 ms e assenta com overshoot.
+  - Crítico (o máximo de uma rolagem de **um dado só**, `singleDieOutcome`): carmesim, com brilho, pulso e o card maior.
+  - Falha crítica (1): treme e escurece.
+  - Só anima rolagem que acabou de chegar (menos de 15 s), uma vez por visita.
+  - *Lógica:* o destaque vale para qualquer dado único; a regra do jogo continua em `d20Outcome`.
+- **Turno da vez** (`fx/TurnTrail.tsx`, no HUD da mestra e na faixa dos jogadores)
+  - Quando o turno muda, um gradiente cônico **gira por `transform`** duas voltas num anel recortado por máscara e some. Fica a borda acesa, parada (zero quadros).
+  - A borda parada tem `layoutId` e desliza para o próximo. A faixa dos jogadores desliza junto (`layout`).
+- **Toasts de ação** (`fx/ActionToasts.tsx`, estado em `src/lib/vtt/action-toasts.ts`)
+  - No máximo 3, no canto inferior esquerdo, acima do ⋯.
+  - `trackAction` mostra "pendente → pronto". Resultado `false` só tira o toast, porque a função já avisou o erro. `error: null` deixa o erro para quem já mostra na tela.
+  - Onde há hoje: abrir/encerrar sessão, mover jogadores (`SceneSync.movePartyTo`), enviar arquivo no mapa, aprovar/recusar na Biblioteca e em Documentos, movimentos da party e do dinheiro pela Ficha rápida.
+  - O `showToast` antigo entra na mesma pilha, e o campo `toast` saiu do store.
+- **Destaque deslizante**
+  - No menu do topo é **só CSS**: um destaque medido, com `translate` + `scaleX`, sem a Motion (que não entra em toda página).
+  - As abas da ficha (`SheetTabs`), as subabas (`SubTabs`) e as abas da barra lateral (`IconButton highlightId`) usam `layoutId`.
+- **Segurar para confirmar** (`fx/HoldButton.tsx`)
+  - ~1 s com a barra carmesim; soltou antes, cancela. Segurar Enter ou Espaço também vale.
+  - Substitui a confirmação em:
+    - apagar ficha (o nome digitado continua obrigatório, e Enter no campo não apaga mais);
+    - apagar página;
+    - apagar grupo da V.M.;
+    - desligar a névoa;
+    - Revelar tudo / Cobrir tudo;
+    - remover item da party.
+  - O resto continua com clique.
+- **Busca rápida** (Ctrl+K / Cmd+K, **só a mestra**)
+  - Arquivos:
+    - `fx/CommandPaletteHost.tsx`, no `Nav`, que fica montado também na Mesa;
+    - `fx/CommandPalette.tsx`, por `dynamic`;
+    - regras em `src/lib/command-search.ts` e dados em `src/lib/command-data.ts`.
+  - Busca fichas, NPCs e páginas das mesas dela, grupos da V.M., Lore e Regras, sem diferenciar acento nem maiúscula.
+  - Esc fecha (na captura, sem chegar aos atalhos da Mesa), setas navegam, Enter abre.
+  - *Lógica:*
+    - lê as listas na primeira abertura, pelo RLS de sempre (nada novo no banco);
+    - a página abre só para a mestra (`gmSceneChoice`, ou `/mesa/{id}?pagina=` vindo de fora);
+    - o NPC abre o HUD na aba NPCs (evento `vtt:open-hud`);
+    - o grupo abre `/vm?grupo=`.
+- **Fundo de tinta** (`fx/InkHero.tsx`, `fx/InkCanvas.tsx`, `fx/ink-fluid.ts`)
+  - Só no login e no topo da Lore, **nunca na Mesa nem na ficha**.
+  - WebGL2 por `dynamic`. Liga só sem movimento reduzido, com WebGL2 e em aparelho com mais de 4 núcleos e mais de 4 GB. Senão, ou se o WebGL falhar, fica um fundo estático com o título.
+  - O laço dorme 5 s depois do último movimento e pausa com a aba escondida ou fora da tela.
+
+### Componentes copiados (origem e licença)
+
+Todos são MIT, conferidos pela API do GitHub em 2026-11-26. Cada arquivo traz no topo a origem, a licença e o link.
+
+| Arquivo | Origem | Licença |
+|---|---|---|
+| `fx/AnimatedNumber.tsx` | motion-primitives, Animated Number (`components/core/animated-number.tsx`) | MIT, https://github.com/ibelick/motion-primitives/blob/main/LICENCE.md |
+| `fx/TurnTrail.tsx` | motion-primitives, Border Trail (`components/core/border-trail.tsx`) | MIT, idem |
+| `fx/glitch.tsx` | kokonutui, Glitch Text (`components/kokonutui/glitch-text.tsx`) | MIT, https://github.com/kokonut-labs/kokonutui/blob/main/LICENSE |
+| `fx/SaveStatus.tsx` | kokonutui, Save Status (`save-status.tsx`) | MIT, idem |
+| `vtt/RightSidebar.tsx` (`MobileDrawer`) | kokonutui, Smooth Drawer (`smooth-drawer.tsx`) | MIT, idem |
+| `fx/ActionToasts.tsx` | kokonutui, Promise Toast (`promise-toast.tsx`) | MIT, idem |
+| `fx/HoldButton.tsx` | kokonutui, Hold Button (`hold-button.tsx`) | MIT, idem |
+| `fx/CommandPalette.tsx` | kokonutui, Command Palette / Action Search Bar (`action-search-bar.tsx`) | MIT, idem |
+| `fx/ink-fluid.ts`, `fx/InkCanvas.tsx` | kokonutui, Ink Background (`ink-background.tsx`; solver e shaders sem mudança) | MIT, idem |
+
+Dois componentes ficaram de fora:
+- **Animated Background** (motion-primitives): o destaque das abas usa `layoutId` direto.
+- **Glow Effect** (motion-primitives): anima `background` com `blur`, pesado no celular.
