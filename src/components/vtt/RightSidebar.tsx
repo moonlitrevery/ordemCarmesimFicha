@@ -6,7 +6,11 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
+import { AnimatePresence, m, useDragControls } from 'framer-motion';
+import { useReducedFx } from '@/components/fx/useReducedFx';
+import { DUR, EASE_ENTER, EASE_EXIT, ENTER, EXIT } from '@/lib/motion-tokens';
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -242,6 +246,20 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
 
   const activeLabel = tabs.find((tab) => tab.id === active)?.label;
 
+  const header = (
+    <header className="flex shrink-0 items-center gap-0.5 border-b border-ink-border px-1 py-1">
+      <nav aria-label="Painéis" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        {tabButtons(false)}
+      </nav>
+      <IconButton
+        icon={isDesk ? ChevronsRight : X}
+        label={isDesk ? 'Recolher barra lateral' : 'Fechar'}
+        tooltip="left"
+        onClick={() => setOpen(false)}
+      />
+    </header>
+  );
+
   return (
     <>
       {/* Fechada: tira fina de ícones na borda direita (no celular, só os ícones). */}
@@ -262,21 +280,16 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
         </nav>
       )}
 
-      {!isDesk && open && (
-        <div aria-hidden className="absolute inset-0 z-30 bg-ink/40" onPointerDown={() => setOpen(false)} />
-      )}
-
-      <aside
-        ref={rootRef}
-        aria-label={activeLabel}
-        style={isDesk ? { width: prefs.width } : undefined}
-        className={
-          'absolute inset-y-0 right-0 z-40 flex-col border-l border-ink-border bg-ink-panel shadow-panel ' +
-          (isDesk ? '' : 'w-[min(100vw,26rem)] ') +
-          (open ? 'flex' : 'hidden')
-        }
-      >
-        {isDesk && (
+      {isDesk ? (
+        <aside
+          ref={rootRef}
+          aria-label={activeLabel}
+          style={{ width: prefs.width }}
+          className={
+            'absolute inset-y-0 right-0 z-40 flex-col border-l border-ink-border bg-ink-panel shadow-panel ' +
+            (open ? 'flex' : 'hidden')
+          }
+        >
           <div
             role="separator"
             aria-orientation="vertical"
@@ -288,21 +301,131 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
             onPointerUp={endResize}
             onPointerCancel={endResize}
           />
-        )}
-        <header className="flex shrink-0 items-center gap-0.5 border-b border-ink-border px-1 py-1">
-          <nav aria-label="Painéis" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-            {tabButtons(false)}
-          </nav>
-          <IconButton
-            icon={isDesk ? ChevronsRight : X}
-            label={isDesk ? 'Recolher barra lateral' : 'Fechar'}
-            tooltip="left"
-            onClick={() => setOpen(false)}
-          />
-        </header>
-        <h2 className="shrink-0 truncate px-3 pb-1 pt-2 font-display text-lg text-parchment">{activeLabel}</h2>
-        {panels}
-      </aside>
+          {header}
+          <h2 className="shrink-0 truncate px-3 pb-1 pt-2 font-display text-lg text-parchment">{activeLabel}</h2>
+          {panels}
+        </aside>
+      ) : (
+        <MobileDrawer
+          rootRef={rootRef}
+          open={open}
+          label={activeLabel}
+          onClose={() => setOpen(false)}
+          header={header}
+        >
+          {panels}
+        </MobileDrawer>
+      )}
     </>
   );
 }
+
+/** Arrastou mais que isto para a direita (ou rápido), fecha. */
+const CLOSE_DRAG_PX = 96;
+const CLOSE_DRAG_VELOCITY = 500;
+
+/**
+ * Gaveta da barra lateral sem mouse ou com tela estreita (Fase 15, item 9).
+ *
+ * Origem: kokonutui, "Smooth Drawer" (components/kokonutui/smooth-drawer.tsx),
+ * https://kokonutui.com/docs/navigation/smooth-drawer — licença MIT
+ * (https://github.com/kokonut-labs/kokonutui/blob/main/LICENSE).
+ *
+ * Adaptado: gaveta da direita (o kit é uma folha de baixo feita com vaul); sem
+ * vaul nem shadcn, arrastar pela Motion (`drag="x"`), só `transform` e `opacity`.
+ * O painel nunca desmonta (as abas abertas continuam montadas, como antes): ao
+ * fechar ele sai de cena e fica `visibility: hidden`. O arrasto começa só pela
+ * alça e pelo título, para não brigar com a rolagem nem com os sliders do Som.
+ */
+function MobileDrawer({
+  rootRef,
+  open,
+  label,
+  onClose,
+  header,
+  children,
+}: {
+  rootRef: RefObject<HTMLElement>;
+  open: boolean;
+  label: string | undefined;
+  onClose: () => void;
+  header: ReactNode;
+  children: ReactNode;
+}) {
+  const controls = useDragControls();
+  const reduced = useReducedFx();
+  // Fechada e já fora da tela: some do foco e do leitor de tela.
+  const [settled, setSettled] = useState(!open);
+  if (open && settled) setSettled(false);
+  const hidden = !open && (settled || reduced);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  const startDrag = (event: ReactPointerEvent) => controls.start(event);
+
+  return (
+    <>
+      <AnimatePresence>
+        {open && (
+          <m.div
+            key="backdrop"
+            aria-hidden
+            className="absolute inset-0 z-30 bg-ink/50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: ENTER }}
+            exit={{ opacity: 0, transition: EXIT }}
+            onPointerDown={onClose}
+          />
+        )}
+      </AnimatePresence>
+      <m.aside
+        ref={rootRef}
+        aria-label={label}
+        aria-hidden={hidden || undefined}
+        className="absolute inset-y-0 right-0 z-40 flex w-[min(100vw,26rem)] flex-col border-l border-ink-border bg-ink-panel shadow-panel"
+        style={{ visibility: hidden ? 'hidden' : 'visible' }}
+        initial={false}
+        animate={{ x: open ? 0 : '100%' }}
+        transition={
+          open ? { duration: DUR.slow, ease: EASE_ENTER } : { duration: DUR.base, ease: EASE_EXIT }
+        }
+        onAnimationComplete={() => {
+          if (!open) setSettled(true);
+        }}
+        drag="x"
+        dragListener={false}
+        dragControls={controls}
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={{ left: 0, right: 1 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.x > CLOSE_DRAG_PX || info.velocity.x > CLOSE_DRAG_VELOCITY) onClose();
+        }}
+      >
+        {/* Alça: faixa na borda esquerda, de cima a baixo. */}
+        <div
+          aria-hidden
+          className="absolute inset-y-0 left-0 z-10 w-5 touch-none"
+          onPointerDown={startDrag}
+        >
+          <span className="absolute left-1.5 top-1/2 h-12 w-1 -translate-y-1/2 rounded-full bg-ink-border" />
+        </div>
+        {header}
+        <h2
+          className="shrink-0 touch-none truncate px-3 pb-1 pt-2 font-display text-lg text-parchment"
+          onPointerDown={startDrag}
+        >
+          {label}
+        </h2>
+        {children}
+      </m.aside>
+    </>
+  );
+}
+
