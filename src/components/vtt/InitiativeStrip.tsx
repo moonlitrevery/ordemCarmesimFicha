@@ -1,5 +1,8 @@
 'use client';
 
+import { m } from 'framer-motion';
+import { TurnTrail } from '@/components/fx/TurnTrail';
+import { DUR, EASE_ENTER } from '@/lib/motion-tokens';
 import { useVttStore } from '@/lib/vtt/store';
 
 const MAX_SHOWN = 6;
@@ -27,17 +30,21 @@ export function InitiativeStrip() {
     >
       <span className="shrink-0 text-ink-muted">Rodada {round}</span>
       <ol className="flex min-w-0 items-center gap-1">
+        {/* `layout`: ao passar o turno, a fila desliza em vez de pular (só transform). */}
         {shown.map((entry, index) => (
-          <li
+          <m.li
             key={entry.id}
+            layout="position"
+            transition={{ duration: DUR.slow, ease: EASE_ENTER }}
             title={index === 0 ? `Turno de ${entry.name}` : entry.name}
             className={
-              'max-w-[8rem] shrink-0 truncate rounded px-1.5 py-0.5 ' +
-              (index === 0 ? 'border border-crimson bg-crimson/25' : 'border border-transparent text-ink-muted')
+              'relative flex max-w-[8rem] shrink-0 rounded px-1.5 py-0.5 ' +
+              (index === 0 ? 'bg-crimson/25' : 'text-ink-muted')
             }
           >
-            {entry.name}
-          </li>
+            {index === 0 && <TurnTrail layoutId="turn-strip" trailKey={`${round}:${current}`} />}
+            <span className="truncate">{entry.name}</span>
+          </m.li>
         ))}
       </ol>
       {extra > 0 && <span className="shrink-0 text-ink-muted">+{extra}</span>}

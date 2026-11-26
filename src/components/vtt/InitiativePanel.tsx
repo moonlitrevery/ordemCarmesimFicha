@@ -24,21 +24,31 @@ import {
 } from '@/lib/vtt/initiative';
 import { useVttStore } from '@/lib/vtt/store';
 import type { InitiativeEntry } from '@/lib/vtt/types';
+import { TurnTrail } from '@/components/fx/TurnTrail';
 import { IconButton } from './hud';
 
 function turnTag(entry: InitiativeEntry) {
   return entry.turns > 1 ? `${entry.turn}/${entry.turns}` : null;
 }
 
-function ReadOnlyRow({ entry, active }: { entry: InitiativeEntry; active: boolean }) {
+function ReadOnlyRow({
+  entry,
+  active,
+  trailKey,
+}: {
+  entry: InitiativeEntry;
+  active: boolean;
+  trailKey: string;
+}) {
   return (
     <li
       aria-current={active ? 'true' : undefined}
       className={
-        'flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ' +
-        (active ? 'border-amber-400 text-parchment' : 'border-ink-border text-ink-muted')
+        'relative flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ' +
+        (active ? 'border-transparent text-parchment' : 'border-ink-border text-ink-muted')
       }
     >
+      {active && <TurnTrail layoutId="turn-panel" trailKey={trailKey} />}
       <span className="min-w-0 flex-1 truncate">{entry.name}</span>
       {turnTag(entry) && <span className="shrink-0 text-xs">{turnTag(entry)}</span>}
       <span className="w-8 shrink-0 text-right tabular-nums">{entry.value ?? '–'}</span>
@@ -65,6 +75,7 @@ function EditableRow({
   entry,
   index,
   active,
+  trailKey,
   dragging,
   hiddenRolls,
   onDragStart,
@@ -73,6 +84,7 @@ function EditableRow({
   entry: InitiativeEntry;
   index: number;
   active: boolean;
+  trailKey: string;
   dragging: boolean;
   hiddenRolls: boolean;
   onDragStart: () => void;
@@ -88,11 +100,12 @@ function EditableRow({
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDropOn}
       className={
-        'space-y-1 rounded-md border p-1.5 ' +
-        (active ? 'border-amber-400 ' : 'border-ink-border ') +
+        'relative space-y-1 rounded-md border p-1.5 ' +
+        (active ? 'border-transparent ' : 'border-ink-border ') +
         (dragging ? 'opacity-50' : '')
       }
     >
+      {active && <TurnTrail layoutId="turn-panel" trailKey={trailKey} />}
       <div className="flex items-center gap-1">
         <input
           className="field min-w-0 flex-1 px-2 py-1 text-sm"
@@ -368,6 +381,7 @@ export function InitiativePanel() {
                 entry={entry}
                 index={index}
                 active={index === current}
+                trailKey={`${round}:${current}`}
                 dragging={draggingId === entry.id}
                 hiddenRolls={hiddenRolls}
                 onDragStart={() => setDraggingId(entry.id)}
@@ -379,7 +393,12 @@ export function InitiativePanel() {
                 }}
               />
             ) : (
-              <ReadOnlyRow key={entry.id} entry={entry} active={index === current} />
+              <ReadOnlyRow
+                key={entry.id}
+                entry={entry}
+                active={index === current}
+                trailKey={`${round}:${current}`}
+              />
             )
           )}
         </ol>
