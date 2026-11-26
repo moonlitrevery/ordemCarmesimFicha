@@ -13,6 +13,17 @@ export function resourceTone(current: number, max: number): ResourceTone {
   return 'normal';
 }
 
+/** Cor do número em alerta (V.M., ficha e Ficha rápida). */
+export const RESOURCE_TONE_COLOR: Record<Exclude<ResourceTone, 'normal'>, string> = {
+  warn: '#F2C94C',
+  danger: '#FF3B3B',
+};
+
+/** Sanidade abaixo de 25%: o número fica vermelho e dá um glitch ao cruzar. */
+export function isSanityCritical(current: number, max: number): boolean {
+  return resourceTone(current, max) === 'danger';
+}
+
 /** Mesmos máximos que a ficha mostra (as colunas `*_max` do banco não valem). */
 export function characterMaxes(c: VmCharacter) {
   return getEffectiveMaxes(

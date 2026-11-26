@@ -9,6 +9,11 @@ import {
 } from '@/lib/calculations';
 import { ALL_ELEMENTS, DEFAULT_SKILLS, ELEMENT_LABELS } from '@/lib/constants';
 import { ElementSymbol } from '@/components/elements/ElementSymbol';
+import { useAnimatedInputValue } from '@/components/fx/AnimatedNumber';
+import { GlitchLayers } from '@/components/fx/glitch';
+import { SaveStatusPill } from '@/components/fx/SaveStatus';
+import type { SaveStatus } from '@/components/ui/SaveIndicator';
+import { isSanityCritical, RESOURCE_TONE_COLOR } from '@/lib/vm/card';
 import {
   backpackToSave,
   mergeRemoteBackpack,
@@ -39,6 +44,7 @@ import {
   skillRollLabel,
   sortSkills,
 } from '@/lib/vtt/quick-sheet';
+import { trackAction } from '@/lib/vtt/action-toasts';
 import { useVttStore } from '@/lib/vtt/store';
 import {
   ATTRIBUTE_KEYS,
@@ -59,6 +65,17 @@ const SHEET_TABS = ['mine', 'party'] as const;
 const parseSheetTab = oneOf(SHEET_TABS);
 
 const SAVE_DEBOUNCE_MS = 400;
+
+/** Toast de cada movimento da mochila/party (Fase 15). */
+const RPC_TOASTS: Record<MoneyRpc, { pending: string; success: string }> = {
+  move_character_money: { pending: 'Movimentando o dinheiro…', success: 'Dinheiro atualizado' },
+  party_cash_move: { pending: 'Movendo o caixa…', success: 'Caixa atualizado' },
+  party_send_item: { pending: 'Mandando pra party…', success: 'Item na party' },
+  party_take_item: { pending: 'Pegando da party…', success: 'Item na sua mochila' },
+};
+
+/** Resultado de um save da Ficha rápida, para o indicador. */
+type SendOutcome = 'noop' | 'saved' | 'reloaded' | 'error';
 
 const RESOURCES: { key: ResourceKey; label: string; maxKey: 'hp' | 'mana' | 'sanity' }[] = [
   { key: 'hp_current', label: 'HP', maxKey: 'hp' },
@@ -125,16 +142,22 @@ function ResourceRow({
   label,
   value,
   max,
+  sanity = false,
   onChange,
 }: {
   label: string;
   value: number;
   max: number;
+  sanity?: boolean;
   onChange: (value: number) => void;
 }) {
   // Rascunho: apagar o campo para digitar não pode virar 0 na hora.
   const [draft, setDraft] = useState<string | null>(null);
   const current = Math.min(value, max);
+  const critical = sanity && isSanityCritical(current, max);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const glitchRef = useRef<HTMLSpanElement>(null);
+  useAnimatedInputValue(inputRef, current, critical, glitchRef);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -147,8 +170,11 @@ function ResourceRow({
       >
         −
       </button>
+      <span ref={glitchRef} className="relative inline-block text-sm">
       <input
-        className="field min-h-11 w-16 px-1 py-1 text-center text-sm desk:min-h-8"
+        ref={inputRef}
+        className="field min-h-11 w-16 px-1 py-1 text-center text-sm tabular-nums desk:min-h-8"
+        style={critical ? { color: RESOURCE_TONE_COLOR.danger } : undefined}
         inputMode="numeric"
         aria-label={`${label} atual`}
         value={draft ?? current}
@@ -162,6 +188,10 @@ function ResourceRow({
         }}
         onBlur={() => setDraft(null)}
       />
+        {critical && (
+          <GlitchLayers text={String(current)} className="flex items-center justify-center tabular-nums" />
+        )}
+      </span>
       <button
         type="button"
         className={ROW_BUTTON + ' w-11 desk:w-8'}
@@ -229,6 +259,7 @@ export function QuickSheet() {
   const [backpack, setBackpack] = useState<BackpackValues | null>(null);
   const [lastRoll, setLastRoll] = useState<ChatRoll | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
   const isGm = me?.role === 'mestre';
   const userId = me?.userId;
@@ -301,13 +332,14 @@ export function QuickSheet() {
   }, []);
 
   const send = useCallback(
-    async (id: string, snap: SaveSnapshot | null) => {
-      if (!snap) return;
+    async (id: string, snap: SaveSnapshot | null): Promise<SendOutcome> => {
+      if (!snap) return 'noop';
       const changed = resourcesToSave(snap.local, snap.saved);
       let changedBackpack = backpackToSave(snap.localBackpack, snap.savedBackpack);
       const hasBackpack = Object.keys(changedBackpack).length > 0;
-      if (Object.keys(changed).length === 0 && !hasBackpack) return;
+      if (Object.keys(changed).length === 0 && !hasBackpack) return 'noop';
       const supabase = createClient();
+      let reloaded = false;
       // Só estas colunas: o resto da ficha pode estar aberto em outra aba.
       let result = await updateCharacterRow(
         supabase,
@@ -321,9 +353,7 @@ export function QuickSheet() {
         const server = await fetchBackpack(supabase, id);
         if (server && activeIdRef.current === id) {
           applyServerBackpack(id, server);
-          useVttStore
-            .getState()
-            .showToast('A mochila mudou em outro lugar. Recarreguei; confira a última mudança.');
+          reloaded = true;
         }
         changedBackpack = {};
         result =
@@ -331,16 +361,14 @@ export function QuickSheet() {
             ? await updateCharacterRow(supabase, id, changed, null)
             : { status: 'ok', rev: null };
       }
-      if (result.status !== 'ok') {
-        useVttStore.getState().showToast('Não foi possível salvar a ficha.');
-        return;
-      }
+      if (result.status !== 'ok') return 'error';
       // Resposta de uma ficha que já saiu da tela não vale para a atual.
       if (activeIdRef.current === id && lastSavedRef.current && lastSavedBackpackRef.current) {
         lastSavedRef.current = { ...lastSavedRef.current, ...changed };
         lastSavedBackpackRef.current = { ...lastSavedBackpackRef.current, ...changedBackpack };
         if (result.rev !== null) backpackRevRef.current = result.rev;
       }
+      return reloaded ? 'reloaded' : 'saved';
     },
     [applyServerBackpack]
   );
@@ -355,10 +383,24 @@ export function QuickSheet() {
         .catch(() => undefined)
         .then(() => send(id, activeIdRef.current === id ? snapshot() : leaving));
       saveQueueRef.current = run;
-      return run;
+      // Indicador: só o último save da ficha que está na tela, sem outro agendado.
+      const show = (outcome: SendOutcome) => {
+        if (activeIdRef.current !== id || timerRef.current !== undefined) return;
+        setSaveStatus((current) =>
+          outcome === 'noop' ? (current === 'saving' ? 'idle' : current) : outcome
+        );
+      };
+      run.then(show, () => show('error'));
+      return run.then(() => undefined);
     },
     [send, snapshot]
   );
+
+  useEffect(() => {
+    if (saveStatus !== 'saved' && saveStatus !== 'reloaded') return;
+    const t = setTimeout(() => setSaveStatus('idle'), saveStatus === 'saved' ? 1600 : 4000);
+    return () => clearTimeout(t);
+  }, [saveStatus]);
 
   /**
    * RPC que mexe na mochila/dinheiro (Gastar/Receber, party): grava o pendente antes
@@ -372,7 +414,12 @@ export function QuickSheet() {
       setBusy(true);
       try {
         await flush(id);
-        const result = await callMoneyRpc(createClient(), fn, args);
+        const result = await trackAction(
+          () => callMoneyRpc(createClient(), fn, args),
+          RPC_TOASTS[fn],
+          // Recusa (saldo, item mudou): quem chamou mostra a mensagem.
+          (r) => r.ok
+        );
         if (result.ok && result.backpack) applyServerBackpack(id, result.backpack);
         return result;
       } finally {
@@ -507,6 +554,7 @@ export function QuickSheet() {
     const next = { ...resourcesRef.current, [key]: value };
     resourcesRef.current = next;
     setResources(next);
+    setSaveStatus('saving');
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => flush(selectedId), SAVE_DEBOUNCE_MS);
   }
@@ -516,6 +564,7 @@ export function QuickSheet() {
     const next = { ...backpackRef.current, ...patch };
     backpackRef.current = next;
     setBackpack(next);
+    setSaveStatus('saving');
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => flush(selectedId), SAVE_DEBOUNCE_MS);
   }
@@ -599,9 +648,9 @@ export function QuickSheet() {
 
   const mine = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="shrink-0">
+      <div className="flex shrink-0 items-center gap-2">
         <select
-          className="field min-h-11 min-w-0 px-2 py-1 text-sm desk:min-h-8"
+          className="field min-h-11 min-w-0 flex-1 px-2 py-1 text-sm desk:min-h-8"
           aria-label="Personagem"
           value={selectedId ?? ''}
           disabled={!characters?.length}
@@ -621,6 +670,10 @@ export function QuickSheet() {
             </option>
           ))}
         </select>
+        <SaveStatusPill
+          status={saveStatus}
+          onRetry={selectedId ? () => void flush(selectedId) : undefined}
+        />
       </div>
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
@@ -654,6 +707,7 @@ export function QuickSheet() {
                   label={label}
                   value={resources[key]}
                   max={maxes[maxKey]}
+                  sanity={key === 'sanity_current'}
                   onChange={(value) => changeResource(key, value)}
                 />
               ))}

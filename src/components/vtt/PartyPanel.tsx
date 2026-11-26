@@ -6,6 +6,7 @@ import { WeightBadge, WeightInput } from '@/components/character/WeightInput';
 import { MoneyControl, type MoneyAction, type MoneyLogEntry } from '@/components/money/MoneyControl';
 import { callMoneyRpc, type MoneyRpc, type RpcResult } from '@/lib/character-save';
 import { createClient } from '@/lib/supabase/client';
+import { HoldButton } from '@/components/fx/HoldButton';
 import { useVttStore } from '@/lib/vtt/store';
 import { QtyPrompt } from './QtyPrompt';
 
@@ -125,7 +126,6 @@ export function PartyPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [takeId, setTakeId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const visible = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('pt-BR');
@@ -207,7 +207,6 @@ export function PartyPanel({
     setBusyId(item.id);
     const { error: err } = await supabase.from('party_items').delete().eq('id', item.id);
     setBusyId(null);
-    setConfirmId(null);
     if (err) {
       showToast('Não foi possível remover o item.');
       return;
@@ -352,26 +351,16 @@ export function PartyPanel({
                         >
                           <Pencil size={14} aria-hidden />
                         </button>
-                        {confirmId === item.id ? (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className="min-h-11 rounded-md border border-crimson/60 px-2 text-xs text-crimson-soft desk:min-h-8"
-                            onClick={() => void removeItem(item)}
-                          >
-                            Remover mesmo
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className={ICON_BUTTON + ' hover:text-crimson-soft'}
-                            aria-label={`Remover ${item.name}`}
-                            disabled={busy}
-                            onClick={() => setConfirmId(item.id)}
-                          >
-                            <Trash2 size={14} aria-hidden />
-                          </button>
-                        )}
+                        {/* Fase 15: segurar para remover (antes, dois toques). */}
+                        <HoldButton
+                          className={ICON_BUTTON + ' hover:text-crimson-soft'}
+                          label={`Remover ${item.name}`}
+                          title={`Segure para remover ${item.name} da party`}
+                          disabled={busy}
+                          onConfirm={() => void removeItem(item)}
+                        >
+                          <Trash2 size={14} aria-hidden />
+                        </HoldButton>
                       </div>
                     )}
                     {takeId === item.id && (

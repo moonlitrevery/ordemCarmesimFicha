@@ -13,15 +13,20 @@ import {
   removeFragmentsFromElement,
 } from '@/lib/calculations';
 import type { CharacterElementRow, ElementType } from '@/types/database';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
+import { DrawnElementSymbol } from '@/components/fx/DrawnElementSymbol';
 import { ElementSymbol } from '@/components/elements/ElementSymbol';
 
 export function ElementFragmentBar({
   elements,
   element,
+  isNew = false,
   onChange,
 }: {
   elements: CharacterElementRow[];
   element: ElementType;
+  /** Elemento ganho agora (não estava na ficha ao abrir): o símbolo se desenha. */
+  isNew?: boolean;
   onChange: (
     next: CharacterElementRow[],
     meta: {
@@ -117,7 +122,11 @@ export function ElementFragmentBar({
 
       <div className="relative mb-3 flex items-end justify-between gap-2">
         <div className="flex items-end gap-2.5">
-          <ElementSymbol element={element} size={30} glow pulse={pulse} decorative />
+          {isNew ? (
+            <DrawnElementSymbol trigger="mount" element={element} size={30} glow pulse={pulse} decorative />
+          ) : (
+            <ElementSymbol element={element} size={30} glow pulse={pulse} decorative />
+          )}
           <div>
           <p
             className="label"
@@ -131,7 +140,7 @@ export function ElementFragmentBar({
             {ELEMENT_LABELS[element]}
           </p>
           <p className="font-display text-3xl leading-none text-parchment">
-            {row.level}
+            <AnimatedNumber value={row.level} />
             <span className="ml-1 text-sm text-ink-muted">nível</span>
           </p>
           </div>

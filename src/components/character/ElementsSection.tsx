@@ -32,6 +32,8 @@ export function ElementsSection({
 
   const hidden = ALL_ELEMENTS.filter((el) => !activeElements.includes(el));
   const [picking, setPicking] = useState(false);
+  // Os que a ficha já tinha ao abrir aparecem prontos; os ganhos depois se desenham.
+  const [atOpen] = useState(() => new Set(elements.map((e) => e.element)));
 
   function addElement(el: ElementType) {
     if (elements.some((e) => e.element === el)) {
@@ -92,6 +94,7 @@ export function ElementsSection({
             key={el}
             elements={elements}
             element={el}
+            isNew={!atOpen.has(el)}
             onChange={(next, meta) => onChange(next, meta)}
           />
         ))}

@@ -1,11 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Brush, CloudFog, Eye, EyeOff, Pentagon, Square, type LucideIcon } from 'lucide-react';
 import type { FogMode, FogShape } from '@/lib/vtt/fog/mask';
 import { FOG_BRUSH_MAX, FOG_BRUSH_MIN, useVttStore } from '@/lib/vtt/store';
-import { ConfirmDialog } from './ConfirmDialog';
+import { HoldButton } from '@/components/fx/HoldButton';
 import { IconButton } from './hud';
 
 const SHAPES: { id: FogShape; label: string; icon: LucideIcon }[] = [
@@ -36,12 +34,8 @@ function FogOptions({ popover }: { popover: string }) {
   const shape = useVttStore((s) => s.fogShape);
   const mode = useVttStore((s) => s.fogMode);
   const brush = useVttStore((s) => s.fogBrush);
-  const [confirming, setConfirming] = useState<'reveal' | 'cover' | null>(null);
-
-  function fillAll() {
-    useVttStore.getState().fogSync?.fillAll(confirming === 'reveal');
-    setConfirming(null);
-  }
+  // Fase 15: segurar para confirmar, sem modal. Ctrl+Z ainda desfaz.
+  const fillAll = (reveal: boolean) => useVttStore.getState().fogSync?.fillAll(reveal);
 
   return (
     <div className={popover + ' max-w-[min(30rem,calc(100vw-1rem))]'}>
@@ -83,39 +77,21 @@ function FogOptions({ popover }: { popover: string }) {
           />
         </label>
       )}
-      <button
-        type="button"
+      <HoldButton
         className="btn-ghost min-h-11 px-2 py-1 text-xs desk:min-h-0"
-        onClick={() => setConfirming('reveal')}
-      >
-        Revelar tudo
-      </button>
-      <button
-        type="button"
+        title="Segure: os jogadores passam a ver o mapa todo. Ctrl+Z desfaz."
+        label="Revelar tudo"
+        onConfirm={() => fillAll(true)}
+      />
+      <HoldButton
         className="btn-ghost min-h-11 px-2 py-1 text-xs text-crimson-soft hover:border-crimson/60 desk:min-h-0"
-        onClick={() => setConfirming('cover')}
-      >
-        Cobrir tudo
-      </button>
+        title="Segure: os jogadores deixam de ver o mapa, menos o próprio token. Ctrl+Z desfaz."
+        label="Cobrir tudo"
+        onConfirm={() => fillAll(false)}
+      />
       <p className="w-full text-[11px] leading-snug">
         {SHAPE_HINT[shape]} Segure Alt para {mode === 'reveal' ? 'cobrir' : 'revelar'}. Ctrl+Z desfaz.
       </p>
-      {/* Portal: a barra tem `transform`, e um `fixed` dentro dela ficaria preso a ela. */}
-      {confirming &&
-        createPortal(
-          <ConfirmDialog
-            title={confirming === 'reveal' ? 'Revelar a página inteira?' : 'Cobrir a página inteira?'}
-            confirmLabel={confirming === 'reveal' ? 'Revelar tudo' : 'Cobrir tudo'}
-            danger={confirming === 'cover'}
-            onConfirm={fillAll}
-            onCancel={() => setConfirming(null)}
-          >
-            {confirming === 'reveal'
-              ? 'Os jogadores passam a ver o mapa todo. Dá para desfazer com Ctrl+Z.'
-              : 'Os jogadores deixam de ver o mapa, menos o próprio token. Dá para desfazer com Ctrl+Z.'}
-          </ConfirmDialog>,
-          document.body,
-        )}
     </div>
   );
 }

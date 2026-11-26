@@ -1,4 +1,12 @@
-import type { CSSProperties, ReactNode } from 'react';
+import {
+  Children,
+  cloneElement,
+  Fragment,
+  isValidElement,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import type { ElementType } from '@/types/database';
 import { ELEMENT_COLORS, ELEMENT_LABELS } from '@/lib/constants';
 
@@ -67,6 +75,36 @@ export function glowFilter(element: ElementType): string {
   return 'drop-shadow(0 0 3px ' + color + ') drop-shadow(0 0 8px ' + withAlpha(color, 0.55) + ')';
 }
 
+/** Fase 15: desenho do traço. `wait` esconde; `go` desenha (CSS em globals.css). */
+export type SymbolDraw = 'wait' | 'go';
+
+/** Formas soltas, abrindo os fragmentos. */
+function shapesOf(node: ReactNode): ReactElement[] {
+  return Children.toArray(node).flatMap((child) => {
+    if (!isValidElement(child)) return [];
+    if (child.type === Fragment) return shapesOf((child.props as { children?: ReactNode }).children);
+    return [child];
+  });
+}
+
+/**
+ * Corpo preparado para desenhar: traço contínuo ganha `pathLength="1"` (o
+ * `stroke-dashoffset` vai de 1 a 0); tracejado e ponto cheio só aparecem
+ * (o tracejado viraria linha cheia). A geometria não muda.
+ */
+function drawableBody(body: ReactNode): ReactNode {
+  return shapesOf(body).map((shape, i) => {
+    const props = shape.props as { strokeDasharray?: string; fill?: string };
+    const fades = Boolean(props.strokeDasharray) || props.fill === 'currentColor';
+    return cloneElement(shape as ReactElement<Record<string, unknown>>, {
+      key: i,
+      className: fades ? 'symbol-fade' : 'symbol-part',
+      style: { '--i': i } as CSSProperties,
+      ...(fades ? {} : { pathLength: 1 }),
+    });
+  });
+}
+
 export function ElementSymbol({
   element,
   size = 24,
@@ -76,6 +114,7 @@ export function ElementSymbol({
   decorative = false,
   className,
   title,
+  draw,
 }: {
   element: ElementType;
   /** Número em px; `inline` usa 1em. */
@@ -89,6 +128,8 @@ export function ElementSymbol({
   decorative?: boolean;
   className?: string;
   title?: string;
+  /** Desenho do traço (Fase 15). Sem ele, o símbolo aparece pronto. */
+  draw?: SymbolDraw;
 }) {
   const s = SYMBOLS[element];
   if (!s) return null;
@@ -98,7 +139,9 @@ export function ElementSymbol({
     : DARK_ELEMENTS.has(element)
       ? LEGIBILITY_FILTER
       : undefined;
-  const style: CSSProperties = filter ? { color, filter } : { color };
+  // Desenhando, o glow não fica no traço: acende depois, numa camada por cima.
+  const baseFilter = draw && glow ? (DARK_ELEMENTS.has(element) ? LEGIBILITY_FILTER : undefined) : filter;
+  const style: CSSProperties = baseFilter ? { color, filter: baseFilter } : { color };
   const label = title ?? ELEMENT_LABELS[element];
   const dim = inline ? '1em' : size;
   const classes = [
@@ -109,22 +152,48 @@ export function ElementSymbol({
   ]
     .filter(Boolean)
     .join(' ');
+  const svgProps = {
+    viewBox: '0 0 100 100',
+    width: dim,
+    height: dim,
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: s.stroke,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+  };
+  if (!draw) {
+    return (
+      <svg
+        {...svgProps}
+        className={classes}
+        style={style}
+        {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': label })}
+      >
+        {!decorative && <title>{label}</title>}
+        {s.body}
+      </svg>
+    );
+  }
+  // O glow acende por `opacity` de uma cópia com o filtro fixo (nunca anima `filter`).
+  // Sem glow (texto da Lore), ele só passa: acende e apaga.
   return (
-    <svg
-      viewBox="0 0 100 100"
-      width={dim}
-      height={dim}
-      className={classes}
-      style={style}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={s.stroke}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <span
+      className={'relative ' + (inline ? 'inline-block align-[-0.15em] ' : 'inline-flex ') + (draw === 'go' ? 'symbol-draw' : 'symbol-wait')}
+      style={{ width: dim, height: dim }}
       {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': label })}
     >
-      {!decorative && <title>{label}</title>}
-      {s.body}
-    </svg>
+      <svg {...svgProps} className={classes} style={style} aria-hidden>
+        {drawableBody(s.body)}
+      </svg>
+      <svg
+        {...svgProps}
+        aria-hidden
+        className={'pointer-events-none absolute inset-0 ' + (glow ? 'symbol-glow-stay' : 'symbol-glow-flash')}
+        style={{ color, filter: glowFilter(element) }}
+      >
+        {s.body}
+      </svg>
+    </span>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { useRef } from 'react';
+import { TurnTrail } from '@/components/fx/TurnTrail';
 import { useVttStore } from '@/lib/vtt/store';
 
 const MAX_SHOWN = 6;
@@ -11,6 +13,8 @@ const MAX_SHOWN = 6;
  */
 export function InitiativeStrip() {
   const initiative = useVttStore((s) => s.initiative);
+  // Antes do `return null`: hooks na mesma ordem em todo render.
+  const listRef = useRef<HTMLOListElement>(null);
   const { entries, current, round } = initiative;
   if (entries.length === 0) return null;
 
@@ -26,17 +30,19 @@ export function InitiativeStrip() {
       className="flex max-w-full items-center gap-1 overflow-hidden rounded-md border border-ink-border bg-ink-raised/95 px-2 py-1 text-parchment"
     >
       <span className="shrink-0 text-ink-muted">Rodada {round}</span>
-      <ol className="flex min-w-0 items-center gap-1">
+      <ol ref={listRef} className="relative flex min-w-0 items-center gap-1">
+        <TurnTrail containerRef={listRef} selector='[data-turn="true"]' trailKey={`${round}:${current}`} rounded="rounded" />
         {shown.map((entry, index) => (
           <li
             key={entry.id}
+            data-turn={index === 0 || undefined}
             title={index === 0 ? `Turno de ${entry.name}` : entry.name}
             className={
-              'max-w-[8rem] shrink-0 truncate rounded px-1.5 py-0.5 ' +
-              (index === 0 ? 'border border-crimson bg-crimson/25' : 'border border-transparent text-ink-muted')
+              'relative flex max-w-[8rem] shrink-0 rounded px-1.5 py-0.5 ' +
+              (index === 0 ? 'bg-crimson/25' : 'text-ink-muted')
             }
           >
-            {entry.name}
+            <span className="truncate">{entry.name}</span>
           </li>
         ))}
       </ol>

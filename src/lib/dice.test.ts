@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   d20Outcome,
+  singleDieOutcome,
   parseDiceExpression,
   parseDiceNotation,
   rollDice,
@@ -110,5 +111,19 @@ describe('API antiga', () => {
     expect(parseDiceNotation('2d6+3')).toEqual({ count: 2, sides: 6, modifier: 3 });
     expect(parseDiceNotation('2d6+1d4')).toBeNull();
     expect(rollDice('1d6')?.dice).toHaveLength(1);
+  });
+});
+
+describe('singleDieOutcome (destaque no chat)', () => {
+  it('máximo de qualquer dado é crítico; 1 é falha', () => {
+    expect(singleDieOutcome([{ sides: 20, results: [20] }])).toBe('critical');
+    expect(singleDieOutcome([{ sides: 6, results: [6] }])).toBe('critical');
+    expect(singleDieOutcome([{ sides: 100, results: [1] }])).toBe('disaster');
+    expect(singleDieOutcome([{ sides: 8, results: [5] }])).toBeNull();
+  });
+
+  it('mais de um dado não destaca', () => {
+    expect(singleDieOutcome([{ sides: 6, results: [6, 6] }])).toBeNull();
+    expect(singleDieOutcome([{ sides: 20, results: [20] }, { sides: 4, results: [4] }])).toBeNull();
   });
 });

@@ -30,6 +30,7 @@ export function IconButton({
   quietBadge = false,
   tooltip = 'bottom',
   danger = false,
+  sharedHighlight = false,
   onClick,
 }: {
   icon: LucideIcon;
@@ -42,6 +43,11 @@ export function IconButton({
   /** `native`: dentro de área com rolagem, onde o balão seria cortado. */
   tooltip?: TooltipSide | 'native';
   danger?: boolean;
+  /**
+   * Abas (Fase 15): o ativo não pinta o próprio fundo; quem pinta é um destaque
+   * só, que desliza de um ícone para o outro (`SlideFill`, no contêiner).
+   */
+  sharedHighlight?: boolean;
   onClick?: () => void;
 }) {
   return (
@@ -57,13 +63,13 @@ export function IconButton({
         (disabled
           ? 'cursor-not-allowed text-ink-muted/40'
           : active
-            ? 'bg-crimson/40 text-parchment'
+            ? (sharedHighlight ? '' : 'bg-crimson/40 ') + 'text-parchment'
             : danger
               ? 'text-crimson-soft hover:bg-ink-raised'
               : 'text-ink-muted hover:bg-ink-raised hover:text-parchment')
       }
     >
-      <Icon size={18} aria-hidden />
+      <Icon size={18} aria-hidden className="relative" />
       {Boolean(badge) && (
         <span
           className={

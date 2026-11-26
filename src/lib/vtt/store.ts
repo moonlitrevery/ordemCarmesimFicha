@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { pushToast } from './action-toasts';
 import type { Asset } from './assets/rules';
 import type { AudioSync } from './audio/audio-sync';
 import {
@@ -86,7 +87,6 @@ interface VttState {
   initiativeSync: InitiativeSync | null;
   /** Só da mestra: para os outros fica nulo, e o RLS não devolveria nada. */
   npcSync: NpcSync | null;
-  toast: string | null;
 
   /** Fora de `table`: quem escreve é só o `InitiativeSync`, não o snapshot da mesa. */
   initiative: InitiativeState;
@@ -174,11 +174,8 @@ interface VttState {
   cancelCalibration: () => void;
 }
 
-const TOAST_MS = 4000;
 const LIGHT_MODE_KEY = 'vtt:light-mode';
 const AUDIO_PREFS_KEY = 'vtt:audio';
-
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 function savedLightMode(): string | null {
   try {
@@ -256,7 +253,6 @@ export const useVttStore = create<VttState>((set) => ({
   chat: null,
   initiativeSync: null,
   npcSync: null,
-  toast: null,
   initiative: EMPTY_INITIATIVE,
   npcs: {},
   npcError: null,
@@ -375,10 +371,9 @@ export const useVttStore = create<VttState>((set) => ({
   setPendingAssets: (pendingAssets) => set({ pendingAssets }),
   bumpLibrary: () =>
     set((state) => ({ libraryVersion: state.libraryVersion + 1 })),
-  showToast: (toast) => {
-    clearTimeout(toastTimer);
-    set({ toast });
-    toastTimer = setTimeout(() => set({ toast: null }), TOAST_MS);
+  // Aviso solto (Fase 15): entra na mesma pilha dos toasts de ação.
+  showToast: (text) => {
+    pushToast(text);
   },
   setLightMode: (lightMode) => {
     set({ lightMode, lightModePrompt: false });

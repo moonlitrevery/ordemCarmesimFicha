@@ -1,14 +1,15 @@
 import type { MDXComponents } from 'mdx/types';
-import { ElementSymbol } from '@/components/elements/ElementSymbol';
+import type { ElementSymbol } from '@/components/elements/ElementSymbol';
+import { DrawnElementSymbol } from '@/components/fx/DrawnElementSymbol';
 import { ElementsTable } from '@/components/content/ElementsTable';
 
 export function useMDXComponents(components: MDXComponents): MDXComponents {
   return {
     ...components,
     // `<ElementSymbol element="fogo" />` sem import; no texto, inline e decorativo
-    // (o nome do elemento vem escrito logo depois).
+    // (o nome do elemento vem escrito logo depois). Desenha-se ao entrar na tela (Fase 15).
     ElementSymbol: (props: Parameters<typeof ElementSymbol>[0]) => (
-      <ElementSymbol inline={props.size === undefined} decorative {...props} />
+      <DrawnElementSymbol inline={props.size === undefined} decorative {...props} />
     ),
     ElementsTable,
     blockquote: ({ children }) => (

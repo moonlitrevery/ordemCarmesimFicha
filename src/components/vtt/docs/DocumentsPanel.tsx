@@ -17,6 +17,7 @@ import {
   uploadTableFile,
   type UploadPhase,
 } from '@/lib/vtt/docs/upload';
+import { trackAction } from '@/lib/vtt/action-toasts';
 import { useVttStore } from '@/lib/vtt/store';
 import { IconButton } from '../hud';
 import { FileRow } from './FileRow';
@@ -42,7 +43,11 @@ export function PendingDocumentRow({ document }: { document: TableDocument }) {
     setBusy(true);
     setError(null);
     try {
-      await useVttStore.getState().docSync?.approve(document.id);
+      await trackAction(async () => useVttStore.getState().docSync?.approve(document.id), {
+        pending: `Aprovando ${document.title}…`,
+        success: 'Documento aprovado',
+        error: null,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao aprovar.');
       setBusy(false);

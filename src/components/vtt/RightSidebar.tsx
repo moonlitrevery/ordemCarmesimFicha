@@ -6,6 +6,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import {
   ChevronsLeft,
@@ -18,6 +19,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
+import { SlideFill, useSlidingBox } from '@/components/ui/sliding';
 import { countPendingDocuments } from '@/lib/vtt/docs/rules';
 import { perfPanelOpened } from '@/lib/vtt/perf';
 import { useVttStore } from '@/lib/vtt/store';
@@ -222,6 +224,7 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
         quietBadge={tab.quietBadge}
         // A fileira do topo rola na horizontal: o balão seria cortado.
         tooltip={vertical ? 'left' : 'native'}
+        sharedHighlight={!vertical}
         onClick={() => pick(tab.id)}
       />
     ));
@@ -241,6 +244,24 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
   );
 
   const activeLabel = tabs.find((tab) => tab.id === active)?.label;
+  const tabsRef = useRef<HTMLElement>(null);
+  const { box: tabBox, placed: tabPlaced } = useSlidingBox(tabsRef, '[aria-pressed="true"]', `${active}:${open}:${tabs.length}`);
+
+  const header = (
+    <header className="flex shrink-0 items-center gap-0.5 border-b border-ink-border px-1 py-1">
+      <nav ref={tabsRef} aria-label="Painéis" className="relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        {/* Fase 15: o fundo da aba ativa desliza até a nova (só CSS). */}
+        {tabBox && <SlideFill box={tabBox} placed={tabPlaced} className="rounded-lg bg-crimson/40" />}
+        {tabButtons(false)}
+      </nav>
+      <IconButton
+        icon={isDesk ? ChevronsRight : X}
+        label={isDesk ? 'Recolher barra lateral' : 'Fechar'}
+        tooltip="left"
+        onClick={() => setOpen(false)}
+      />
+    </header>
+  );
 
   return (
     <>
@@ -262,21 +283,16 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
         </nav>
       )}
 
-      {!isDesk && open && (
-        <div aria-hidden className="absolute inset-0 z-30 bg-ink/40" onPointerDown={() => setOpen(false)} />
-      )}
-
-      <aside
-        ref={rootRef}
-        aria-label={activeLabel}
-        style={isDesk ? { width: prefs.width } : undefined}
-        className={
-          'absolute inset-y-0 right-0 z-40 flex-col border-l border-ink-border bg-ink-panel shadow-panel ' +
-          (isDesk ? '' : 'w-[min(100vw,26rem)] ') +
-          (open ? 'flex' : 'hidden')
-        }
-      >
-        {isDesk && (
+      {isDesk ? (
+        <aside
+          ref={rootRef}
+          aria-label={activeLabel}
+          style={{ width: prefs.width }}
+          className={
+            'absolute inset-y-0 right-0 z-40 flex-col border-l border-ink-border bg-ink-panel shadow-panel ' +
+            (open ? 'flex' : 'hidden')
+          }
+        >
           <div
             role="separator"
             aria-orientation="vertical"
@@ -288,20 +304,134 @@ export function RightSidebar({ isGm, canUseSheet }: { isGm: boolean; canUseSheet
             onPointerUp={endResize}
             onPointerCancel={endResize}
           />
-        )}
-        <header className="flex shrink-0 items-center gap-0.5 border-b border-ink-border px-1 py-1">
-          <nav aria-label="Painéis" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-            {tabButtons(false)}
-          </nav>
-          <IconButton
-            icon={isDesk ? ChevronsRight : X}
-            label={isDesk ? 'Recolher barra lateral' : 'Fechar'}
-            tooltip="left"
-            onClick={() => setOpen(false)}
-          />
-        </header>
-        <h2 className="shrink-0 truncate px-3 pb-1 pt-2 font-display text-lg text-parchment">{activeLabel}</h2>
-        {panels}
+          {header}
+          <h2 className="shrink-0 truncate px-3 pb-1 pt-2 font-display text-lg text-parchment">{activeLabel}</h2>
+          {panels}
+        </aside>
+      ) : (
+        <MobileDrawer
+          rootRef={rootRef}
+          open={open}
+          label={activeLabel}
+          onClose={() => setOpen(false)}
+          header={header}
+        >
+          {panels}
+        </MobileDrawer>
+      )}
+    </>
+  );
+}
+
+/** Arrastou mais que isto para a direita (ou rápido), fecha. */
+const CLOSE_DRAG_PX = 96;
+const CLOSE_DRAG_VELOCITY = 500;
+
+/**
+ * Gaveta da barra lateral sem mouse ou com tela estreita (Fase 15, item 9).
+ *
+ * Origem: kokonutui, "Smooth Drawer" (components/kokonutui/smooth-drawer.tsx),
+ * https://kokonutui.com/docs/navigation/smooth-drawer — licença MIT
+ * (https://github.com/kokonut-labs/kokonutui/blob/main/LICENSE).
+ *
+ * Adaptado: gaveta da direita (o kit é uma folha de baixo feita com vaul); sem
+ * vaul, shadcn nem a Motion: transição CSS de `transform` e arrasto próprio por
+ * pointer events (só `transform` e `opacity`).
+ * O painel nunca desmonta (as abas abertas continuam montadas, como antes): ao
+ * fechar ele sai de cena e fica `visibility: hidden`. O arrasto começa só pela
+ * alça e pelo título, para não brigar com a rolagem nem com os sliders do Som.
+ */
+function MobileDrawer({
+  rootRef,
+  open,
+  label,
+  onClose,
+  header,
+  children,
+}: {
+  rootRef: RefObject<HTMLElement>;
+  open: boolean;
+  label: string | undefined;
+  onClose: () => void;
+  header: ReactNode;
+  children: ReactNode;
+}) {
+  const dragRef = useRef<{ id: number; startX: number; lastX: number; lastT: number; dx: number; v: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  // Arrastar: escreve o `transform` direto no painel (sem render por movimento).
+  function startDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (!open || event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { id: event.pointerId, startX: event.clientX, lastX: event.clientX, lastT: event.timeStamp, dx: 0, v: 0 };
+    const panel = rootRef.current;
+    if (panel) panel.style.transition = 'none';
+  }
+  function moveDrag(event: ReactPointerEvent<HTMLElement>) {
+    const drag = dragRef.current;
+    const panel = rootRef.current;
+    if (!drag || drag.id !== event.pointerId || !panel) return;
+    const dt = Math.max(1, event.timeStamp - drag.lastT);
+    drag.v = ((event.clientX - drag.lastX) / dt) * 1000;
+    drag.lastX = event.clientX;
+    drag.lastT = event.timeStamp;
+    drag.dx = Math.max(0, event.clientX - drag.startX);
+    panel.style.transform = `translateX(${drag.dx}px)`;
+  }
+  function endDrag(event: ReactPointerEvent<HTMLElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.id !== event.pointerId) return;
+    dragRef.current = null;
+    const panel = rootRef.current;
+    // Devolve o painel às classes: elas animam até aberto ou fechado.
+    panel?.style.removeProperty('transition');
+    panel?.style.removeProperty('transform');
+    if (drag.dx > CLOSE_DRAG_PX || drag.v > CLOSE_DRAG_VELOCITY) onClose();
+  }
+  const dragHandlers = {
+    onPointerDown: startDrag,
+    onPointerMove: moveDrag,
+    onPointerUp: endDrag,
+    onPointerCancel: endDrag,
+  };
+
+  return (
+    <>
+      <div
+        aria-hidden
+        className={
+          'absolute inset-0 z-30 bg-ink/50 transition-opacity ' +
+          (open ? 'opacity-100 duration-base ease-enter' : 'pointer-events-none opacity-0 duration-fast ease-exit')
+        }
+        onPointerDown={onClose}
+      />
+      <aside
+        ref={rootRef}
+        aria-label={label}
+        aria-hidden={!open || undefined}
+        className={
+          // Fechada, fica `invisible` só no fim da saída: some do foco e do leitor de tela.
+          'absolute inset-y-0 right-0 z-40 flex w-[min(100vw,26rem)] flex-col border-l border-ink-border bg-ink-panel shadow-panel transition-[transform,visibility] ' +
+          (open ? 'visible translate-x-0 duration-slow ease-enter' : 'invisible translate-x-full duration-base ease-exit')
+        }
+      >
+        {/* Alça: faixa na borda esquerda, de cima a baixo. */}
+        <div aria-hidden className="absolute inset-y-0 left-0 z-10 w-5 touch-none" {...dragHandlers}>
+          <span className="absolute left-1.5 top-1/2 h-12 w-1 -translate-y-1/2 rounded-full bg-ink-border" />
+        </div>
+        {header}
+        <h2 className="shrink-0 touch-none truncate px-3 pb-1 pt-2 font-display text-lg text-parchment" {...dragHandlers}>
+          {label}
+        </h2>
+        {children}
       </aside>
     </>
   );

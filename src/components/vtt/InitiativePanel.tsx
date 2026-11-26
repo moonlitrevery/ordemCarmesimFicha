@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import {
   ArrowDownWideNarrow,
   ChevronDown,
@@ -24,6 +24,7 @@ import {
 } from '@/lib/vtt/initiative';
 import { useVttStore } from '@/lib/vtt/store';
 import type { InitiativeEntry } from '@/lib/vtt/types';
+import { TurnTrail } from '@/components/fx/TurnTrail';
 import { IconButton } from './hud';
 
 function turnTag(entry: InitiativeEntry) {
@@ -35,8 +36,8 @@ function ReadOnlyRow({ entry, active }: { entry: InitiativeEntry; active: boolea
     <li
       aria-current={active ? 'true' : undefined}
       className={
-        'flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ' +
-        (active ? 'border-amber-400 text-parchment' : 'border-ink-border text-ink-muted')
+        'relative flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ' +
+        (active ? 'border-transparent text-parchment' : 'border-ink-border text-ink-muted')
       }
     >
       <span className="min-w-0 flex-1 truncate">{entry.name}</span>
@@ -88,8 +89,8 @@ function EditableRow({
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDropOn}
       className={
-        'space-y-1 rounded-md border p-1.5 ' +
-        (active ? 'border-amber-400 ' : 'border-ink-border ') +
+        'relative space-y-1 rounded-md border p-1.5 ' +
+        (active ? 'border-transparent ' : 'border-ink-border ') +
         (dragging ? 'opacity-50' : '')
       }
     >
@@ -322,6 +323,7 @@ export function InitiativePanel() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [hiddenRolls, setHiddenRolls] = useState(false);
   const { entries, current, round } = initiative;
+  const listRef = useRef<HTMLOListElement>(null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -360,7 +362,9 @@ export function InitiativePanel() {
             : 'A mestra ainda não montou a iniciativa.'}
         </p>
       ) : (
-        <ol className="space-y-1">
+        <ol ref={listRef} className="relative space-y-1">
+          {/* Fase 15: um anel só, que desliza até quem é a vez (só CSS). */}
+          <TurnTrail containerRef={listRef} selector='[aria-current="true"]' trailKey={`${round}:${current}:${entries.length}`} />
           {entries.map((entry, index) =>
             isGm ? (
               <EditableRow
@@ -379,7 +383,11 @@ export function InitiativePanel() {
                 }}
               />
             ) : (
-              <ReadOnlyRow key={entry.id} entry={entry} active={index === current} />
+              <ReadOnlyRow
+                key={entry.id}
+                entry={entry}
+                active={index === current}
+              />
             )
           )}
         </ol>

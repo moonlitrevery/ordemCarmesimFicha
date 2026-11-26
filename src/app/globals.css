@@ -5,6 +5,40 @@
 :root {
   --background: #0c0a0d;
   --foreground: #e8dfd0;
+  /* Tokens de animação (Fase 15). Espelho em TS: src/lib/motion-tokens.ts. */
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.55, 0, 1, 0.45);
+}
+
+/* Reduzir movimento (sistema) e modo leve da Mesa: transição vira troca quase instantânea. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+  }
+}
+
+[data-motion='reduced'] {
+  --dur-fast: 1ms;
+  --dur-base: 1ms;
+  --dur-slow: 1ms;
+}
+
+/* Animações CSS em loop do Tailwind também param (spinner, pulse). */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse {
+    animation: none;
+  }
+}
+
+[data-motion='reduced'] .animate-spin,
+[data-motion='reduced'] .animate-pulse {
+  animation: none;
 }
 
 html {
@@ -38,11 +72,11 @@ body {
   }
 
   .field {
-    @apply w-full rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-[0.95rem] text-parchment outline-none transition focus:border-crimson/70 focus:ring-1 focus:ring-crimson/40;
+    @apply w-full rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-[0.95rem] text-parchment outline-none transition duration-fast ease-enter focus:border-crimson/70 focus:ring-1 focus:ring-crimson/40;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[0.95rem] font-medium transition disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[0.95rem] font-medium transition duration-fast ease-enter disabled:opacity-50;
   }
 
   .btn-primary {
@@ -148,6 +182,319 @@ body {
     .fragment-fill {
       transition: none;
     }
+  }
+
+  /*
+   * Símbolo se desenhando (Fase 15, item 6): `pathLength="1"` nas formas, e o
+   * `stroke-dashoffset` vai de 1 a 0. Depois o glow acende por `opacity` de uma
+   * cópia com o filtro fixo. `symbol-wait` segura tudo escondido até o gatilho.
+   */
+  .symbol-wait .symbol-part,
+  .symbol-wait .symbol-fade,
+  .symbol-wait .symbol-glow-stay,
+  .symbol-wait .symbol-glow-flash,
+  .symbol-draw .symbol-glow-flash {
+    opacity: 0;
+  }
+
+  .symbol-draw .symbol-part {
+    stroke-dasharray: 1;
+    animation: symbol-draw 900ms var(--ease-enter) both;
+    animation-delay: calc(min(var(--i), 6) * 70ms);
+  }
+
+  .symbol-draw .symbol-fade {
+    animation: symbol-fade var(--dur-slow) var(--ease-enter) both;
+    animation-delay: calc(min(var(--i), 6) * 70ms + 450ms);
+  }
+
+  .symbol-draw .symbol-glow-stay {
+    animation: symbol-fade var(--dur-slow) var(--ease-enter) 1000ms both;
+  }
+
+  .symbol-draw .symbol-glow-flash {
+    animation: symbol-glow-flash 900ms var(--ease-enter) 950ms both;
+  }
+
+  @keyframes symbol-draw {
+    /* Opacidade 0 antes de começar: a ponta redonda do traço não vira um ponto. */
+    from {
+      stroke-dashoffset: 1;
+      opacity: 0;
+    }
+    1% {
+      opacity: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+  }
+
+  @keyframes symbol-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes symbol-glow-flash {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    40% {
+      opacity: 0.9;
+    }
+  }
+
+  /* Reduzir movimento: o símbolo aparece pronto, com o glow que já teria. */
+  @media (prefers-reduced-motion: reduce) {
+    .symbol-wait .symbol-part,
+    .symbol-wait .symbol-fade,
+    .symbol-wait .symbol-glow-stay,
+    .symbol-draw .symbol-part,
+    .symbol-draw .symbol-fade,
+    .symbol-draw .symbol-glow-stay {
+      animation: none;
+      opacity: 1;
+      stroke-dasharray: none;
+    }
+
+    .symbol-draw .symbol-glow-flash {
+      animation: none;
+    }
+  }
+
+  /*
+   * Fase 15, só CSS (a Motion não entra no primeiro carregamento da ficha nem da
+   * Mesa): pílula de salvamento, toasts de ação, rolagem no chat, turno da vez.
+   * Tudo `transform`/`opacity`, uma vez; nada em loop.
+   */
+  .fx-pop-in {
+    animation: fx-pop-in var(--dur-base) var(--ease-enter) both;
+  }
+
+  @keyframes fx-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+  }
+
+  .fx-toast-in {
+    animation: fx-toast-in var(--dur-base) var(--ease-enter) both;
+  }
+
+  .fx-toast-out {
+    animation: fx-toast-out var(--dur-fast) var(--ease-exit) forwards;
+  }
+
+  @keyframes fx-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.96);
+    }
+  }
+
+  @keyframes fx-toast-out {
+    to {
+      opacity: 0;
+      transform: translateX(-16px);
+    }
+  }
+
+  /* Rolagem: o card entra; o número recua (~120 ms) e assenta com overshoot. */
+  .roll-card-normal {
+    animation: roll-card-in var(--dur-base) var(--ease-enter) both;
+  }
+
+  .roll-card-critical {
+    animation: roll-card-critical var(--dur-slow) var(--ease-enter) both;
+  }
+
+  .roll-card-disaster {
+    animation: roll-card-disaster 320ms linear both;
+  }
+
+  .roll-num-normal {
+    animation: roll-num-normal 400ms var(--ease-enter) both;
+  }
+
+  .roll-num-critical {
+    animation: roll-num-critical 550ms var(--ease-enter) both;
+  }
+
+  .roll-num-disaster {
+    animation: roll-num-disaster 450ms var(--ease-enter) both;
+  }
+
+  .roll-flash-critical {
+    animation: roll-flash-critical 1.1s ease-out both;
+  }
+
+  .roll-flash-disaster {
+    animation: roll-flash-disaster 600ms var(--ease-exit) both;
+  }
+
+  @keyframes roll-card-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  @keyframes roll-card-critical {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(2px);
+    }
+  }
+
+  @keyframes roll-card-disaster {
+    0% {
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+      transform: translateX(-5px);
+    }
+    40% {
+      transform: translateX(4px);
+    }
+    60% {
+      transform: translateX(-3px);
+    }
+    80% {
+      transform: translateX(2px);
+    }
+  }
+
+  @keyframes roll-num-normal {
+    0% {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+    30% {
+      opacity: 1;
+      transform: scale(0.84);
+    }
+    70% {
+      transform: scale(1.06);
+    }
+  }
+
+  @keyframes roll-num-critical {
+    0% {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    22% {
+      opacity: 1;
+      transform: scale(0.72);
+    }
+    65% {
+      transform: scale(1.3);
+    }
+  }
+
+  @keyframes roll-num-disaster {
+    0% {
+      opacity: 0;
+      transform: scale(1.1);
+    }
+    27% {
+      opacity: 1;
+      transform: scale(1.18);
+    }
+    70% {
+      transform: scale(0.94);
+    }
+  }
+
+  @keyframes roll-flash-critical {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+    }
+    45% {
+      opacity: 0.15;
+    }
+    65% {
+      opacity: 0.7;
+    }
+  }
+
+  @keyframes roll-flash-disaster {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    35% {
+      opacity: 0.55;
+    }
+  }
+
+  /* Turno da vez: o rastro dá duas voltas (2,4 s) e some; a borda fica parada. */
+  .turn-laps {
+    animation: turn-laps-out var(--dur-slow) var(--ease-enter) 2.04s forwards;
+  }
+
+  .turn-spin {
+    animation: turn-spin 2.4s linear forwards;
+  }
+
+  @keyframes turn-laps-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes turn-spin {
+    from {
+      transform: translate(-50%, -50%) rotate(0deg);
+    }
+    to {
+      transform: translate(-50%, -50%) rotate(720deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fx-pop-in,
+    .fx-toast-in,
+    .roll-card-normal,
+    .roll-card-critical,
+    .roll-card-disaster,
+    .roll-num-normal,
+    .roll-num-critical,
+    .roll-num-disaster,
+    .roll-flash-critical,
+    .roll-flash-disaster {
+      animation: none;
+    }
+
+    .roll-flash-critical,
+    .roll-flash-disaster,
+    .turn-laps {
+      display: none;
+    }
+  }
+
+  [data-motion='reduced'] :is(.fx-pop-in, .fx-toast-in, .roll-card-normal, .roll-card-critical, .roll-card-disaster, .roll-num-normal, .roll-num-critical, .roll-num-disaster) {
+    animation: none;
+  }
+
+  [data-motion='reduced'] :is(.roll-flash-critical, .roll-flash-disaster, .turn-laps) {
+    display: none;
   }
 
   @keyframes fragment-shimmer {

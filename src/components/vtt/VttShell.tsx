@@ -19,6 +19,9 @@ import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
 import { isTypingTarget } from '@/lib/vtt/ui-prefs';
+import { ReducedFxContext } from '@/components/fx/useReducedFx';
+import { ActionToasts } from '@/components/fx/ActionToasts';
+import { trackAction } from '@/lib/vtt/action-toasts';
 import { CalibrationGuide } from './CalibrationGuide';
 import { CaptionModal } from './CaptionModal';
 import { MapToolbar } from './MapToolbar';
@@ -62,11 +65,11 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const docViewerOpen = useVttStore((s) => s.docViewer !== null);
   const role = useVttStore((s) => s.me?.role) ?? initial.me.role;
 
-  const toast = useVttStore((s) => s.toast);
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
   const pagesOpen = useVttStore((s) => s.pagesOpen);
   const conditionTip = useVttStore((s) => s.conditionTip);
   const lightModePrompt = useVttStore((s) => s.lightModePrompt);
+  const lightMode = useVttStore((s) => s.lightMode);
   const setLightMode = useVttStore((s) => s.setLightMode);
   const [sessionBusy, setSessionBusy] = useState(false);
 
@@ -79,6 +82,14 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     const supabase = createClient();
     const store = useVttStore.getState();
     store.enterTable(initialRef.current);
+    // Busca rápida (Fase 15): `?pagina=` abre aquela página só para a mestra.
+    const page = new URLSearchParams(window.location.search).get('pagina');
+    if (page) {
+      if (isGm) useVttStore.setState({ gmSceneChoice: page });
+      const url = new URL(window.location.href);
+      url.searchParams.delete('pagina');
+      window.history.replaceState(window.history.state, '', url);
+    }
 
     let disposed = false;
     let latestRefresh = 0;
@@ -272,10 +283,14 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   async function toggleSession() {
     const next = !sessionOpen;
     setSessionBusy(true);
-    const { error } = await createClient()
-      .from('tables')
-      .update({ session_open: next })
-      .eq('id', tableId);
+    const { error } = await trackAction(
+      async () => createClient().from('tables').update({ session_open: next }).eq('id', tableId),
+      {
+        pending: next ? 'Abrindo a sessão…' : 'Encerrando a sessão…',
+        success: next ? 'Sessão aberta' : 'Sessão encerrada',
+      },
+      (result) => !result.error
+    );
     setSessionBusy(false);
     if (error) {
       useVttStore
@@ -295,7 +310,13 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-ink text-parchment">
+    // Modo leve = movimento reduzido para a UI (tokens e animações CSS, e o que é
+    // feito à mão via `useReducedFx`): nada disputa o canvas.
+    <ReducedFxContext.Provider value={lightMode}>
+    <div
+      className="fixed inset-0 z-50 overflow-hidden bg-ink text-parchment"
+      data-motion={lightMode ? 'reduced' : undefined}
+    >
       <main className="absolute inset-0">
         {viewedSceneId ? (
           <>
@@ -354,14 +375,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
       {isGm && pagesOpen && <PagesOverlay />}
 
-      {toast && (
-        <p
-          role="status"
-          className="pointer-events-none absolute bottom-16 left-[calc((100%_-_var(--vtt-right,0px))/2)] z-40 max-w-[calc(100vw-1rem)] -translate-x-1/2 rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-center text-xs text-parchment desk:bottom-4"
-        >
-          {toast}
-        </p>
-      )}
+      <ActionToasts />
 
       {lightModePrompt && (
         <div
@@ -417,5 +431,6 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         </div>
       )}
     </div>
+    </ReducedFxContext.Provider>
   );
 }

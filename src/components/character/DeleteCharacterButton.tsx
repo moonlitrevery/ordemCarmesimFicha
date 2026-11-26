@@ -1,5 +1,6 @@
 'use client';
 
+import { HoldButton } from '@/components/fx/HoldButton';
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
@@ -139,7 +140,8 @@ export function DeleteCharacterButton({
                       autoFocus
                       disabled={busy}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && nameOk) void handleDelete();
+                        // Enter não apaga mais direto: a confirmação é segurar o botão.
+                        if (e.key === 'Enter' && nameOk) e.preventDefault();
                       }}
                     />
                   </label>
@@ -155,14 +157,15 @@ export function DeleteCharacterButton({
                     >
                       Cancelar
                     </button>
-                    <button
-                      type="button"
+                    {/* Fase 15: além do nome, segurar para apagar. */}
+                    <HoldButton
                       className="btn-primary disabled:opacity-40"
+                      fillClassName="bg-crimson-deep"
                       disabled={!nameOk || busy}
-                      onClick={() => void handleDelete()}
-                    >
-                      {busy ? 'Apagando…' : 'Apagar definitivamente'}
-                    </button>
+                      label={busy ? 'Apagando…' : 'Segure para apagar'}
+                      holdingLabel="Apagando…"
+                      onConfirm={() => void handleDelete()}
+                    />
                   </div>
                 </>
               )}

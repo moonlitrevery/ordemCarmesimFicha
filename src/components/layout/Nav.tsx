@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { CommandPaletteHost } from '@/components/fx/CommandPaletteHost';
+import { useEffect, useRef, useState } from 'react';
+import { SlideFill, useSlidingBox } from '@/components/ui/sliding';
 
 export function Nav() {
   const pathname = usePathname();
@@ -53,7 +55,13 @@ export function Nav() {
     };
   }, []);
 
-  if (hideOnAuth) return null;
+  const navRef = useRef<HTMLElement>(null);
+  // Fase 15: o destaque desliza até o item novo, só CSS (a Motion não entra em toda página).
+  const { box, placed } = useSlidingBox(navRef, '[data-active="true"]', pathname + (isMestre ? ':m' : '') + (email ? ':e' : ''));
+
+  // A busca rápida (Ctrl+K) vale também na Mesa, onde o menu fica escondido.
+  const palette = <CommandPaletteHost enabled={isMestre} />;
+  if (hideOnAuth) return palette;
 
   // Rota dinâmica sem loading.tsx: o prefetch custa uma ida ao servidor e não adianta nada.
   const links = [
@@ -84,7 +92,8 @@ export function Nav() {
         >
           Ordem <span className="text-crimson-soft">Carmesim</span>
         </Link>
-        <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
+        <nav ref={navRef} className="relative flex flex-wrap items-center gap-1 sm:gap-2">
+          {box && <SlideFill box={box} placed={placed} className="rounded-md bg-crimson/25" />}
           {links.map((l) => {
             const active = pathname.startsWith(l.href);
             return (
@@ -92,10 +101,11 @@ export function Nav() {
                 key={l.href}
                 href={l.href}
                 prefetch={l.prefetch}
+                data-active={active || undefined}
                 className={
-                  'rounded-md px-3 py-1.5 text-base transition ' +
+                  'relative rounded-md px-3 py-1.5 text-base transition duration-fast ease-enter ' +
                   (active
-                    ? 'bg-crimson/25 text-parchment'
+                    ? (box ? '' : 'bg-crimson/25 ') + 'text-parchment'
                     : 'text-ink-muted hover:bg-ink-raised hover:text-parchment')
                 }
               >
@@ -114,6 +124,7 @@ export function Nav() {
           )}
         </nav>
       </div>
+      {palette}
     </header>
   );
 }

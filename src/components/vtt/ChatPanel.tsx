@@ -12,7 +12,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { Ear, EyeOff, X } from 'lucide-react';
-import { d20Outcome } from '@/lib/dice';
+import { singleDieOutcome } from '@/lib/dice';
 import {
   buildWhisperTargets,
   chatSuggestions,
@@ -40,40 +40,89 @@ function estimateHeight(message: ChatMessage): number {
     : TEXT_ROW_ESTIMATE;
 }
 
+type RollOutcome = ReturnType<typeof singleDieOutcome>;
+
+/** Já animadas nesta visita: a lista virtual remonta linhas e o histórico chega depois. */
+const animatedRolls = new Set<string>();
+/** Só anima rolagem que acabou de chegar (o relógio do servidor pode estar adiantado). */
+const FRESH_ROLL_MS = 15_000;
+
+/** Decide uma vez, ao montar; a marcação fica num efeito (render sem efeito colateral). */
+function useAnimateRollOnce(id: string, createdAt: string): boolean {
+  const [animate] = useState(
+    () => !animatedRolls.has(id) && Date.now() - new Date(createdAt).getTime() < FRESH_ROLL_MS
+  );
+  useEffect(() => {
+    animatedRolls.add(id);
+  }, [id]);
+  return animate;
+}
+
+/**
+ * Antecipação (Fase 15): o número recua ~120 ms e assenta com um leve overshoot.
+ * Crítico exagera (pulso de brilho e o número salta mais); falha crítica treme e
+ * escurece. Só CSS (`.roll-*` em globals.css); com movimento reduzido ou modo
+ * leve, fica a cor, sem movimento.
+ */
 function RollCard({
   roll,
   outcome,
   hidden,
+  messageId,
+  createdAt,
 }: {
   roll: ChatRoll;
-  outcome: ReturnType<typeof d20Outcome>;
+  outcome: RollOutcome;
   hidden: boolean;
+  messageId: string;
+  createdAt: string;
 }) {
+  const animateIn = useAnimateRollOnce(messageId, createdAt);
+  const tone = hidden || !outcome ? 'normal' : outcome;
   return (
     <div
       className={
-        'mt-1 space-y-1 rounded-md border p-2 ' +
+        'relative mt-1 space-y-1 overflow-hidden rounded-md border ' +
+        (animateIn ? `roll-card-${tone} ` : '') +
         (hidden
-          ? 'border-dashed border-ink-border text-ink-muted'
-          : outcome === 'critical'
-            ? 'border-amber-400/50 bg-ink-raised/70'
-            : outcome === 'disaster'
-              ? 'border-crimson/70 bg-ink-raised/70'
-              : 'border-ink-border bg-ink-raised/70')
+          ? 'border-dashed border-ink-border p-2 text-ink-muted'
+          : tone === 'critical'
+            ? 'border-crimson-glow bg-crimson/15 p-3 shadow-[0_0_18px_rgba(196,69,54,0.35)]'
+            : tone === 'disaster'
+              ? 'border-ink-border bg-ink p-2 opacity-80'
+              : 'border-ink-border bg-ink-raised/70 p-2')
       }
     >
+      {/* Pulso do crítico / sombra da falha: uma camada por cima, só opacidade. */}
+      {animateIn && tone !== 'normal' && (
+        <span
+          aria-hidden
+          className={
+            'pointer-events-none absolute inset-0 ' +
+            (tone === 'critical'
+              ? 'roll-flash-critical bg-[radial-gradient(circle_at_85%_50%,rgba(196,69,54,0.55),transparent_70%)]'
+              : 'roll-flash-disaster bg-black')
+          }
+        />
+      )}
       {roll.label && (
         <p
           className={
-            'text-sm font-semibold ' + (hidden ? 'text-ink-muted' : 'text-parchment')
+            'relative text-sm font-semibold ' +
+            (hidden || tone === 'disaster' ? 'text-ink-muted' : 'text-parchment')
           }
         >
           {roll.label}
         </p>
       )}
-      <div className="flex items-end justify-between gap-3">
+      <div className="relative flex items-end justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-parchment">
+          <ul
+            className={
+              'flex flex-wrap items-center gap-x-3 gap-y-1 text-sm ' +
+              (tone === 'disaster' ? 'text-ink-muted' : 'text-parchment')
+            }
+          >
             {roll.groups.map((group, index) => (
               <li key={index} className="flex items-center gap-1">
                 <DiceIcon sides={group.sides} />
@@ -86,30 +135,38 @@ function RollCard({
         <div className="shrink-0 text-right">
           <strong
             className={
-              'block font-display text-3xl font-bold leading-none ' +
+              'block origin-right font-display font-bold leading-none ' +
+              (animateIn ? `roll-num-${tone} ` : '') +
               (hidden
-                ? 'text-ink-muted'
-                : outcome === 'critical'
-                  ? 'text-amber-300'
-                  : 'text-crimson-soft')
+                ? 'text-3xl text-ink-muted'
+                : tone === 'critical'
+                  ? 'text-5xl text-crimson-glow [text-shadow:0_0_14px_rgba(196,69,54,0.75)]'
+                  : tone === 'disaster'
+                    ? 'text-3xl text-ink-muted'
+                    : 'text-3xl text-crimson-soft')
             }
           >
             {roll.total}
           </strong>
-          {outcome && (
+          {!hidden && outcome && (
             <span
               className={
-                'text-[10px] uppercase tracking-wide ' +
-                (outcome === 'critical' ? 'text-amber-300' : 'text-crimson-soft')
+                'block text-[10px] font-semibold uppercase tracking-[0.14em] ' +
+                (outcome === 'critical' ? 'text-crimson-glow' : 'text-ink-muted')
               }
             >
-              {outcome === 'critical' ? '20 natural' : '1 natural'}
+              {outcomeLabel(outcome, roll.groups[0].sides)}
             </span>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function outcomeLabel(outcome: NonNullable<RollOutcome>, sides: number): string {
+  if (outcome === 'disaster') return 'Falha crítica · 1 natural';
+  return sides === 20 ? 'Crítico · 20 natural' : `Crítico · máximo do d${sides}`;
 }
 
 const MessageRow = memo(function MessageRow({
@@ -125,7 +182,7 @@ const MessageRow = memo(function MessageRow({
 }) {
   const roll =
     !message.deleted && isChatRoll(message.roll) ? message.roll : null;
-  const outcome = roll ? d20Outcome(roll.groups) : null;
+  const outcome = roll ? singleDieOutcome(roll.groups) : null;
   const isWhisper = message.kind === 'whisper' && !message.deleted;
   const name = message.character_name ?? message.author_name;
 
@@ -175,7 +232,13 @@ const MessageRow = memo(function MessageRow({
       {message.deleted ? (
         <p className="text-sm italic text-ink-muted">mensagem apagada</p>
       ) : roll ? (
-        <RollCard roll={roll} outcome={outcome} hidden={message.hidden} />
+        <RollCard
+          roll={roll}
+          outcome={outcome}
+          hidden={message.hidden}
+          messageId={message.id}
+          createdAt={message.created_at}
+        />
       ) : (
         <p
           className={

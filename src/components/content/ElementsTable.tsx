@@ -1,5 +1,5 @@
 import { ALL_ELEMENTS, ELEMENT_LABELS } from '@/lib/constants';
-import { ElementSymbol } from '@/components/elements/ElementSymbol';
+import { DrawnElementSymbol } from '@/components/fx/DrawnElementSymbol';
 import type { ElementType } from '@/types/database';
 
 const COLOR_NAMES: Record<ElementType, string> = {
@@ -32,7 +32,7 @@ export function ElementsTable() {
           {ALL_ELEMENTS.map((el) => (
             <tr key={el} className="border-t border-ink-border">
               <td className="px-3 py-1.5">
-                <ElementSymbol element={el} size={28} decorative />
+                <DrawnElementSymbol element={el} size={28} decorative />
               </td>
               <td className="px-3 py-1.5 text-parchment">{ELEMENT_LABELS[el]}</td>
               <td className="px-3 py-1.5 text-ink-muted">{COLOR_NAMES[el]}</td>

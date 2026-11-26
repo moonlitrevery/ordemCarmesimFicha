@@ -67,6 +67,7 @@ import {
   type ObjectPatch,
 } from './scene-rules';
 import { parseSceneTransition, SceneTransition, type SceneTransitionStyle } from './scene-transition';
+import { trackAction } from './action-toasts';
 import { personColor, useVttStore } from './store';
 import type {
   Drawing,
@@ -1073,18 +1074,26 @@ export class SceneSync {
     for (const [index, file] of images.entries()) {
       const offset = index * 40;
       try {
-        store().showToast(`Enviando ${file.name}…`);
-        const asset = await uploadAsset(file, 'token');
-        store().bumpLibrary();
-        if (asset.status === 'approved') {
-          await this.placeAsset(asset, x + offset, y + offset);
-          continue;
-        }
-        await this.placePending(asset, sceneId, x + offset, y + offset);
-      } catch (error) {
-        store().showToast(
-          error instanceof Error ? error.message : 'Falha ao enviar o arquivo.'
+        // Um toast por arquivo: "Enviando…" → "Enviado" (ou aguardando a mestra).
+        await trackAction(
+          async () => {
+            const asset = await uploadAsset(file, 'token');
+            store().bumpLibrary();
+            if (asset.status === 'approved') {
+              await this.placeAsset(asset, x + offset, y + offset);
+              return 'placed' as const;
+            }
+            await this.placePending(asset, sceneId, x + offset, y + offset);
+            return 'pending' as const;
+          },
+          {
+            pending: `Enviando ${file.name}…`,
+            success: (result) =>
+              result === 'placed' ? `${file.name} enviado` : 'Enviada! Aguardando aprovação da mestra.',
+          }
         );
+      } catch {
+        // O toast do arquivo já mostra o erro.
       }
     }
   }
@@ -1113,7 +1122,6 @@ export class SceneSync {
       sceneAssets: { ...s.sceneAssets, [asset.id]: asset },
     }));
     this.channel.emit({ type: 'asset:pending' });
-    store().showToast('Enviada! Aguardando aprovação da mestra.');
   }
 
   async deleteObject(id: string) {
@@ -1733,7 +1741,15 @@ export class SceneSync {
    * Fita dos jogadores: todo mundo vai para esta página. Ninguém fica separado
    * (a Fase 12 tirou "Separar grupo" da interface), e sai um aviso só.
    */
-  async movePartyTo(sceneId: string): Promise<boolean> {
+  /** Toast "Movendo jogadores…" → "Pronto" (Fase 15); erro já avisa por conta própria. */
+  movePartyTo(sceneId: string): Promise<boolean> {
+    return trackAction(() => this.movePartyNow(sceneId), {
+      pending: 'Movendo jogadores…',
+      success: 'Jogadores movidos',
+    });
+  }
+
+  private async movePartyNow(sceneId: string): Promise<boolean> {
     const cleared = await this.supabase
       .from('table_members')
       .update({ scene_id: null })

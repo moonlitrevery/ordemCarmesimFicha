@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LayoutGrid, Theater, X } from 'lucide-react';
 import { useVttStore } from '@/lib/vtt/store';
 import { oneOf, UI_KEYS, usePref } from '@/lib/vtt/ui-prefs';
+import { OPEN_HUD_EVENT } from '@/lib/vtt/ui-events';
 import { FLOATING, FLOATING_PANEL, IconButton } from './hud';
 import { InitiativePanel } from './InitiativePanel';
 import { NpcPanel } from './NpcPanel';
@@ -33,6 +34,16 @@ export function GmHud() {
   // Só monta os painéis depois da primeira abertura; depois ficam montados.
   const [mounted, setMounted] = useState(false);
   if (prefs.open && !mounted) setMounted(true);
+
+  // Busca rápida (Fase 15) escolheu um NPC desta Mesa: abre o HUD na aba NPCs.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const tab = parseTab((event as CustomEvent<unknown>).detail);
+      setPrefs({ open: true, tab });
+    };
+    window.addEventListener(OPEN_HUD_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_HUD_EVENT, onOpen);
+  }, [setPrefs]);
 
   return (
     <>

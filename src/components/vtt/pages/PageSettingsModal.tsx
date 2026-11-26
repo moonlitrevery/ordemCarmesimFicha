@@ -13,6 +13,7 @@ import {
 import { useVttStore } from '@/lib/vtt/store';
 import type { VttScene } from '@/lib/vtt/types';
 import { AssetThumb } from '../AssetThumb';
+import { HoldButton } from '@/components/fx/HoldButton';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { LightingSection } from '../WeatherPanel';
 import { MapPickerGrid } from './MapPickerGrid';
@@ -237,7 +238,6 @@ function FogSection({ scene, map }: { scene: VttScene; map: Asset | null }) {
   const viewedOn = useVttStore((s) => (s.fogSync?.sceneId === scene.id ? s.fogOn : null));
   const [fetched, setFetched] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmOff, setConfirmOff] = useState(false);
   const enabled = viewedOn ?? fetched;
 
   useEffect(() => {
@@ -270,10 +270,10 @@ function FogSection({ scene, map }: { scene: VttScene; map: Asset | null }) {
           type="checkbox"
           className="h-4 w-4 accent-crimson"
           checked={enabled === true}
-          disabled={busy || enabled === null}
+          disabled={busy || enabled !== false}
+          // Ligar é um clique; desligar é segurar (Fase 15), logo abaixo.
           onChange={(e) => {
             if (e.target.checked) void setEnabled(true);
-            else setConfirmOff(true);
           }}
         />
         <span>Névoa de guerra</span>
@@ -283,20 +283,15 @@ function FogSection({ scene, map }: { scene: VttScene; map: Asset | null }) {
         Ao ligar, a página começa toda coberta. Revele com as ferramentas do grupo Névoa, na barra do topo, com a
         página aberta. Os jogadores veem preto onde está coberto; você vê a névoa a meia opacidade.
       </p>
-      {confirmOff && (
-        <ConfirmDialog
-          title="Desligar a névoa?"
-          confirmLabel="Desligar"
-          danger
-          onCancel={() => setConfirmOff(false)}
-          onConfirm={() => {
-            setConfirmOff(false);
-            void setEnabled(false);
-          }}
-        >
-          Os jogadores passam a ver o mapa todo, e o que foi revelado se perde: ao ligar de novo, a página começa
-          toda coberta.
-        </ConfirmDialog>
+      {enabled === true && (
+        <HoldButton
+          className="btn-ghost min-h-11 px-3 py-1 text-xs text-crimson-soft hover:border-crimson/60 desk:min-h-0"
+          disabled={busy}
+          title="Segure para desligar. Os jogadores passam a ver o mapa todo, e o que foi revelado se perde."
+          label="Desligar a névoa (segure)"
+          holdingLabel="Desligando…"
+          onConfirm={() => void setEnabled(false)}
+        />
       )}
     </section>
   );
