@@ -62,7 +62,9 @@ export function GmView({ userId }: { userId: string }) {
       (list) => {
         if (!active) return;
         setGroups(list);
-        const last = readLastGroup();
+        // `?grupo=` (busca rápida, Fase 15) vale mais que o último aberto.
+        const wanted = new URLSearchParams(window.location.search).get('grupo');
+        const last = wanted ?? readLastGroup();
         setSelectedId(list.find((g) => g.id === last)?.id ?? list[0]?.id ?? null);
       },
       (err) => {

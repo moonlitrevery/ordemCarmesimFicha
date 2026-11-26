@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { CommandPaletteHost } from '@/components/fx/CommandPaletteHost';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
 // No servidor não há layout para medir (e `useLayoutEffect` avisaria).
@@ -102,7 +103,9 @@ export function Nav() {
   const navRef = useRef<HTMLElement>(null);
   const { box, placed } = useSlidingHighlight(navRef, pathname + (isMestre ? ':m' : '') + (email ? ':e' : ''));
 
-  if (hideOnAuth) return null;
+  // A busca rápida (Ctrl+K) vale também na Mesa, onde o menu fica escondido.
+  const palette = <CommandPaletteHost enabled={isMestre} />;
+  if (hideOnAuth) return palette;
 
   // Rota dinâmica sem loading.tsx: o prefetch custa uma ida ao servidor e não adianta nada.
   const links = [
@@ -179,6 +182,7 @@ export function Nav() {
           )}
         </nav>
       </div>
+      {palette}
     </header>
   );
 }

@@ -82,6 +82,14 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
     const supabase = createClient();
     const store = useVttStore.getState();
     store.enterTable(initialRef.current);
+    // Busca rápida (Fase 15): `?pagina=` abre aquela página só para a mestra.
+    const page = new URLSearchParams(window.location.search).get('pagina');
+    if (page) {
+      if (isGm) useVttStore.setState({ gmSceneChoice: page });
+      const url = new URL(window.location.href);
+      url.searchParams.delete('pagina');
+      window.history.replaceState(window.history.state, '', url);
+    }
 
     let disposed = false;
     let latestRefresh = 0;
