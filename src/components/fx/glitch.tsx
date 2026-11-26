@@ -7,12 +7,13 @@
  * https://kokonutui.com/docs/texts/glitch-text — licença MIT
  * (https://github.com/kokonut-labs/kokonutui/blob/main/LICENSE).
  *
- * Adaptado: sem gatilho "idle" nem "hover" (nada em loop), só `burst` chamado por
- * quem usa; cores do tema (carmesim e pergaminho, sem ciano); animação pela
- * Motion (`animate`) em vez de WAAPI direto, só `transform` e `opacity`. O
- * recorte das faixas (`clip-path`) é fixo durante a explosão, não animado.
+ * Adaptado: sem gatilho "idle" nem "hover" (nada em loop), só `runGlitch`
+ * chamado por quem usa; cores do tema (carmesim e pergaminho, sem ciano). Como no
+ * kit, a animação é a Web Animations API do navegador (`element.animate`, sem
+ * biblioteca): o motor imperativo da Motion pesaria ~20 KB no primeiro
+ * carregamento da ficha e da V.M. Só `transform` e `opacity`; o recorte das
+ * faixas (`clip-path`) é fixo durante a explosão, não animado.
  */
-import { animate } from 'framer-motion';
 
 const BANDS = 4;
 const FRAMES = 6;
@@ -66,9 +67,12 @@ function jump(max: number): number {
   return round(sign * (0.25 + 0.75 * Math.random()) * max);
 }
 
-/** Cada valor segura um quadro inteiro: o glitch corta, não desliza. */
-function held(values: number[]): number[] {
-  return values.flatMap((v) => [v, v]);
+/** Cada valor segura um quadro inteiro: o glitch corta, não desliza (como no kit). */
+function held(frames: Keyframe[]): Keyframe[] {
+  return [
+    ...frames.map((frame, i) => ({ ...frame, offset: i / frames.length, easing: 'steps(1, end)' })),
+    { ...frames[frames.length - 1], offset: 1 },
+  ];
 }
 
 /**
@@ -77,14 +81,11 @@ function held(values: number[]): number[] {
  */
 export function runGlitch(root: HTMLElement, base: HTMLElement | null): void {
   const layers = root.querySelector('[data-glitch-root]');
-  if (!layers) return;
-  const duration = (FRAMES * FRAME_MS) / 1000;
+  if (!layers || typeof root.animate !== 'function') return;
+  const options: KeyframeAnimationOptions = { duration: GLITCH_MS, fill: 'none' };
   const fontPx = parseFloat(getComputedStyle(root).fontSize) || 16;
-  const options = { duration, ease: 'linear' as const };
 
-  if (base) {
-    animate(base, { opacity: held([...Array(FRAMES - 1).fill(0), 1]) }, options);
-  }
+  if (base) base.animate(held([{ opacity: 0 }]), options);
 
   const cuts = randomCuts(BANDS);
   const mover = Math.floor(Math.random() * BANDS);
@@ -92,27 +93,24 @@ export function runGlitch(root: HTMLElement, base: HTMLElement | null): void {
     const top = i === 0 ? -50 : cuts[i];
     const bottom = i === BANDS - 1 ? -50 : round(100 - cuts[i + 1]);
     band.style.clipPath = `inset(${top}% -25% ${bottom}% -25%)`;
-    const xs = Array.from({ length: FRAMES }, (_, f) => {
-      if (f === FRAMES - 1) return 0;
-      const x = jump(SHIFT_EM);
-      return f === 0 && i === mover && x === 0 ? SHIFT_EM * 0.6 : x;
-    }).map((em) => em * fontPx);
-    animate(
-      band,
-      { x: held(xs), opacity: held([...Array(FRAMES - 1).fill(1), 0]) },
-      options
-    );
+    const frames = Array.from({ length: FRAMES }, (_, f) => {
+      let x = f === FRAMES - 1 ? 0 : jump(SHIFT_EM);
+      if (f === 0 && i === mover && x === 0) x = SHIFT_EM * 0.6;
+      return { opacity: 1, transform: `translate3d(${round(x * fontPx)}px, 0, 0)` };
+    });
+    band.animate(held(frames), options);
   });
 
   const offsets = Array.from({ length: FRAMES }, () => Math.max(1, Math.ceil(Math.random() * SPLIT_PX)));
   layers.querySelectorAll<HTMLElement>('[data-glitch="channel"]').forEach((channel, c) => {
     const dir = c === 0 ? -1 : 1;
-    animate(
-      channel,
-      {
-        x: held(offsets.map((d) => dir * d)),
-        opacity: held(offsets.map((_, f) => (f === FRAMES - 1 ? 0 : 0.9))),
-      },
+    channel.animate(
+      held(
+        offsets.map((d, f) => ({
+          opacity: f === FRAMES - 1 ? 0 : 0.9,
+          transform: `translate3d(${dir * d}px, 0, 0)`,
+        }))
+      ),
       options
     );
   });

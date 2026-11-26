@@ -8,30 +8,62 @@
  * (components/core/animated-number.tsx), https://motion-primitives.com —
  * licença MIT (https://github.com/ibelick/motion-primitives/blob/main/LICENCE.md).
  *
- * Adaptado: escreve o texto direto no DOM a cada passo da mola (sem re-render do
- * React nem `m.*`, então não depende do LazyMotion); mola sem overshoot; com
- * movimento reduzido (sistema ou modo leve da Mesa) pula direto para o valor.
- * O pulso é só `transform`, uma vez por mudança.
+ * Adaptado: escreve o texto direto no DOM a cada quadro (sem re-render do React
+ * nem `m.*`); em vez da mola (`useSpring`), um tween curto em
+ * `requestAnimationFrame` que desacelera no fim, sem passar do valor; o pulso é
+ * a Web Animations API, só `transform`. Assim o motor imperativo da Motion
+ * (~20 KB) fica fora do primeiro carregamento da ficha e da V.M. Com movimento
+ * reduzido (sistema ou modo leve da Mesa) pula direto para o valor.
  */
-import { animate, useMotionValueEvent, useSpring } from 'framer-motion';
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
-import { DUR, EASE_ENTER } from '@/lib/motion-tokens';
+import { DUR } from '@/lib/motion-tokens';
 import { GLITCH_MS, GlitchLayers, runGlitch } from './glitch';
 import { useReducedFx } from './useReducedFx';
 
-/** Assenta em ~0,4 s, sem passar do valor (quase amortecimento crítico). */
-const SPRING = { stiffness: 220, damping: 30, mass: 1 };
+/** Rolar até o valor novo: um pouco mais que `slow`, para ler a contagem. */
+const COUNT_MS = 450;
+const PULSE_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 
-/** Mola que segue `value`; com movimento reduzido, salta. */
-function useNumberSpring(value: number, write: (n: number) => void) {
+/**
+ * Conta de onde estava até `value` (rAF só enquanto conta); com movimento
+ * reduzido, salta. `jump()` corta para o valor final na hora (glitch).
+ */
+function useCountTo(value: number, write: (n: number) => void) {
   const reduced = useReducedFx();
-  const spring = useSpring(value, SPRING);
-  useMotionValueEvent(spring, 'change', (v) => write(Math.round(v)));
+  const shownRef = useRef(value);
+  const frameRef = useRef(0);
+  const writeRef = useRef(write);
+  writeRef.current = write;
+
+  const jump = (to: number) => {
+    cancelAnimationFrame(frameRef.current);
+    shownRef.current = to;
+    writeRef.current(Math.round(to));
+  };
+
   useEffect(() => {
-    if (reduced) spring.jump(value);
-    else spring.set(value);
-  }, [spring, value, reduced]);
-  return { spring, reduced: Boolean(reduced) };
+    const from = shownRef.current;
+    if (from === value) return;
+    if (reduced) {
+      jump(value);
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / COUNT_MS);
+      shownRef.current = from + (value - from) * easeOut(t);
+      writeRef.current(Math.round(shownRef.current));
+      if (t < 1) frameRef.current = requestAnimationFrame(step);
+    };
+    cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frameRef.current);
+    // `jump` só usa refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, reduced]);
+
+  return { jump, reduced };
 }
 
 /** Roda `effect` quando `flag` passa de falso para verdadeiro depois de montado. */
@@ -64,7 +96,7 @@ export function AnimatedNumber({
   const baseRef = useRef<HTMLSpanElement>(null);
   // O texto inicial vem do React (SSR); depois só a mola escreve.
   const [initial] = useState(value);
-  const { spring, reduced } = useNumberSpring(value, (n) => {
+  const { jump, reduced } = useCountTo(value, (n) => {
     if (baseRef.current) baseRef.current.textContent = String(n);
   });
 
@@ -74,15 +106,18 @@ export function AnimatedNumber({
       first.current = false;
       return;
     }
-    if (pulse && !reduced && rootRef.current) {
-      animate(rootRef.current, { scale: [1, 1.18, 1] }, { duration: DUR.slow * 1.2, ease: EASE_ENTER });
+    if (pulse && !reduced && typeof rootRef.current?.animate === 'function') {
+      rootRef.current.animate(
+        [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }],
+        { duration: DUR.slow * 1200, easing: PULSE_EASE }
+      );
     }
   }, [value, pulse, reduced]);
 
   useRisingEdge(critical, () => {
     if (reduced || !rootRef.current) return;
     // O glitch é a transição: o número já aparece no valor final.
-    spring.jump(value);
+    jump(value);
     runGlitch(rootRef.current, baseRef.current);
   });
 
@@ -109,13 +144,13 @@ export function useAnimatedInputValue(
   critical: boolean,
   glitchRootRef: RefObject<HTMLElement>
 ) {
-  const { spring, reduced } = useNumberSpring(value, (n) => {
+  const { jump, reduced } = useCountTo(value, (n) => {
     const input = inputRef.current;
     if (input && document.activeElement !== input) input.value = String(n);
   });
   useRisingEdge(critical, () => {
     if (reduced || !glitchRootRef.current) return;
-    spring.jump(value);
+    jump(value);
     // Esconder o campo some com a borda: só o texto dele fica transparente.
     const input = inputRef.current;
     if (input) {
