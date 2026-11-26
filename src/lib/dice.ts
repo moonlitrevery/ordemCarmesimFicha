@@ -168,3 +168,18 @@ export function d20Outcome(
   if (die === 20) return 'critical';
   return die === 1 ? 'disaster' : null;
 }
+
+/**
+ * Destaque da rolagem no chat (Fase 15): numa rolagem de **um dado só**, de
+ * qualquer tamanho, o máximo é crítico e o 1 é falha crítica. Só apresentação:
+ * a regra do jogo continua em `d20Outcome`.
+ */
+export function singleDieOutcome(
+  groups: DiceGroupResult[]
+): 'critical' | 'disaster' | null {
+  if (groups.length !== 1 || groups[0].results.length !== 1) return null;
+  const { sides, results } = groups[0];
+  if (sides < 2) return null;
+  if (results[0] === sides) return 'critical';
+  return results[0] === 1 ? 'disaster' : null;
+}
