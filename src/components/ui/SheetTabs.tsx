@@ -1,8 +1,7 @@
 'use client';
 
-import { type ReactNode, useId, useState } from 'react';
-import { m } from 'framer-motion';
-import { DUR, EASE_ENTER } from '@/lib/motion-tokens';
+import { type ReactNode, useRef, useState } from 'react';
+import { SlideUnderline, useSlidingBox } from '@/components/ui/sliding';
 
 export type SheetTab = {
   id: string;
@@ -21,7 +20,9 @@ export function SheetTabs({
     () => defaultTabId ?? tabs[0]?.id ?? ''
   );
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  const underlineId = 'sheet-tab-' + useId();
+  // Fase 15: o sublinhado desliza até a aba nova, só CSS (sem a Motion na ficha).
+  const listRef = useRef<HTMLDivElement>(null);
+  const { box, placed } = useSlidingBox(listRef, '[aria-selected="true"]', active?.id ?? '');
 
   if (!active) return null;
 
@@ -29,8 +30,9 @@ export function SheetTabs({
     <div className="space-y-4">
       <div className="-mx-1 overflow-x-auto px-1">
         <div
+          ref={listRef}
           role="tablist"
-          className="flex min-w-min gap-1 border-b border-ink-border"
+          className="relative flex min-w-min gap-1 border-b border-ink-border"
         >
           {tabs.map((tab) => {
             const selected = tab.id === active.id;
@@ -43,24 +45,17 @@ export function SheetTabs({
                 id={`sheet-tab-${tab.id}`}
                 aria-controls={`sheet-panel-${tab.id}`}
                 className={
-                  'relative shrink-0 whitespace-nowrap border-b-2 border-transparent px-2.5 py-2 text-xs font-medium transition duration-fast ease-enter md:px-3 md:text-sm ' +
-                  (selected ? 'text-parchment' : 'text-ink-muted hover:text-parchment')
+                  'relative shrink-0 whitespace-nowrap border-b-2 px-2.5 py-2 text-xs font-medium transition duration-fast ease-enter md:px-3 md:text-sm ' +
+                  // Antes de medir (SSR), a própria aba tem a borda.
+                  (selected ? (box ? 'border-transparent ' : 'border-crimson ') + 'text-parchment' : 'border-transparent text-ink-muted hover:text-parchment')
                 }
                 onClick={() => setActiveId(tab.id)}
               >
                 {tab.label}
-                {selected && (
-                  // Fase 15: o sublinhado desliza até a aba nova (layoutId, só transform).
-                  <m.span
-                    aria-hidden
-                    layoutId={underlineId}
-                    transition={{ duration: DUR.slow, ease: EASE_ENTER }}
-                    className="pointer-events-none absolute inset-x-0 -bottom-0.5 h-0.5 bg-crimson"
-                  />
-                )}
               </button>
             );
           })}
+          {box && <SlideUnderline box={box} placed={placed} />}
         </div>
       </div>
       <div

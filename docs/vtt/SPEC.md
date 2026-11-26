@@ -207,7 +207,7 @@ src/lib/storage/
 ## 11. Desempenho do site fora da Mesa
 
 - **Supabase fora do primeiro carregamento:** componente cliente que só fala com o banco depois de montar ou de um clique usa `loadSupabase()` de `src/lib/supabase/lazy.ts`, nunca `import { createClient }` estático (~60 KB gz). Formulários chamam `preloadSupabase()` num `useEffect` (baixa no ocioso). O `Nav` já carrega o cliente por `import()` em toda página.
-- **Nada de framer-motion no primeiro carregamento** das páginas comuns (início, login, Lore, Regras, listas): animação simples (largura de barra, entrada de aviso ou resultado) é CSS em `globals.css`, só `transform`/`opacity` (a largura da barra de fragmentos é a exceção, e só muda quando os fragmentos mudam). Toda animação CSS nova entra no bloco `prefers-reduced-motion` de lá. Desde a Fase 15, a ficha, a V.M. e a Mesa carregam o núcleo do `m` (com `LazyMotion`: as features chegam depois); ver a seção 17.
+- **Nada de framer-motion no primeiro carregamento** de nenhuma página: animação é CSS em `globals.css` (ou rAF / Web Animations à mão), só `transform`/`opacity` (a largura da barra de fragmentos é a exceção, e só muda quando os fragmentos mudam). Toda animação CSS nova entra no bloco `prefers-reduced-motion` de lá e no `[data-motion='reduced']` (modo leve da Mesa). framer-motion fica para `MosaicFrame`, `DiceToastStack` e a busca rápida (todos `dynamic`); ver a seção 17.
 - **Ficha** (`CharacterSheet`): seções `memo` recebem só a fatia que usam, callbacks estáveis (`patch`, `handlers`), save agrupado de 700 ms; aba fora da ativa não monta. Coluna nova da ficha entra em `SHEET_COLUMNS` (`src/app/fichas/[id]/page.tsx`): nenhum `select('*')` em tela de usuário.
 - Fontes por `next/font` (`display: swap`), só pesos usados. Lexend e Cormorant são variáveis: tirar peso não reduz bytes, só o intervalo declarado.
 
@@ -237,7 +237,7 @@ Reorganização de layout e fluxo. Realtime, banco, assets, áudio, chat e rolag
 - **Canto superior esquerdo** (`TopBar`): voltar, nome e bolinha da sessão. Logo abaixo (ao lado, no celular), só para a mestra, `GmHud`: botão do **HUD da mestra** e botão **Páginas** (atalho `P`, ignorado em campo de texto e com Ctrl/Alt/Cmd).
 - **Barra lateral direita** (`RightSidebar`): fixa na direita, ícones-aba no topo. Recolhida, vira uma tira de 48 px com os ícones; aberta, tem largura de 280 a 560 px (arrastar a borda esquerda, padrão 360). Aberta/fechada e largura em `vtt:ui:sidebar`, aba ativa em `vtt:ui:sidebar-tab` (`localStorage`, try/catch).
   - A barra **flutua sobre o mapa**: o canvas continua em tela cheia e não é redimensionado ao abrir, fechar ou mudar a largura. O espaço ocupado vai para a variável CSS `--vtt-right` no elemento raiz da Mesa (escrita direto no DOM, sem re-render do `VttShell`), usada pela barra de ferramentas (centralizada no que sobra; no desktop nunca à esquerda de 30rem, para não cobrir o título), pela faixa de avisos, pelo chip de escala, pelo grupo direito do topo e pelos toasts. Arrastar a borda só mexe no estilo e grava no `pointerup`.
-  - **Celular** (fora da variante `desk`): fechada por padrão (não lê o "aberta" salvo), com a tira de ícones no meio da borda direita. Aberta, é uma gaveta de até 26rem por cima do mapa, com fundo que fecha ao tocar. Colocar um item pela Biblioteca fecha a gaveta. Fase 15: a gaveta desliza (`transform`), fecha arrastando para a direita (pela alça da borda esquerda ou pelo título), no fundo ou com Esc, e nunca desmonta (as abas abertas continuam montadas).
+  - **Celular** (fora da variante `desk`): fechada por padrão (não lê o "aberta" salvo), com a tira de ícones no meio da borda direita. Aberta, é uma gaveta de até 26rem por cima do mapa, com fundo que fecha ao tocar. Colocar um item pela Biblioteca fecha a gaveta. Fase 15: a gaveta desliza (transição CSS de `transform`), fecha arrastando para a direita (pela alça da borda esquerda ou pelo título), no fundo ou com Esc, e nunca desmonta (as abas abertas continuam montadas).
   - Cada aba (e subaba) só monta na primeira abertura e depois fica montada, como antes.
 - **Abas**, nesta ordem: **Chat** (`ChatPanel`, padrão, badge de não lido); **Ficha rápida** (`QuickSheet` + `QuickBackpack`; espectador não tem); **Biblioteca** (só mestra, contador de aprovações); **Documentos e relatórios** (subabas `DocumentsPanel` e `ReportsPanel`, `vtt:ui:docs-tab`); **Som e efeitos de tela** (só mestra, subabas `SoundPanel` e `WeatherPanel`, `vtt:ui:media-tab`). Jogador vê Chat, Ficha rápida e Documentos e relatórios. `chatVisible` = barra aberta na aba Chat. `EffectsMenus` continua sendo o menu de magias/efeitos do token (menu de contexto), não um painel.
 - **Jogador perdeu a Biblioteca** (antes colocava token, adereço e addon por ela). Soltar arquivo direto no mapa continua funcionando no desktop.
@@ -530,13 +530,13 @@ Só apresentação: nenhuma regra, permissão ou dado mudou, fora o que está ma
 
 ### Regras
 
-- **Uma biblioteca só: a Motion**, que no projeto é o pacote `framer-motion` (o mesmo código do `motion`, com o nome antigo). Nada de anime.js, GSAP ou outra lib de animação. Onde a Motion pesaria no primeiro carregamento, vale CSS ou a API do navegador (`requestAnimationFrame`, Web Animations), que não são bibliotecas.
+- **Uma biblioteca só: a Motion**, que no projeto é o pacote `framer-motion` (o mesmo código do `motion`, com o nome antigo). Nada de anime.js, GSAP ou outra lib de animação. Ela só entra no que já carrega sob demanda: a busca rápida (Ctrl+K), o Mosaico e os toasts de dado da ficha. Ficha, V.M. e Mesa não a carregam: o que a Fase 15 anima ali é CSS (classes em `globals.css` e o destaque deslizante de `ui/sliding.tsx`) ou a API do navegador (`requestAnimationFrame`, Web Animations), que não são bibliotecas. A Motion custava ~18 kB gz no primeiro carregamento da Mesa e da ficha.
 - **Só `transform` e `opacity`** (e `stroke-dashoffset` com `pathLength` no SVG dos símbolos). Nada de animar `width`, `height`, `top`, `box-shadow` ou `filter`, e nada em loop. A barra de recurso da ficha passou de `width` para `scaleX`.
-- **`m.*` precisa de `MotionProvider`** (`src/components/ui/MotionProvider.tsx`: `LazyMotion` com as features por import dinâmico e `MotionConfig reducedMotion`). `full` carrega `domMax` (arrastar e `layoutId`); `reduced` força o movimento reduzido. A ficha (`CharacterSheet`) e a Mesa (`VttShell`) têm um em volta; a busca rápida tem o próprio. Um `MotionProvider` dentro de outro troca o `reducedMotion`: não aninhe na Mesa.
+- **`m.*` precisa de `MotionProvider`** (`src/components/ui/MotionProvider.tsx`: `LazyMotion` com as features por import dinâmico e `MotionConfig reducedMotion`). `full` carrega `domMax` (arrastar e `layoutId`); `reduced` força o movimento reduzido. Só a busca rápida, o Mosaico e os toasts de dado o usam, cada um com o seu.
 - **Movimento reduzido:**
-  - O que liga: a preferência do sistema (`prefers-reduced-motion`) ou o **modo leve da Mesa**, que põe `data-motion="reduced"` na raiz da Mesa e usa `MotionProvider reduced`.
-  - O que faz: zera os tokens CSS (1 ms), para `animate-spin`/`animate-pulse` e faz a Motion cortar o `transform`.
-  - Animação feita à mão usa `useReducedFx()` (`src/components/fx/useReducedFx.ts`): o `useReducedMotionConfig` da Motion ignora o sistema quando não há `MotionConfig` acima.
+  - O que liga: a preferência do sistema (`prefers-reduced-motion`) ou o **modo leve da Mesa**, que põe `data-motion="reduced"` na raiz da Mesa e `ReducedFxContext` (`src/components/fx/useReducedFx.ts`) com o valor do modo leve.
+  - O que faz: zera os tokens CSS (1 ms), para `animate-spin`/`animate-pulse` e as classes da Fase 15 (`.fx-*`, `.roll-*`; o rastro do turno some).
+  - Animação feita à mão (contagem, pulso, glitch) usa `useReducedFx()`: sistema ou `ReducedFxContext`, sem a Motion.
 - **Peso:** componente pesado vai por `dynamic` (busca rápida, canvas da tinta). O motor imperativo (`animate()`, `useSpring`) nunca entra no primeiro carregamento: o número animado e o glitch usam rAF e Web Animations.
 
 ### Tokens
@@ -567,7 +567,7 @@ Fora dos tokens, de propósito:
 - **Glitch** (`fx/glitch.tsx`)
   - Dura ~330 ms e acontece uma vez, quando a sanidade **cruza** os 25% para baixo (ficha, Ficha rápida e V.M.). Depois o número fica vermelho e parado.
   - Sem glitch com movimento reduzido.
-- **Indicador de salvamento** (`fx/SaveStatus.tsx`)
+- **Indicador de salvamento** (`fx/SaveStatus.tsx`, só CSS: fica montado e entra/sai por transição)
   - Na ficha fica fixo no canto inferior esquerdo; na Ficha rápida, ao lado do seletor.
   - Mostra "Salvando…" → "Salvo" → some. Em erro, fica com "Tentar de novo", que grava o estado atual na mesma fila.
   - Conflito de versão da mochila mostra "Mochila relida de outro lugar".
@@ -577,7 +577,7 @@ Fora dos tokens, de propósito:
   - Na ficha, só no elemento ganho depois de abrir. Na Lore e nas Regras (MDX e `ElementsTable`), uma vez, ao entrar na tela.
   - Tracejado e ponto cheio só aparecem, sem desenhar.
   - Sem `draw`, o SVG é o mesmo de antes (teste de `public/simbolos/`). Os SVGs ficam em LF (`.gitattributes`).
-- **Rolagem no chat** (`ChatPanel`, `RollCard`)
+- **Rolagem no chat** (`ChatPanel`, `RollCard`; classes `.roll-*` em globals.css)
   - O número recua ~120 ms e assenta com overshoot.
   - Crítico (o máximo de uma rolagem de **um dado só**, `singleDieOutcome`): carmesim, com brilho, pulso e o card maior.
   - Falha crítica (1): treme e escurece.
@@ -585,15 +585,15 @@ Fora dos tokens, de propósito:
   - *Lógica:* o destaque vale para qualquer dado único; a regra do jogo continua em `d20Outcome`.
 - **Turno da vez** (`fx/TurnTrail.tsx`, no HUD da mestra e na faixa dos jogadores)
   - Quando o turno muda, um gradiente cônico **gira por `transform`** duas voltas num anel recortado por máscara e some. Fica a borda acesa, parada (zero quadros).
-  - A borda parada tem `layoutId` e desliza para o próximo. A faixa dos jogadores desliza junto (`layout`).
-- **Toasts de ação** (`fx/ActionToasts.tsx`, estado em `src/lib/vtt/action-toasts.ts`)
+  - Um anel só, por cima da lista (`TurnTrail`, só CSS), mede o item da vez e desliza até ele (`transform`; o tamanho troca na hora). O rastro é `.turn-spin`/`.turn-laps`.
+- **Toasts de ação** (`fx/ActionToasts.tsx`, só CSS; estado em `src/lib/vtt/action-toasts.ts`, onde o toast fica `leaving` durante a saída)
   - No máximo 3, no canto inferior esquerdo, acima do ⋯.
   - `trackAction` mostra "pendente → pronto". Resultado `false` só tira o toast, porque a função já avisou o erro. `error: null` deixa o erro para quem já mostra na tela.
   - Onde há hoje: abrir/encerrar sessão, mover jogadores (`SceneSync.movePartyTo`), enviar arquivo no mapa, aprovar/recusar na Biblioteca e em Documentos, movimentos da party e do dinheiro pela Ficha rápida.
   - O `showToast` antigo entra na mesma pilha, e o campo `toast` saiu do store.
 - **Destaque deslizante**
   - No menu do topo é **só CSS**: um destaque medido, com `translate` + `scaleX`, sem a Motion (que não entra em toda página).
-  - As abas da ficha (`SheetTabs`), as subabas (`SubTabs`) e as abas da barra lateral (`IconButton highlightId`) usam `layoutId`.
+  - As abas da ficha (`SheetTabs`), as subabas (`SubTabs`) e as abas da barra lateral (`IconButton sharedHighlight` + `SlideFill`) usam o mesmo mecanismo do menu (`src/components/ui/sliding.tsx`): sublinhado ou fundo medido, `translate` + `scaleX`.
 - **Segurar para confirmar** (`fx/HoldButton.tsx`)
   - ~1 s com a barra carmesim; soltou antes, cancela. Segurar Enter ou Espaço também vale.
   - Substitui a confirmação em:
@@ -638,5 +638,5 @@ Todos são MIT, conferidos pela API do GitHub em 2026-11-26. Cada arquivo traz n
 | `fx/ink-fluid.ts`, `fx/InkCanvas.tsx` | kokonutui, Ink Background (`ink-background.tsx`; solver e shaders sem mudança) | MIT, idem |
 
 Dois componentes ficaram de fora:
-- **Animated Background** (motion-primitives): o destaque das abas usa `layoutId` direto.
+- **Animated Background** (motion-primitives): o destaque deslizante é CSS próprio (`ui/sliding.tsx`).
 - **Glow Effect** (motion-primitives): anima `background` com `blur`, pesado no celular.

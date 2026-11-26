@@ -9,15 +9,17 @@
  * (https://github.com/kokonut-labs/kokonutui/blob/main/LICENSE).
  *
  * Adaptado: só a pílula de estado (sem editor, fila offline nem "há X s"); estados
- * do save que já existe; sem `filter: blur` (só `opacity` e `transform`); cores do
- * tema. Precisa de um `MotionProvider` acima (ficha e Mesa já têm).
+ * do save que já existe; cores do tema. **Só CSS** (sem a Motion, que pesaria no
+ * primeiro carregamento da ficha): a pílula fica montada e entra/sai por
+ * transição de `opacity`/`transform`; o texto novo entra com `.fx-pop-in`.
  */
-import { AnimatePresence, m } from 'framer-motion';
+import { useState } from 'react';
 import { Check, CloudOff, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { SaveStatus } from '@/components/ui/SaveIndicator';
-import { ENTER, EXIT } from '@/lib/motion-tokens';
 
-const TEXT: Record<Exclude<SaveStatus, 'idle'>, string> = {
+type Shown = Exclude<SaveStatus, 'idle'>;
+
+const TEXT: Record<Shown, string> = {
   saving: 'Salvando…',
   saved: 'Salvo',
   error: 'Não salvou',
@@ -34,7 +36,12 @@ export function SaveStatusPill({
   /** Fixo no canto inferior esquerdo (ficha); senão, no fluxo (Ficha rápida). */
   floating?: boolean;
 }) {
+  // Ao sumir, continua mostrando o último estado enquanto a pílula sai.
+  const [last, setLast] = useState<Shown>('saved');
+  if (status !== 'idle' && status !== last) setLast(status);
   const visible = status !== 'idle';
+  const shown = visible ? status : last;
+
   return (
     <div
       aria-live="polite"
@@ -44,47 +51,37 @@ export function SaveStatusPill({
           : 'pointer-events-none flex min-h-7 items-center'
       }
     >
-      <AnimatePresence initial={false}>
-        {visible && (
-          <m.div
-            key="pill"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0, transition: ENTER }}
-            exit={{ opacity: 0, y: 6, transition: EXIT }}
-            className={
-              'pointer-events-auto flex items-center gap-1.5 rounded-full border bg-ink-panel/95 px-2.5 py-1 text-xs shadow-panel ' +
-              (status === 'error' ? 'border-crimson/70 text-crimson-soft' : 'border-ink-border text-ink-muted')
-            }
+      <div
+        aria-hidden={!visible || undefined}
+        className={
+          'flex items-center gap-1.5 rounded-full border bg-ink-panel/95 px-2.5 py-1 text-xs shadow-panel transition duration-base ' +
+          (visible
+            ? 'pointer-events-auto translate-y-0 opacity-100 ease-enter '
+            : 'invisible translate-y-1.5 opacity-0 ease-exit ') +
+          (shown === 'error' ? 'border-crimson/70 text-crimson-soft' : 'border-ink-border text-ink-muted')
+        }
+        // `invisible` só depois de sair: some do leitor de tela e do Tab.
+        style={visible ? undefined : { transitionProperty: 'opacity, transform, visibility' }}
+      >
+        <span key={shown} className="fx-pop-in flex items-center gap-1.5">
+          <StatusIcon status={shown} />
+          <span>{TEXT[shown]}</span>
+        </span>
+        {shown === 'error' && onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="-my-1 -mr-1.5 min-h-9 rounded-full px-2 font-medium text-parchment underline-offset-2 hover:underline"
           >
-            <AnimatePresence initial={false} mode="popLayout">
-              <m.span
-                key={status}
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1, transition: ENTER }}
-                exit={{ opacity: 0, scale: 0.85, transition: EXIT }}
-                className="flex items-center gap-1.5"
-              >
-                <StatusIcon status={status} />
-                <span>{TEXT[status]}</span>
-              </m.span>
-            </AnimatePresence>
-            {status === 'error' && onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="-my-1 -mr-1.5 min-h-9 rounded-full px-2 font-medium text-parchment underline-offset-2 hover:underline"
-              >
-                Tentar de novo
-              </button>
-            )}
-          </m.div>
+            Tentar de novo
+          </button>
         )}
-      </AnimatePresence>
+      </div>
     </div>
   );
 }
 
-function StatusIcon({ status }: { status: SaveStatus }) {
+function StatusIcon({ status }: { status: Shown }) {
   if (status === 'saving') {
     // `motion-safe`: com movimento reduzido o ícone fica parado.
     return <LoaderCircle size={13} aria-hidden className="motion-safe:animate-spin" />;

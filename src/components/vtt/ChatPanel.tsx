@@ -12,9 +12,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { Ear, EyeOff, X } from 'lucide-react';
-import { m, type TargetAndTransition } from 'framer-motion';
 import { singleDieOutcome } from '@/lib/dice';
-import { DUR, EASE_ENTER, EASE_EXIT } from '@/lib/motion-tokens';
 import {
   buildWhisperTargets,
   chatSuggestions,
@@ -63,41 +61,9 @@ function useAnimateRollOnce(id: string, createdAt: string): boolean {
 /**
  * Antecipação (Fase 15): o número recua ~120 ms e assenta com um leve overshoot.
  * Crítico exagera (pulso de brilho e o número salta mais); falha crítica treme e
- * escurece. Com movimento reduzido, a Motion corta o `transform`: fica a cor.
+ * escurece. Só CSS (`.roll-*` em globals.css); com movimento reduzido ou modo
+ * leve, fica a cor, sem movimento.
  */
-const NUMBER_IN: Record<'normal' | 'critical' | 'disaster', TargetAndTransition> = {
-  normal: {
-    scale: [0.92, 0.84, 1.06, 1],
-    opacity: [0, 1, 1, 1],
-    transition: { duration: 0.4, times: [0, 0.3, 0.7, 1], ease: EASE_ENTER },
-  },
-  critical: {
-    scale: [0.9, 0.72, 1.3, 1],
-    opacity: [0, 1, 1, 1],
-    transition: { duration: 0.55, times: [0, 0.22, 0.65, 1], ease: EASE_ENTER },
-  },
-  disaster: {
-    scale: [1.1, 1.18, 0.94, 1],
-    opacity: [0, 1, 1, 1],
-    transition: { duration: 0.45, times: [0, 0.27, 0.7, 1], ease: EASE_ENTER },
-  },
-};
-
-const CARD_IN: Record<'normal' | 'critical' | 'disaster', TargetAndTransition> = {
-  normal: { opacity: [0, 1], y: [6, 0], transition: { duration: DUR.base, ease: EASE_ENTER } },
-  critical: {
-    opacity: [0, 1, 1],
-    y: [8, 2, 0],
-    transition: { duration: DUR.slow, ease: EASE_ENTER },
-  },
-  // Tremor curto, depois quieto.
-  disaster: {
-    opacity: [0, 1, 1, 1, 1, 1],
-    x: [0, -5, 4, -3, 2, 0],
-    transition: { duration: 0.32, ease: 'linear' },
-  },
-};
-
 function RollCard({
   roll,
   outcome,
@@ -114,11 +80,10 @@ function RollCard({
   const animateIn = useAnimateRollOnce(messageId, createdAt);
   const tone = hidden || !outcome ? 'normal' : outcome;
   return (
-    <m.div
-      initial={false}
-      animate={animateIn ? CARD_IN[tone] : undefined}
+    <div
       className={
         'relative mt-1 space-y-1 overflow-hidden rounded-md border ' +
+        (animateIn ? `roll-card-${tone} ` : '') +
         (hidden
           ? 'border-dashed border-ink-border p-2 text-ink-muted'
           : tone === 'critical'
@@ -130,19 +95,13 @@ function RollCard({
     >
       {/* Pulso do crítico / sombra da falha: uma camada por cima, só opacidade. */}
       {animateIn && tone !== 'normal' && (
-        <m.span
+        <span
           aria-hidden
           className={
             'pointer-events-none absolute inset-0 ' +
             (tone === 'critical'
-              ? 'bg-[radial-gradient(circle_at_85%_50%,rgba(196,69,54,0.55),transparent_70%)]'
-              : 'bg-black')
-          }
-          initial={{ opacity: 0 }}
-          animate={
-            tone === 'critical'
-              ? { opacity: [0, 1, 0.15, 0.7, 0], transition: { duration: 1.1, ease: 'easeOut' } }
-              : { opacity: [0, 0.55, 0], transition: { duration: 0.6, ease: EASE_EXIT } }
+              ? 'roll-flash-critical bg-[radial-gradient(circle_at_85%_50%,rgba(196,69,54,0.55),transparent_70%)]'
+              : 'roll-flash-disaster bg-black')
           }
         />
       )}
@@ -174,11 +133,10 @@ function RollCard({
           <p className="break-all text-xs text-ink-muted">{roll.math}</p>
         </div>
         <div className="shrink-0 text-right">
-          <m.strong
-            initial={false}
-            animate={animateIn ? NUMBER_IN[tone] : undefined}
+          <strong
             className={
               'block origin-right font-display font-bold leading-none ' +
+              (animateIn ? `roll-num-${tone} ` : '') +
               (hidden
                 ? 'text-3xl text-ink-muted'
                 : tone === 'critical'
@@ -189,7 +147,7 @@ function RollCard({
             }
           >
             {roll.total}
-          </m.strong>
+          </strong>
           {!hidden && outcome && (
             <span
               className={
@@ -202,7 +160,7 @@ function RollCard({
           )}
         </div>
       </div>
-    </m.div>
+    </div>
   );
 }
 

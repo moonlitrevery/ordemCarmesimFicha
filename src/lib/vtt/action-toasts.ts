@@ -12,12 +12,16 @@ export interface ActionToast {
   id: number;
   state: ToastState;
   text: string;
+  /** Saindo: a pilha anima a saída (CSS) e o tira logo depois. */
+  leaving?: boolean;
 }
 
 export const MAX_TOASTS = 3;
 const DONE_MS = 2200;
 const INFO_MS = 4000;
 const ERROR_MS = 5000;
+/** Tempo da animação de saída (`--dur-fast`, com folga). */
+const LEAVE_MS = 160;
 
 export const useActionToasts = create<{ toasts: ActionToast[] }>(() => ({ toasts: [] }));
 
@@ -31,7 +35,16 @@ function clearTimer(id: number) {
 
 export function dismissToast(id: number) {
   clearTimer(id);
-  useActionToasts.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  useActionToasts.setState((s) => ({
+    toasts: s.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)),
+  }));
+  timers.set(
+    id,
+    setTimeout(() => {
+      timers.delete(id);
+      useActionToasts.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+    }, LEAVE_MS)
+  );
 }
 
 function schedule(id: number, state: ToastState) {

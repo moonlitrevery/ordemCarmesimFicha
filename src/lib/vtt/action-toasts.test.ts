@@ -20,11 +20,14 @@ describe('toasts de ação', () => {
     await trackAction(async () => true, { pending: 'Movendo…', success: 'Pronto' });
     expect(toasts()).toMatchObject([{ state: 'success', text: 'Pronto' }]);
     vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(200); // animação de saída
     expect(toasts()).toEqual([]);
   });
 
   it('`false` só tira o toast (a função já avisou o erro)', async () => {
     await trackAction(async () => false, { pending: 'Movendo…', success: 'Pronto' });
+    expect(toasts()).toMatchObject([{ leaving: true }]);
+    vi.advanceTimersByTime(200);
     expect(toasts()).toEqual([]);
   });
 
@@ -34,6 +37,7 @@ describe('toasts de ação', () => {
     expect(toasts()).toMatchObject([{ state: 'error', text: 'Sem conexão' }]);
     useActionToasts.setState({ toasts: [] });
     await expect(trackAction(fail, { pending: 'Aprovando…', success: 'Ok', error: null })).rejects.toThrow();
+    vi.advanceTimersByTime(200);
     expect(toasts()).toEqual([]);
   });
 });

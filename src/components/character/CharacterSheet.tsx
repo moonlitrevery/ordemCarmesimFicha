@@ -53,7 +53,6 @@ import { LevelProgression } from '@/components/character/LevelProgression';
 import { CharacterImage } from '@/components/ui/CharacterImage';
 import type { SaveStatus } from '@/components/ui/SaveIndicator';
 import { SaveStatusPill } from '@/components/fx/SaveStatus';
-import { MotionProvider } from '@/components/ui/MotionProvider';
 import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
 import { isSanityCritical, RESOURCE_TONE_COLOR } from '@/lib/vm/card';
 import { SkillsList } from '@/components/character/SkillsList';
@@ -612,7 +611,6 @@ export function CharacterSheet({
   );
 
   return (
-    <MotionProvider full>
     <div className="relative space-y-5 pb-20">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-display text-3xl text-parchment md:text-4xl">
@@ -785,7 +783,6 @@ export function CharacterSheet({
 
       <MemoFloatingDiceButton />
     </div>
-    </MotionProvider>
   );
 }
 

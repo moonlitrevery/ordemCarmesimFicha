@@ -19,7 +19,7 @@ import { useVttStore } from '@/lib/vtt/store';
 import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
 import { isTypingTarget } from '@/lib/vtt/ui-prefs';
-import { MotionProvider } from '@/components/ui/MotionProvider';
+import { ReducedFxContext } from '@/components/fx/useReducedFx';
 import { ActionToasts } from '@/components/fx/ActionToasts';
 import { trackAction } from '@/lib/vtt/action-toasts';
 import { CalibrationGuide } from './CalibrationGuide';
@@ -310,8 +310,9 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
 
   return (
-    // Modo leve = movimento reduzido para a UI (Motion e tokens CSS): nada disputa o canvas.
-    <MotionProvider full reduced={lightMode}>
+    // Modo leve = movimento reduzido para a UI (tokens e animações CSS, e o que é
+    // feito à mão via `useReducedFx`): nada disputa o canvas.
+    <ReducedFxContext.Provider value={lightMode}>
     <div
       className="fixed inset-0 z-50 overflow-hidden bg-ink text-parchment"
       data-motion={lightMode ? 'reduced' : undefined}
@@ -430,6 +431,6 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
         </div>
       )}
     </div>
-    </MotionProvider>
+    </ReducedFxContext.Provider>
   );
 }

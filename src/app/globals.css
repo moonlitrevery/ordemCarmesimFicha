@@ -268,6 +268,235 @@ body {
     }
   }
 
+  /*
+   * Fase 15, só CSS (a Motion não entra no primeiro carregamento da ficha nem da
+   * Mesa): pílula de salvamento, toasts de ação, rolagem no chat, turno da vez.
+   * Tudo `transform`/`opacity`, uma vez; nada em loop.
+   */
+  .fx-pop-in {
+    animation: fx-pop-in var(--dur-base) var(--ease-enter) both;
+  }
+
+  @keyframes fx-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+  }
+
+  .fx-toast-in {
+    animation: fx-toast-in var(--dur-base) var(--ease-enter) both;
+  }
+
+  .fx-toast-out {
+    animation: fx-toast-out var(--dur-fast) var(--ease-exit) forwards;
+  }
+
+  @keyframes fx-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.96);
+    }
+  }
+
+  @keyframes fx-toast-out {
+    to {
+      opacity: 0;
+      transform: translateX(-16px);
+    }
+  }
+
+  /* Rolagem: o card entra; o número recua (~120 ms) e assenta com overshoot. */
+  .roll-card-normal {
+    animation: roll-card-in var(--dur-base) var(--ease-enter) both;
+  }
+
+  .roll-card-critical {
+    animation: roll-card-critical var(--dur-slow) var(--ease-enter) both;
+  }
+
+  .roll-card-disaster {
+    animation: roll-card-disaster 320ms linear both;
+  }
+
+  .roll-num-normal {
+    animation: roll-num-normal 400ms var(--ease-enter) both;
+  }
+
+  .roll-num-critical {
+    animation: roll-num-critical 550ms var(--ease-enter) both;
+  }
+
+  .roll-num-disaster {
+    animation: roll-num-disaster 450ms var(--ease-enter) both;
+  }
+
+  .roll-flash-critical {
+    animation: roll-flash-critical 1.1s ease-out both;
+  }
+
+  .roll-flash-disaster {
+    animation: roll-flash-disaster 600ms var(--ease-exit) both;
+  }
+
+  @keyframes roll-card-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  @keyframes roll-card-critical {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(2px);
+    }
+  }
+
+  @keyframes roll-card-disaster {
+    0% {
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+      transform: translateX(-5px);
+    }
+    40% {
+      transform: translateX(4px);
+    }
+    60% {
+      transform: translateX(-3px);
+    }
+    80% {
+      transform: translateX(2px);
+    }
+  }
+
+  @keyframes roll-num-normal {
+    0% {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+    30% {
+      opacity: 1;
+      transform: scale(0.84);
+    }
+    70% {
+      transform: scale(1.06);
+    }
+  }
+
+  @keyframes roll-num-critical {
+    0% {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    22% {
+      opacity: 1;
+      transform: scale(0.72);
+    }
+    65% {
+      transform: scale(1.3);
+    }
+  }
+
+  @keyframes roll-num-disaster {
+    0% {
+      opacity: 0;
+      transform: scale(1.1);
+    }
+    27% {
+      opacity: 1;
+      transform: scale(1.18);
+    }
+    70% {
+      transform: scale(0.94);
+    }
+  }
+
+  @keyframes roll-flash-critical {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+    }
+    45% {
+      opacity: 0.15;
+    }
+    65% {
+      opacity: 0.7;
+    }
+  }
+
+  @keyframes roll-flash-disaster {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    35% {
+      opacity: 0.55;
+    }
+  }
+
+  /* Turno da vez: o rastro dá duas voltas (2,4 s) e some; a borda fica parada. */
+  .turn-laps {
+    animation: turn-laps-out var(--dur-slow) var(--ease-enter) 2.04s forwards;
+  }
+
+  .turn-spin {
+    animation: turn-spin 2.4s linear forwards;
+  }
+
+  @keyframes turn-laps-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes turn-spin {
+    from {
+      transform: translate(-50%, -50%) rotate(0deg);
+    }
+    to {
+      transform: translate(-50%, -50%) rotate(720deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fx-pop-in,
+    .fx-toast-in,
+    .roll-card-normal,
+    .roll-card-critical,
+    .roll-card-disaster,
+    .roll-num-normal,
+    .roll-num-critical,
+    .roll-num-disaster,
+    .roll-flash-critical,
+    .roll-flash-disaster {
+      animation: none;
+    }
+
+    .roll-flash-critical,
+    .roll-flash-disaster,
+    .turn-laps {
+      display: none;
+    }
+  }
+
+  [data-motion='reduced'] :is(.fx-pop-in, .fx-toast-in, .roll-card-normal, .roll-card-critical, .roll-card-disaster, .roll-num-normal, .roll-num-critical, .roll-num-disaster) {
+    animation: none;
+  }
+
+  [data-motion='reduced'] :is(.roll-flash-critical, .roll-flash-disaster, .turn-laps) {
+    display: none;
+  }
+
   @keyframes fragment-shimmer {
     from {
       transform: translateX(-30%);

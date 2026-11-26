@@ -3,53 +3,8 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { CommandPaletteHost } from '@/components/fx/CommandPaletteHost';
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-
-// No servidor não há layout para medir (e `useLayoutEffect` avisaria).
-const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
-
-/** Largura de referência do destaque: o tamanho real vem por `scaleX`. */
-const HIGHLIGHT_BASE = 100;
-
-interface HighlightBox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/**
- * Destaque do item ativo que desliza até o novo (Fase 15, item 11). Só CSS
- * (`translate` + `scaleX`, tokens de duração), sem a Motion: o menu está em toda
- * página e a Motion não entra no primeiro carregamento (decisão da mestra).
- * Antes de medir (SSR), o próprio item ativo tem o fundo.
- */
-function useSlidingHighlight(navRef: RefObject<HTMLElement>, key: string) {
-  const [box, setBox] = useState<HighlightBox | null>(null);
-  // A primeira posição entra sem deslizar (de 0 até o item).
-  const [placed, setPlaced] = useState(false);
-
-  useIsoLayoutEffect(() => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const measure = () => {
-      const el = nav.querySelector<HTMLElement>('[data-active="true"]');
-      setBox(el ? { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight } : null);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(nav);
-    return () => observer.disconnect();
-  }, [navRef, key]);
-
-  useEffect(() => {
-    if (!box || placed) return;
-    const frame = requestAnimationFrame(() => setPlaced(true));
-    return () => cancelAnimationFrame(frame);
-  }, [box, placed]);
-
-  return { box, placed };
-}
+import { useEffect, useRef, useState } from 'react';
+import { SlideFill, useSlidingBox } from '@/components/ui/sliding';
 
 export function Nav() {
   const pathname = usePathname();
@@ -101,7 +56,8 @@ export function Nav() {
   }, []);
 
   const navRef = useRef<HTMLElement>(null);
-  const { box, placed } = useSlidingHighlight(navRef, pathname + (isMestre ? ':m' : '') + (email ? ':e' : ''));
+  // Fase 15: o destaque desliza até o item novo, só CSS (a Motion não entra em toda página).
+  const { box, placed } = useSlidingBox(navRef, '[data-active="true"]', pathname + (isMestre ? ':m' : '') + (email ? ':e' : ''));
 
   // A busca rápida (Ctrl+K) vale também na Mesa, onde o menu fica escondido.
   const palette = <CommandPaletteHost enabled={isMestre} />;
@@ -137,21 +93,7 @@ export function Nav() {
           Ordem <span className="text-crimson-soft">Carmesim</span>
         </Link>
         <nav ref={navRef} className="relative flex flex-wrap items-center gap-1 sm:gap-2">
-          {box && (
-            <span
-              aria-hidden
-              className={
-                'pointer-events-none absolute left-0 top-0 rounded-md bg-crimson/25 ' +
-                (placed ? 'transition-transform duration-slow ease-enter' : '')
-              }
-              style={{
-                width: HIGHLIGHT_BASE,
-                height: box.h,
-                transformOrigin: '0 0',
-                transform: `translate(${box.x}px, ${box.y}px) scaleX(${box.w / HIGHLIGHT_BASE})`,
-              }}
-            />
-          )}
+          {box && <SlideFill box={box} placed={placed} className="rounded-md bg-crimson/25" />}
           {links.map((l) => {
             const active = pathname.startsWith(l.href);
             return (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import {
   ArrowDownWideNarrow,
   ChevronDown,
@@ -31,15 +31,7 @@ function turnTag(entry: InitiativeEntry) {
   return entry.turns > 1 ? `${entry.turn}/${entry.turns}` : null;
 }
 
-function ReadOnlyRow({
-  entry,
-  active,
-  trailKey,
-}: {
-  entry: InitiativeEntry;
-  active: boolean;
-  trailKey: string;
-}) {
+function ReadOnlyRow({ entry, active }: { entry: InitiativeEntry; active: boolean }) {
   return (
     <li
       aria-current={active ? 'true' : undefined}
@@ -48,7 +40,6 @@ function ReadOnlyRow({
         (active ? 'border-transparent text-parchment' : 'border-ink-border text-ink-muted')
       }
     >
-      {active && <TurnTrail layoutId="turn-panel" trailKey={trailKey} />}
       <span className="min-w-0 flex-1 truncate">{entry.name}</span>
       {turnTag(entry) && <span className="shrink-0 text-xs">{turnTag(entry)}</span>}
       <span className="w-8 shrink-0 text-right tabular-nums">{entry.value ?? '–'}</span>
@@ -75,7 +66,6 @@ function EditableRow({
   entry,
   index,
   active,
-  trailKey,
   dragging,
   hiddenRolls,
   onDragStart,
@@ -84,7 +74,6 @@ function EditableRow({
   entry: InitiativeEntry;
   index: number;
   active: boolean;
-  trailKey: string;
   dragging: boolean;
   hiddenRolls: boolean;
   onDragStart: () => void;
@@ -105,7 +94,6 @@ function EditableRow({
         (dragging ? 'opacity-50' : '')
       }
     >
-      {active && <TurnTrail layoutId="turn-panel" trailKey={trailKey} />}
       <div className="flex items-center gap-1">
         <input
           className="field min-w-0 flex-1 px-2 py-1 text-sm"
@@ -335,6 +323,7 @@ export function InitiativePanel() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [hiddenRolls, setHiddenRolls] = useState(false);
   const { entries, current, round } = initiative;
+  const listRef = useRef<HTMLOListElement>(null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -373,7 +362,9 @@ export function InitiativePanel() {
             : 'A mestra ainda não montou a iniciativa.'}
         </p>
       ) : (
-        <ol className="space-y-1">
+        <ol ref={listRef} className="relative space-y-1">
+          {/* Fase 15: um anel só, que desliza até quem é a vez (só CSS). */}
+          <TurnTrail containerRef={listRef} selector='[aria-current="true"]' trailKey={`${round}:${current}:${entries.length}`} />
           {entries.map((entry, index) =>
             isGm ? (
               <EditableRow
@@ -381,7 +372,6 @@ export function InitiativePanel() {
                 entry={entry}
                 index={index}
                 active={index === current}
-                trailKey={`${round}:${current}`}
                 dragging={draggingId === entry.id}
                 hiddenRolls={hiddenRolls}
                 onDragStart={() => setDraggingId(entry.id)}
@@ -397,7 +387,6 @@ export function InitiativePanel() {
                 key={entry.id}
                 entry={entry}
                 active={index === current}
-                trailKey={`${round}:${current}`}
               />
             )
           )}
