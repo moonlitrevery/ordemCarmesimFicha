@@ -90,7 +90,10 @@ export interface ArmorPiece {
 export interface InventoryItem {
   name: string;
   description: string;
+  /** Por unidade. Pode ser negativo: mochila militar (−2) aumenta o quanto se carrega. */
   weight: number;
+  /** Ausente nos itens antigos: conta como 1. */
+  qty?: number;
 }
 
 export interface Curse {
@@ -155,6 +158,8 @@ export interface Character {
   weapons: Weapon[];
   inventory: InventoryItem[];
   money?: number | string;
+  /** Sobe a cada mudança de mochila/dinheiro (trigger, migração 025). */
+  backpack_rev?: number;
   armor?: ArmorPiece[];
   curses: Curse[];
   historical_feats: HistoricalFeat[];

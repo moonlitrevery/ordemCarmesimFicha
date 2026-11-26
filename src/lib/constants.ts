@@ -225,8 +225,16 @@ export const LEVEL_MILESTONES: LevelMilestone[] = [
   },
 ];
 
-export const VALID_IMAGE_URL =
-  /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i;
+export const MAX_IMAGE_URL_LENGTH = 2048;
+
+/**
+ * Foto por link: qualquer http(s) de até 2048 caracteres. Não exige extensão (Drive,
+ * Discord e Pinterest costumam não ter); link que não for imagem cai no placeholder
+ * pelo `onError` do `<img>`.
+ */
+export function isValidImageUrl(url: string | null | undefined): url is string {
+  return !!url && url.length <= MAX_IMAGE_URL_LENGTH && /^https?:\/\/\S+$/i.test(url);
+}
 
 export const LORE_PAGES = [
   { slug: 'historia', title: 'História' },

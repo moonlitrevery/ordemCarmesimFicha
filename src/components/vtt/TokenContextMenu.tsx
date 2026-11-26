@@ -233,13 +233,14 @@ export function TokenContextMenu() {
       style={position}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {/* lucide 1.x: `FlipVertical2` é o de linha vertical (esquerda↔direita). */}
       <Item
-        icon={FlipHorizontal2}
+        icon={FlipVertical2}
         label="Espelhar na horizontal"
         onClick={run(() => sync.flipX(id))}
       />
       <Item
-        icon={FlipVertical2}
+        icon={FlipHorizontal2}
         label="Espelhar na vertical"
         onClick={run(() => sync.flipY(id))}
       />

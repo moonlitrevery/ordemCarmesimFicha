@@ -9,6 +9,7 @@ export const UI_KEYS = {
   docsTab: 'vtt:ui:docs-tab',
   mediaTab: 'vtt:ui:media-tab',
   hud: 'vtt:ui:gm-hud',
+  sheetTab: 'vtt:ui:sheet-tab',
 } as const;
 
 export function readPref<T>(key: string, parse: (raw: unknown) => T): T {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { VALID_IMAGE_URL } from '@/lib/constants';
+import { isValidImageUrl } from '@/lib/constants';
 import { fetchPickOptions, type VmPickOption, type VmSection } from '@/lib/vm/data';
 import type { createClient } from '@/lib/supabase/client';
 import { VmModal } from './VmModal';
@@ -12,7 +12,7 @@ function normalize(text: string): string {
 
 function Thumb({ url, name }: { url: string | null; name: string }) {
   const [failed, setFailed] = useState(false);
-  const valid = !!url && VALID_IMAGE_URL.test(url.split('#')[0]) && !failed;
+  const valid = isValidImageUrl(url) && !failed;
   return (
     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-ink-border bg-ink-raised font-display text-lg">
       {valid ? (

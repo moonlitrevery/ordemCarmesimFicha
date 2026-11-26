@@ -7,7 +7,7 @@ import type { Character, CharacterElementRow } from '@/types/database';
 const SHEET_COLUMNS =
   'id, name, occupation, age, pronouns, birthplace, residence, image_url, arcana, subarcana, ' +
   'attributes, hp_current, mana_current, sanity_current, skills, spells, weapons, inventory, money, ' +
-  'armor, curses, historical_feats, milestone_notes, resource_mods, notes, backstory, ' +
+  'backpack_rev, armor, curses, historical_feats, milestone_notes, resource_mods, notes, backstory, ' +
   'is_order_agent, order_rank, attribute_points_spent, skill_points_spent';
 
 export default async function FichaPage({

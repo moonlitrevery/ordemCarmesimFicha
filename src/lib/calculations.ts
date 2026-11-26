@@ -244,8 +244,18 @@ export function getCarryLimit(attributes: Attributes): number {
   return attributes.FOR / 2;
 }
 
-export function getInventoryWeight(items: { weight: number }[]): number {
-  return items.reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
+export function itemQty(item: { qty?: number }): number {
+  const qty = Math.trunc(Number(item.qty));
+  return Number.isFinite(qty) && qty >= 1 ? qty : 1;
+}
+
+/** Carga: peso por unidade × quantidade. Item de peso negativo desconta; nunca abaixo de 0. */
+export function getInventoryWeight(items: { weight: number; qty?: number }[]): number {
+  const total = items.reduce(
+    (sum, item) => sum + (Number(item.weight) || 0) * itemQty(item),
+    0
+  );
+  return Math.max(0, Math.round(total * 100) / 100);
 }
 
 export function getApplicableMilestones(

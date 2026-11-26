@@ -18,18 +18,23 @@ import {
 } from '@/lib/calculations';
 import {
   DEFAULT_SKILLS,
+  MAX_IMAGE_URL_LENGTH,
   ORDER_RANKS,
-  VALID_IMAGE_URL,
+  isValidImageUrl,
 } from '@/lib/constants';
 import {
   backpackToSave,
   mergeRemoteBackpack,
   mergeRemoteResources,
+  nextBackpackRev,
   normalizeBackpack,
   resourcesToSave,
   type BackpackValues,
   type ResourceValues,
+  type ServerBackpack,
 } from '@/lib/resource-sync';
+import { callMoneyRpc, fetchBackpack, updateCharacterRow } from '@/lib/character-save';
+import type { MoneyLogEntry } from '@/components/money/MoneyControl';
 import { FloatingDiceButton } from '@/components/dice/FloatingDiceButton';
 import { QuickRollButton } from '@/components/dice/DiceRoller';
 import { CursesSection } from '@/components/character/CursesSection';
@@ -220,11 +225,17 @@ export function CharacterSheet({
 
   // Mesma coisa para a mochila, que a Ficha Rápida também edita.
   const lastSavedBackpackRef = useRef<BackpackValues>(normalizeBackpack(character));
+  // Versão da mochila que este save conhece (migração 025): grava só se ainda for ela.
+  const backpackRevRef = useRef(character.backpack_rev ?? 0);
+  const [backpackNotice, setBackpackNotice] = useState<string | null>(null);
+  // Mochila/dinheiro que vieram do banco (RPC ou releitura): viram o local e o salvo.
+  // Preenchida mais abaixo, depois de `remoteMergeRef` existir.
+  const applyServerBackpackRef = useRef<(server: ServerBackpack) => void>(() => {});
 
   // Elementos já no banco: sem mudança aqui, o save nem toca em character_elements.
   const lastSavedElementsRef = useRef(initialElements);
 
-  const persistCharacter = useCallback(
+  const persistCharacterNow = useCallback(
     async (next: SheetState, nextElements: CharacterElementRow[]) => {
       const supabase = await loadSupabase();
       const baseMaxes = computeDerivedMaxes(
@@ -241,7 +252,7 @@ export function CharacterSheet({
         localResources(next, nextElements),
         lastSavedResourcesRef.current
       );
-      const changedBackpack = backpackToSave(
+      let changedBackpack = backpackToSave(
         { inventory: next.inventory, money: next.money },
         lastSavedBackpackRef.current
       );
@@ -252,10 +263,8 @@ export function CharacterSheet({
         pronouns: next.pronouns || null,
         birthplace: next.birthplace || null,
         residence: next.residence || null,
-        image_url:
-          next.image_url && VALID_IMAGE_URL.test(next.image_url.split('#')[0])
-            ? next.image_url
-            : next.image_url || null,
+        // Grava o que foi digitado (rascunho incluso); a foto só aparece se for http(s).
+        image_url: next.image_url ? next.image_url.slice(0, MAX_IMAGE_URL_LENGTH) : null,
         arcana: next.arcana || null,
         subarcana: next.subarcana || null,
         attributes: next.attributes,
@@ -280,11 +289,30 @@ export function CharacterSheet({
         skill_points_spent: normalizeSkillUpgradeSpent(next.skill_points_spent),
       };
 
-      const { error } = await supabase
-        .from('characters')
-        .update(payload)
-        .eq('id', character.id);
-      if (error) throw error;
+      const backpackChanged = Object.keys(changedBackpack).length > 0;
+      let result = await updateCharacterRow(
+        supabase,
+        character.id,
+        payload,
+        backpackChanged ? backpackRevRef.current : null
+      );
+      if (result.status === 'conflict') {
+        // Mochila mudou no banco depois da última leitura (party, Ficha Rápida, outra
+        // aba): não regrava a velha. Relê, e salva o resto sem ela.
+        const server = await fetchBackpack(supabase, character.id);
+        if (!server) throw new Error('Falha ao reler a mochila');
+        applyServerBackpackRef.current(server);
+        setBackpackNotice(
+          'A mochila mudou em outro lugar enquanto você editava. Recarreguei; confira a última mudança.'
+        );
+        const rest: Record<string, unknown> = { ...payload };
+        delete rest.inventory;
+        delete rest.money;
+        changedBackpack = {};
+        result = await updateCharacterRow(supabase, character.id, rest, null);
+      }
+      if (result.status !== 'ok') throw new Error('Falha ao salvar a ficha');
+      if (result.rev !== null) backpackRevRef.current = result.rev;
       lastSavedResourcesRef.current = {
         ...lastSavedResourcesRef.current,
         ...changedResources,
@@ -331,6 +359,20 @@ export function CharacterSheet({
     [character.id]
   );
 
+  // Um save de cada vez: dois em paralelo usariam a mesma versão da mochila e o
+  // segundo daria conflito à toa. Na fila, o segundo já vê o que o primeiro gravou.
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const persistCharacter = useCallback(
+    (next: SheetState, nextElements: CharacterElementRow[]) => {
+      const run = saveQueueRef.current
+        .catch(() => undefined)
+        .then(() => persistCharacterNow(next, nextElements));
+      saveQueueRef.current = run;
+      return run;
+    },
+    [persistCharacterNow]
+  );
+
   const sheetRef = useRef(sheet);
   const elementsRef = useRef(elements);
   sheetRef.current = sheet;
@@ -341,6 +383,52 @@ export function CharacterSheet({
   const remoteMergeRef = useRef(false);
   const savePendingRef = useRef(false);
 
+  applyServerBackpackRef.current = (server: ServerBackpack) => {
+    lastSavedBackpackRef.current = server.backpack;
+    backpackRevRef.current = server.rev;
+    remoteMergeRef.current = true;
+    setSheet((s) => ({ ...s, ...server.backpack }));
+  };
+
+  /** Gastar/Receber (e `+50`/`-30` no campo): grava o pendente, chama a RPC, aplica o retorno. */
+  const moveMoney = useCallback(
+    async (delta: number, reason: string | null) => {
+      const supabase = await loadSupabase();
+      try {
+        // A RPC parte do valor do banco: o que estiver só aqui vai antes.
+        await persistCharacter(sheetRef.current, elementsRef.current);
+      } catch {
+        setBackpackNotice('Não foi possível salvar a ficha antes de movimentar.');
+        return false;
+      }
+      const result = await callMoneyRpc(supabase, 'move_character_money', {
+        p_character: character.id,
+        p_delta: delta,
+        p_reason: reason,
+      });
+      if (!result.ok) {
+        setBackpackNotice(result.message);
+        return false;
+      }
+      if (result.backpack) applyServerBackpackRef.current(result.backpack);
+      setBackpackNotice(null);
+      return true;
+    },
+    [character.id, persistCharacter]
+  );
+
+  const loadMoneyHistory = useCallback(async (): Promise<MoneyLogEntry[] | null> => {
+    const supabase = await loadSupabase();
+    const { data, error } = await supabase
+      .from('character_money_log')
+      .select('id, created_at, delta, reason, author_name')
+      .eq('character_id', character.id)
+      .order('id', { ascending: false })
+      .limit(20);
+    if (error) return null;
+    return (data ?? []).map((row) => ({ ...row, delta: Number(row.delta) }) as MoneyLogEntry);
+  }, [character.id]);
+
   useEffect(() => {
     let cancelled = false;
     let cleanup: (() => void) | undefined;
@@ -348,7 +436,7 @@ export function CharacterSheet({
       if (cancelled) return;
       const channel = supabase
         .channel(`character:${character.id}:${crypto.randomUUID()}`)
-        .on<ResourceValues & Pick<Character, 'inventory' | 'money'>>(
+        .on<ResourceValues & Pick<Character, 'inventory' | 'money' | 'backpack_rev'>>(
           'postgres_changes',
           {
             event: 'UPDATE',
@@ -366,13 +454,22 @@ export function CharacterSheet({
                 sanity_current: row.sanity_current,
               }
             );
-            const mergedBackpack = mergeRemoteBackpack(
-              {
-                inventory: sheetRef.current.inventory,
-                money: sheetRef.current.money,
-              },
+            const localPack = {
+              inventory: sheetRef.current.inventory,
+              money: sheetRef.current.money,
+            };
+            const remotePack = normalizeBackpack(row);
+            backpackRevRef.current = nextBackpackRev(
+              localPack,
               lastSavedBackpackRef.current,
-              normalizeBackpack(row)
+              remotePack,
+              backpackRevRef.current,
+              row.backpack_rev ?? backpackRevRef.current
+            );
+            const mergedBackpack = mergeRemoteBackpack(
+              localPack,
+              lastSavedBackpackRef.current,
+              remotePack
             );
             lastSavedResourcesRef.current = merged.lastSaved;
             lastSavedBackpackRef.current = mergedBackpack.lastSaved;
@@ -594,14 +691,23 @@ export function CharacterSheet({
               id: "inventario",
               label: "Inventário",
               content: (
-                <MemoInventorySection
-                  inventory={sheet.inventory}
-                  weight={weight}
-                  limit={limit}
-                  money={sheet.money}
-                  onMoneyChange={handlers.money}
-                  onChange={handlers.inventory}
-                />
+                <div className="space-y-2">
+                  {backpackNotice && (
+                    <p role="status" className="rounded-md border border-crimson/40 px-3 py-2 text-sm text-crimson-soft">
+                      {backpackNotice}
+                    </p>
+                  )}
+                  <MemoInventorySection
+                    inventory={sheet.inventory}
+                    weight={weight}
+                    limit={limit}
+                    money={sheet.money}
+                    onMoneyChange={handlers.money}
+                    onMoneyDelta={moveMoney}
+                    loadMoneyHistory={loadMoneyHistory}
+                    onChange={handlers.inventory}
+                  />
+                </div>
               ),
             },
             {
@@ -684,7 +790,7 @@ const HeaderSection = memo(function HeaderSection({
   isOrderAgent: boolean;
   patch: PatchSheet;
 }) {
-  const imageValid = !imageUrl || VALID_IMAGE_URL.test(imageUrl.split('#')[0]);
+  const imageValid = !imageUrl || isValidImageUrl(imageUrl);
 
   return (
     <SectionCard title="Cabeçalho">
@@ -700,12 +806,14 @@ const HeaderSection = memo(function HeaderSection({
             <input
               className="field"
               value={imageUrl}
-              onChange={(e) => patch({ image_url: e.target.value })}
+              maxLength={MAX_IMAGE_URL_LENGTH}
+              inputMode="url"
+              onChange={(e) => patch({ image_url: e.target.value.trim() })}
               placeholder="https://…/retrato.png"
             />
             {!imageValid && (
               <span className="text-xs text-crimson-soft">
-                URL deve terminar em .png, .jpg, .jpeg, .gif, .webp ou .avif
+                A URL precisa começar com http:// ou https://
               </span>
             )}
           </label>

@@ -1324,3 +1324,204 @@ describe('névoa (migração 024)', () => {
     expect(await asUser(PLAYER, update, [JSON.stringify(FOG), defaultScene])).toEqual([]);
   });
 });
+
+describe('dinheiro e party (migração 025)', () => {
+  let pc: string;
+  const inventoryOf = async () =>
+    (
+      await db.query<{
+        inventory: { name: string; qty?: number; weight: number }[];
+        backpack_rev: number;
+        money: string;
+      }>(`select inventory, backpack_rev, money from public.characters where id = $1`, [pc])
+    ).rows[0];
+
+  beforeAll(async () => {
+    pc = (
+      await db.query<{ id: string }>(
+        `insert into public.characters (owner_id, name, money, inventory)
+         values ($1, 'Raul', 100, '[{"name":"Corda","description":"","weight":1,"qty":3},{"name":"Mochila militar","description":"","weight":-2}]')
+         returning id`,
+        [PLAYER]
+      )
+    ).rows[0].id;
+  });
+
+  it('backpack_rev sobe com mochila/dinheiro, e não com HP nem com valor mandado pelo cliente', async () => {
+    const before = (await inventoryOf()).backpack_rev;
+    await asUser(PLAYER, `update public.characters set hp_current = 3, backpack_rev = 999 where id = $1`, [pc]);
+    expect((await inventoryOf()).backpack_rev).toBe(before);
+    await asUser(PLAYER, `update public.characters set money = 100 where id = $1`, [pc]);
+    expect((await inventoryOf()).backpack_rev).toBe(before);
+    await asUser(PLAYER, `update public.characters set money = 101 where id = $1`, [pc]);
+    expect((await inventoryOf()).backpack_rev).toBe(before + 1);
+    await asUser(PLAYER, `update public.characters set money = 100 where id = $1`, [pc]);
+  });
+
+  it('save com versão velha depois de uma RPC não pega linha (não regrava o valor antigo)', async () => {
+    const { backpack_rev: seen } = await inventoryOf();
+    await asUser(PLAYER, `select public.move_character_money($1, 10, 'achado')`, [pc]);
+    const stale = await asUser(
+      PLAYER,
+      `update public.characters set money = 100 where id = $1 and backpack_rev = $2 returning backpack_rev`,
+      [pc, seen]
+    );
+    expect(stale).toEqual([]);
+    expect(Number((await inventoryOf()).money)).toBe(110);
+    const fresh = await asUser<{ backpack_rev: number }>(
+      PLAYER,
+      `update public.characters set money = 105 where id = $1 and backpack_rev = $2 returning backpack_rev`,
+      [pc, seen + 1]
+    );
+    expect(fresh).toEqual([{ backpack_rev: seen + 2 }]);
+  });
+
+  it('move_character_money: gastar além do saldo falha, histórico guarda só 20', async () => {
+    await expect(
+      asUser(PLAYER, `select public.move_character_money($1, -1000, null)`, [pc])
+    ).rejects.toThrow('saldo_insuficiente');
+    await expect(
+      asUser(OUTSIDER, `select public.move_character_money($1, 5, null)`, [pc])
+    ).rejects.toThrow('sem_permissao');
+    for (let i = 0; i < 22; i++) {
+      await asUser(PLAYER, `select public.move_character_money($1, 1, null)`, [pc]);
+    }
+    await asUser(PLAYER, `select public.move_character_money($1, -27, 'munição')`, [pc]);
+    expect(Number((await inventoryOf()).money)).toBe(100);
+    const log = await asUser<{ reason: string | null }>(
+      PLAYER,
+      `select reason from public.character_money_log where character_id = $1 order by id desc`,
+      [pc]
+    );
+    expect(log).toHaveLength(20);
+    expect(log[0].reason).toBe('munição');
+    // A mestra vê o histórico de qualquer ficha; quem não é dono nem mestra, não.
+    expect(
+      await asUser(GM, `select id from public.character_money_log where character_id = $1`, [pc])
+    ).toHaveLength(20);
+    expect(
+      await asUser(OUTSIDER, `select id from public.character_money_log where character_id = $1`, [pc])
+    ).toEqual([]);
+    await expect(
+      asUser(
+        PLAYER,
+        `insert into public.character_money_log (character_id, delta, balance) values ($1, 1, 1)`,
+        [pc]
+      )
+    ).rejects.toThrow();
+  });
+
+  it('itens da party: membro vê, jogador e mestra mexem, espectador só lê, de fora não vê', async () => {
+    const [item] = await asUser<{ id: string; added_by: string; name: string }>(
+      PLAYER,
+      `insert into public.party_items (table_id, name, qty, weight, note)
+       values ($1, '  Lanterna ', 2, -1.5, 'pilha fraca') returning id, added_by, name`,
+      [openTable]
+    );
+    expect(item).toMatchObject({ added_by: PLAYER, name: 'Lanterna' });
+    const read = `select id from public.party_items where table_id = $1`;
+    expect(await asUser(SPECTATOR, read, [openTable])).toHaveLength(1);
+    expect(await asUser(GM, read, [openTable])).toHaveLength(1);
+    expect(await asUser(OUTSIDER, read, [openTable])).toEqual([]);
+    const insertX = `insert into public.party_items (table_id, name) values ($1, 'x') returning id`;
+    await expect(asUser(SPECTATOR, insertX, [openTable])).rejects.toThrow();
+    await expect(asUser(OUTSIDER, insertX, [openTable])).rejects.toThrow();
+    await expect(
+      asUser(
+        PLAYER,
+        `insert into public.party_items (table_id, name, added_by) values ($1, 'x', $2) returning id`,
+        [openTable, GM]
+      )
+    ).rejects.toThrow();
+    const setQty = `update public.party_items set qty = $2 where id = $1 returning qty`;
+    expect(await asUser(GM, setQty, [item.id, 5])).toEqual([{ qty: 5 }]);
+    expect(await asUser(SPECTATOR, setQty, [item.id, 1])).toEqual([]);
+    const del = `delete from public.party_items where id = $1 returning id`;
+    expect(await asUser(OUTSIDER, del, [item.id])).toEqual([]);
+    expect(await asUser(PLAYER, del, [item.id])).toHaveLength(1);
+  });
+
+  it('mandar pra party e pegar de volta, com quantidade parcial', async () => {
+    const send = `select public.party_send_item($1, $2, $3, $4, $5)`;
+    await expect(asUser(PLAYER, send, [openTable, pc, 0, 'Outro nome', 1])).rejects.toThrow('item_mudou');
+    await expect(asUser(PLAYER, send, [openTable, pc, 0, 'Corda', 4])).rejects.toThrow('quantidade_invalida');
+    await expect(asUser(OUTSIDER, send, [openTable, pc, 0, 'Corda', 1])).rejects.toThrow('sem_permissao');
+
+    const revBefore = (await inventoryOf()).backpack_rev;
+    await asUser(PLAYER, send, [openTable, pc, 0, 'Corda', 2]);
+    let state = await inventoryOf();
+    expect(state.inventory[0]).toMatchObject({ name: 'Corda', qty: 1 });
+    expect(state.backpack_rev).toBe(revBefore + 1);
+    const [party] = await asUser<{ id: string; qty: number; weight: string }>(
+      SPECTATOR,
+      `select id, qty, weight from public.party_items where table_id = $1 and name = 'Corda'`,
+      [openTable]
+    );
+    expect(party.qty).toBe(2);
+    expect(Number(party.weight)).toBe(1);
+
+    // Mandar o último junta na mesma linha da party.
+    await asUser(PLAYER, send, [openTable, pc, 0, 'Corda', 1]);
+    state = await inventoryOf();
+    expect(state.inventory.map((i) => i.name)).toEqual(['Mochila militar']);
+    const qtyOf = `select qty from public.party_items where id = $1`;
+    expect(await asUser(PLAYER, qtyOf, [party.id])).toEqual([{ qty: 3 }]);
+
+    const take = `select public.party_take_item($1, $2, $3)`;
+    await expect(asUser(PLAYER, take, [party.id, pc, 4])).rejects.toThrow('quantidade_invalida');
+    await asUser(PLAYER, take, [party.id, pc, 1]);
+    await asUser(PLAYER, take, [party.id, pc, 1]);
+    state = await inventoryOf();
+    expect(state.inventory[1]).toMatchObject({ name: 'Corda', qty: 2 });
+    expect(await asUser(PLAYER, qtyOf, [party.id])).toEqual([{ qty: 1 }]);
+    await asUser(PLAYER, take, [party.id, pc, 1]);
+    expect(await asUser(PLAYER, qtyOf, [party.id])).toEqual([]);
+    expect((await inventoryOf()).inventory[1]).toMatchObject({ name: 'Corda', qty: 3 });
+  });
+
+  it('caixa: receber, gastar, depositar e sacar', async () => {
+    const move = `select public.party_cash_move($1, $2, $3, $4)`;
+    await asUser(PLAYER, move, [openTable, 50, 'recompensa', null]);
+    await expect(asUser(PLAYER, move, [openTable, -80, null, null])).rejects.toThrow('caixa_insuficiente');
+    await asUser(PLAYER, move, [openTable, 40, null, pc]);
+    expect(Number((await inventoryOf()).money)).toBe(60);
+    await expect(asUser(PLAYER, move, [openTable, 61, null, pc])).rejects.toThrow('saldo_insuficiente');
+    await asUser(PLAYER, move, [openTable, -30, null, pc]);
+    expect(Number((await inventoryOf()).money)).toBe(90);
+    const cashOf = `select money from public.party_cash where table_id = $1`;
+    const [cash] = await asUser<{ money: string }>(SPECTATOR, cashOf, [openTable]);
+    expect(Number(cash.money)).toBe(60);
+    const log = await asUser<{ delta: string; character_name: string | null }>(
+      GM,
+      `select delta, character_name from public.party_money_log where table_id = $1 order by id desc`,
+      [openTable]
+    );
+    expect(log.map((l) => [Number(l.delta), l.character_name])).toEqual([
+      [-30, 'Raul'],
+      [40, 'Raul'],
+      [50, null],
+    ]);
+    expect(await asUser(OUTSIDER, cashOf, [openTable])).toEqual([]);
+    expect(
+      await asUser(OUTSIDER, `select id from public.party_money_log where table_id = $1`, [openTable])
+    ).toEqual([]);
+    await expect(asUser(SPECTATOR, move, [openTable, 5, null, null])).rejects.toThrow('sem_permissao');
+    await expect(
+      asUser(PLAYER, `update public.party_cash set money = 1000 where table_id = $1`, [openTable])
+    ).rejects.toThrow();
+  });
+
+  it('URL da foto: 500+ caracteres grava, mais de 2048 não', async () => {
+    const setUrl = `update public.characters set image_url = $2 where id = $1 returning id`;
+    const long = 'https://cdn.example.com/' + 'a'.repeat(480) + '.png';
+    expect(await asUser(PLAYER, setUrl, [pc, long])).toHaveLength(1);
+    await expect(asUser(PLAYER, setUrl, [pc, 'https://x/' + 'a'.repeat(2100)])).rejects.toThrow();
+  });
+
+  it('a migração roda de novo sobre o schema pronto', async () => {
+    await db.exec(readSql('migrations', '025_party_and_money.sql'));
+    expect(
+      await asUser(OUTSIDER, `select id from public.party_items where table_id = $1`, [openTable])
+    ).toEqual([]);
+  });
+});

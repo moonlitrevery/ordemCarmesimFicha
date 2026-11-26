@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { VALID_IMAGE_URL } from '@/lib/constants';
+import { isValidImageUrl } from '@/lib/constants';
 
 export function CharacterImage({
   url,
@@ -16,7 +16,7 @@ export function CharacterImage({
   lazy?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-  const valid = !!url && VALID_IMAGE_URL.test(url.split('#')[0]);
+  const valid = isValidImageUrl(url);
 
   if (!valid || failed) {
     return (

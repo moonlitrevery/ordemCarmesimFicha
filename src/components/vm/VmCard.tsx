@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { memo, useState, type ReactNode } from 'react';
 import { ElementSymbol } from '@/components/elements/ElementSymbol';
-import { ELEMENT_COLORS, ELEMENT_LABELS, VALID_IMAGE_URL } from '@/lib/constants';
+import { ELEMENT_COLORS, ELEMENT_LABELS, isValidImageUrl } from '@/lib/constants';
 import { characterMaxes, elementTags, resourceTone, type ResourceTone } from '@/lib/vm/card';
 import type { VmCharacter, VmNpc } from '@/lib/vm/data';
 import type { Attributes } from '@/types/database';
@@ -32,7 +32,7 @@ const TONE_COLOR: Record<Exclude<ResourceTone, 'normal'>, string> = {
 
 function Avatar({ url, name }: { url: string | null; name: string }) {
   const [failed, setFailed] = useState(false);
-  const valid = !!url && VALID_IMAGE_URL.test(url.split('#')[0]) && !failed;
+  const valid = isValidImageUrl(url) && !failed;
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   return (
     <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-crimson/50 bg-ink-raised">

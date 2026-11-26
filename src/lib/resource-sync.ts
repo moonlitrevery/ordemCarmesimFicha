@@ -1,3 +1,4 @@
+import { itemQty } from '@/lib/calculations';
 import type { InventoryItem } from '@/types/database';
 
 export const RESOURCE_KEYS = ['hp_current', 'mana_current', 'sanity_current'] as const;
@@ -66,7 +67,8 @@ function sameInventory(a: InventoryItem[], b: InventoryItem[]): boolean {
       (item, index) =>
         item.name === b[index].name &&
         item.description === b[index].description &&
-        Number(item.weight) === Number(b[index].weight)
+        Number(item.weight) === Number(b[index].weight) &&
+        itemQty(item) === itemQty(b[index])
     )
   );
 }
@@ -106,4 +108,43 @@ export function mergeRemoteBackpack(
     }
   }
   return { local: nextLocal, lastSaved: nextSaved, changed };
+}
+
+// ---------- Versão da mochila (migração 025) ----------
+
+/**
+ * Versão a usar no próximo save depois de um evento remoto. O save só grava a
+ * mochila com `.eq('backpack_rev', versão)`. Sem mudança local pendente, adota a
+ * remota. Com mudança local, só adota se o remoto não mexeu justo no campo que está
+ * sendo editado; senão fica com a velha, o save não pega linha e o cliente relê,
+ * em vez de regravar por cima (item enviado pra party voltando, dinheiro voltando).
+ */
+export function nextBackpackRev(
+  local: BackpackValues,
+  lastSaved: BackpackValues,
+  remote: BackpackValues,
+  knownRev: number,
+  remoteRev: number
+): number {
+  const inventoryPending = !sameInventory(local.inventory, lastSaved.inventory);
+  const moneyPending = local.money !== lastSaved.money;
+  const remoteTouchedInventory = !sameInventory(remote.inventory, lastSaved.inventory);
+  const remoteTouchedMoney = remote.money !== lastSaved.money;
+  if ((inventoryPending && remoteTouchedInventory) || (moneyPending && remoteTouchedMoney)) {
+    return knownRev;
+  }
+  return remoteRev;
+}
+
+export interface ServerBackpack {
+  backpack: BackpackValues;
+  rev: number;
+}
+
+/** Retorno das RPCs de dinheiro/party, ou a linha relida depois de um conflito. */
+export function serverBackpack(row: unknown): ServerBackpack | null {
+  if (!row || typeof row !== 'object') return null;
+  const data = row as { inventory?: InventoryItem[] | null; money?: number | string | null; backpack_rev?: unknown };
+  if (data.money === null || data.money === undefined || typeof data.backpack_rev !== 'number') return null;
+  return { backpack: normalizeBackpack(data), rev: data.backpack_rev };
 }

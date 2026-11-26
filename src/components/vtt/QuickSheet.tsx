@@ -13,12 +13,23 @@ import {
   backpackToSave,
   mergeRemoteBackpack,
   mergeRemoteResources,
+  nextBackpackRev,
   normalizeBackpack,
   resourcesToSave,
   type BackpackValues,
   type ResourceKey,
   type ResourceValues,
+  type ServerBackpack,
 } from '@/lib/resource-sync';
+import {
+  callMoneyRpc,
+  fetchBackpack,
+  updateCharacterRow,
+  type MoneyRpc,
+  type RpcResult,
+} from '@/lib/character-save';
+import type { MoneyLogEntry } from '@/components/money/MoneyControl';
+import { oneOf, UI_KEYS, usePref } from '@/lib/vtt/ui-prefs';
 import type { ChatRoll } from '@/lib/vtt/chat-rules';
 import {
   attributeBonus,
@@ -40,7 +51,12 @@ import {
   type ResourceMods,
   type Skill,
 } from '@/types/database';
-import { QuickBackpack } from './QuickBackpack';
+import { PartyPanel } from './PartyPanel';
+import { QuickBackpack, type BackpackPartyActions } from './QuickBackpack';
+import { SubTabs } from './SubTabs';
+
+const SHEET_TABS = ['mine', 'party'] as const;
+const parseSheetTab = oneOf(SHEET_TABS);
 
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -61,11 +77,20 @@ interface QuickCharacter extends ResourceValues {
   resource_mods: ResourceMods;
   inventory: InventoryItem[] | null;
   money: number | string | null;
+  backpack_rev?: number;
   character_elements: CharacterElementRow[];
 }
 
+interface SaveSnapshot {
+  local: ResourceValues;
+  saved: ResourceValues;
+  localBackpack: BackpackValues;
+  savedBackpack: BackpackValues;
+  rev: number;
+}
+
 const CHARACTER_COLUMNS =
-  'id, name, attributes, skills, resource_mods, hp_current, mana_current, sanity_current, inventory, money, character_elements(element, level)';
+  'id, name, attributes, skills, resource_mods, hp_current, mana_current, sanity_current, inventory, money, backpack_rev, character_elements(element, level)';
 
 /** Elementos da ficha na ordem padrão (os que ela tem, mesmo nível 0). */
 function elementsOf(character: QuickCharacter): CharacterElementRow[] {
@@ -215,6 +240,14 @@ export function QuickSheet() {
   const activeIdRef = useRef<string | null>(null);
   const backpackRef = useRef<BackpackValues | null>(null);
   const lastSavedBackpackRef = useRef<BackpackValues | null>(null);
+  // Versão da mochila que o próximo save conhece (migração 025).
+  const backpackRevRef = useRef(0);
+  // Um save de cada vez, na ordem: dois juntos usariam a mesma versão e o segundo
+  // daria conflito à toa.
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const [busy, setBusy] = useState(false);
+  const [sheetTab, setSheetTab] = usePref(UI_KEYS.sheetTab, parseSheetTab);
+  const table = useVttStore((s) => s.table);
   resourcesRef.current = resources;
   backpackRef.current = backpack;
 
@@ -249,34 +282,105 @@ export function QuickSheet() {
     };
   }, [isGm, userId]);
 
-  const flush = useCallback((id: string) => {
-    clearTimeout(timerRef.current);
-    timerRef.current = undefined;
+  /** Mochila/dinheiro que vieram do banco (RPC ou releitura): viram o local e o salvo. */
+  const applyServerBackpack = useCallback((id: string, server: ServerBackpack) => {
+    if (activeIdRef.current !== id) return;
+    lastSavedBackpackRef.current = server.backpack;
+    backpackRevRef.current = server.rev;
+    backpackRef.current = server.backpack;
+    setBackpack(server.backpack);
+  }, []);
+
+  const snapshot = useCallback((): SaveSnapshot | null => {
     const local = resourcesRef.current;
     const saved = lastSavedRef.current;
     const localBackpack = backpackRef.current;
     const savedBackpack = lastSavedBackpackRef.current;
-    if (!local || !saved || !localBackpack || !savedBackpack) return;
-    const changed = resourcesToSave(local, saved);
-    const changedBackpack = backpackToSave(localBackpack, savedBackpack);
-    if (Object.keys(changed).length + Object.keys(changedBackpack).length === 0) return;
-    // Só estas colunas: o resto da ficha pode estar aberto em outra aba.
-    void createClient()
-      .from('characters')
-      .update({ ...changed, ...changedBackpack })
-      .eq('id', id)
-      .then(({ error: err }) => {
-        if (err) {
-          useVttStore.getState().showToast('Não foi possível salvar a ficha.');
-          return;
-        }
-        // Resposta de uma ficha que já saiu da tela não vale para a atual.
-        if (activeIdRef.current === id && lastSavedRef.current && lastSavedBackpackRef.current) {
-          lastSavedRef.current = { ...lastSavedRef.current, ...changed };
-          lastSavedBackpackRef.current = { ...lastSavedBackpackRef.current, ...changedBackpack };
-        }
-      });
+    if (!local || !saved || !localBackpack || !savedBackpack) return null;
+    return { local, saved, localBackpack, savedBackpack, rev: backpackRevRef.current };
   }, []);
+
+  const send = useCallback(
+    async (id: string, snap: SaveSnapshot | null) => {
+      if (!snap) return;
+      const changed = resourcesToSave(snap.local, snap.saved);
+      let changedBackpack = backpackToSave(snap.localBackpack, snap.savedBackpack);
+      const hasBackpack = Object.keys(changedBackpack).length > 0;
+      if (Object.keys(changed).length === 0 && !hasBackpack) return;
+      const supabase = createClient();
+      // Só estas colunas: o resto da ficha pode estar aberto em outra aba.
+      let result = await updateCharacterRow(
+        supabase,
+        id,
+        { ...changed, ...changedBackpack },
+        hasBackpack ? snap.rev : null
+      );
+      if (result.status === 'conflict') {
+        // A mochila mudou no banco depois da última leitura (party, outra aba): não
+        // regrava a velha por cima. Relê, e salva só os recursos.
+        const server = await fetchBackpack(supabase, id);
+        if (server && activeIdRef.current === id) {
+          applyServerBackpack(id, server);
+          useVttStore
+            .getState()
+            .showToast('A mochila mudou em outro lugar. Recarreguei; confira a última mudança.');
+        }
+        changedBackpack = {};
+        result =
+          Object.keys(changed).length > 0
+            ? await updateCharacterRow(supabase, id, changed, null)
+            : { status: 'ok', rev: null };
+      }
+      if (result.status !== 'ok') {
+        useVttStore.getState().showToast('Não foi possível salvar a ficha.');
+        return;
+      }
+      // Resposta de uma ficha que já saiu da tela não vale para a atual.
+      if (activeIdRef.current === id && lastSavedRef.current && lastSavedBackpackRef.current) {
+        lastSavedRef.current = { ...lastSavedRef.current, ...changed };
+        lastSavedBackpackRef.current = { ...lastSavedBackpackRef.current, ...changedBackpack };
+        if (result.rev !== null) backpackRevRef.current = result.rev;
+      }
+    },
+    [applyServerBackpack]
+  );
+
+  const flush = useCallback(
+    (id: string): Promise<void> => {
+      clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+      // Se a ficha sair da tela antes da fila chegar aqui, vale o que ela tinha agora.
+      const leaving = snapshot();
+      const run = saveQueueRef.current
+        .catch(() => undefined)
+        .then(() => send(id, activeIdRef.current === id ? snapshot() : leaving));
+      saveQueueRef.current = run;
+      return run;
+    },
+    [send, snapshot]
+  );
+
+  /**
+   * RPC que mexe na mochila/dinheiro (Gastar/Receber, party): grava o pendente antes
+   * (a RPC parte do banco) e aplica o retorno como valor salvo, pra o próximo save
+   * não regravar o valor velho.
+   */
+  const runBackpackRpc = useCallback(
+    async (fn: MoneyRpc, args: Record<string, unknown>): Promise<RpcResult> => {
+      const id = activeIdRef.current;
+      if (!id) return { ok: false, message: 'Escolha uma ficha primeiro.' };
+      setBusy(true);
+      try {
+        await flush(id);
+        const result = await callMoneyRpc(createClient(), fn, args);
+        if (result.ok && result.backpack) applyServerBackpack(id, result.backpack);
+        return result;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [flush, applyServerBackpack]
+  );
 
   const loaded = Boolean(characters);
 
@@ -292,9 +396,10 @@ export function QuickSheet() {
     setBackpack(initialBackpack);
     backpackRef.current = initialBackpack;
     lastSavedBackpackRef.current = initialBackpack;
+    backpackRevRef.current = row.backpack_rev ?? 0;
     activeIdRef.current = selectedId;
 
-    const applyRemote = (remote: ResourceValues, remotePack: BackpackValues) => {
+    const applyRemote = (remote: ResourceValues, remotePack: BackpackValues, remoteRev?: number) => {
       const local = resourcesRef.current;
       const saved = lastSavedRef.current;
       const localPack = backpackRef.current;
@@ -307,6 +412,13 @@ export function QuickSheet() {
         resourcesRef.current = merged.local;
         setResources(merged.local);
       }
+      backpackRevRef.current = nextBackpackRev(
+        localPack,
+        savedPack,
+        remotePack,
+        backpackRevRef.current,
+        remoteRev ?? backpackRevRef.current
+      );
       const mergedPack = mergeRemoteBackpack(localPack, savedPack, remotePack);
       lastSavedBackpackRef.current = mergedPack.lastSaved;
       if (mergedPack.changed) {
@@ -327,7 +439,7 @@ export function QuickSheet() {
           filter: `id=eq.${selectedId}`,
         },
         ({ new: next }) => {
-          applyRemote(resourcesOf(next), normalizeBackpack(next));
+          applyRemote(resourcesOf(next), normalizeBackpack(next), next.backpack_rev);
           // A ficha pode ter mudado atributos e perícias em outra aba.
           setCharacters((list) =>
             (list ?? []).map((c) =>
@@ -349,20 +461,20 @@ export function QuickSheet() {
         if (status !== 'SUBSCRIBED') return;
         void supabase
           .from('characters')
-          .select('hp_current, mana_current, sanity_current, inventory, money')
+          .select('hp_current, mana_current, sanity_current, inventory, money, backpack_rev')
           .eq('id', selectedId)
           .maybeSingle()
           .then(({ data }) => {
             if (data) {
               const fresh = data as ResourceValues &
-                Pick<QuickCharacter, 'inventory' | 'money'>;
-              applyRemote(resourcesOf(fresh), normalizeBackpack(fresh));
+                Pick<QuickCharacter, 'inventory' | 'money' | 'backpack_rev'>;
+              applyRemote(resourcesOf(fresh), normalizeBackpack(fresh), fresh.backpack_rev);
             }
           });
       });
 
     return () => {
-      flush(selectedId);
+      void flush(selectedId);
       void supabase.removeChannel(channel);
     };
     // A lista muda a cada evento; só a troca de ficha reinicia isto.
@@ -408,6 +520,73 @@ export function QuickSheet() {
     timerRef.current = setTimeout(() => flush(selectedId), SAVE_DEBOUNCE_MS);
   }
 
+  async function moveMoney(delta: number, reason: string | null) {
+    if (!selectedId) return false;
+    const result = await runBackpackRpc('move_character_money', {
+      p_character: selectedId,
+      p_delta: delta,
+      p_reason: reason,
+    });
+    if (!result.ok) useVttStore.getState().showToast(result.message);
+    return result.ok;
+  }
+
+  const loadMoneyHistory = useCallback(async (): Promise<MoneyLogEntry[] | null> => {
+    if (!selectedId) return [];
+    const { data, error: err } = await createClient()
+      .from('character_money_log')
+      .select('id, created_at, delta, reason, author_name')
+      .eq('character_id', selectedId)
+      .order('id', { ascending: false })
+      .limit(20);
+    if (err) return null;
+    return (data ?? []).map((row) => ({ ...row, delta: Number(row.delta) }) as MoneyLogEntry);
+  }, [selectedId]);
+
+  const canEditParty = me?.role === 'mestre' || me?.role === 'jogador';
+  const tableId = table?.id ?? null;
+
+  const partyActions = useMemo<BackpackPartyActions | undefined>(() => {
+    if (!canEditParty || !tableId || !selectedId) return undefined;
+    const toast = (result: RpcResult) => {
+      if (!result.ok) useVttStore.getState().showToast(result.message);
+      return result.ok;
+    };
+    return {
+      send: async (index, qty) => {
+        const item = backpackRef.current?.inventory[index];
+        if (!item) return false;
+        return toast(
+          await runBackpackRpc('party_send_item', {
+            p_table: tableId,
+            p_character: selectedId,
+            p_index: index,
+            p_name: item.name,
+            p_qty: qty,
+          })
+        );
+      },
+      deposit: async (amount, reason) =>
+        toast(
+          await runBackpackRpc('party_cash_move', {
+            p_table: tableId,
+            p_delta: amount,
+            p_reason: reason,
+            p_character: selectedId,
+          })
+        ),
+      withdraw: async (amount, reason) =>
+        toast(
+          await runBackpackRpc('party_cash_move', {
+            p_table: tableId,
+            p_delta: -amount,
+            p_reason: reason,
+            p_character: selectedId,
+          })
+        ),
+    };
+  }, [canEditParty, tableId, selectedId, runBackpackRpc]);
+
   async function roll(label: string, bonus: number) {
     const result = await chat?.roll({
       notation: d20Notation(bonus),
@@ -418,7 +597,7 @@ export function QuickSheet() {
     else useVttStore.getState().showToast('Não foi possível rolar. Tente de novo.');
   }
 
-  return (
+  const mine = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="shrink-0">
         <select
@@ -547,10 +726,45 @@ export function QuickSheet() {
               backpack={backpack}
               attributes={character.attributes}
               onChange={changeBackpack}
+              onMoneyDelta={moveMoney}
+              loadMoneyHistory={loadMoneyHistory}
+              party={partyActions}
+              busy={busy}
             />
           </>
         )}
       </div>
     </div>
+  );
+
+  if (!tableId) return mine;
+
+  return (
+    <SubTabs
+      label="Ficha rápida"
+      active={sheetTab}
+      onChange={setSheetTab}
+      tabs={[
+        { id: 'mine', label: 'Minha ficha', content: mine },
+        {
+          id: 'party',
+          label: 'Party',
+          content: (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <PartyPanel
+                tableId={tableId}
+                canEdit={canEditParty}
+                character={
+                  character && backpack
+                    ? { id: character.id, name: character.name, money: backpack.money }
+                    : null
+                }
+                runBackpackRpc={runBackpackRpc}
+              />
+            </div>
+          ),
+        },
+      ]}
+    />
   );
 }

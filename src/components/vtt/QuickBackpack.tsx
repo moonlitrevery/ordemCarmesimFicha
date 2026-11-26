@@ -1,50 +1,18 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
-import { Trash2 } from 'lucide-react';
-import { getCarryLimit, getInventoryWeight } from '@/lib/calculations';
+import { useState, type FormEvent } from 'react';
+import { Trash2, Users } from 'lucide-react';
+import { WeightBadge, WeightInput } from '@/components/character/WeightInput';
+import { MoneyControl, type MoneyAction, type MoneyLogEntry } from '@/components/money/MoneyControl';
+import { getCarryLimit, getInventoryWeight, itemQty } from '@/lib/calculations';
 import type { BackpackValues } from '@/lib/resource-sync';
 import type { Attributes } from '@/types/database';
+import { QtyPrompt } from './QtyPrompt';
 
-const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-
-function MoneyRow({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  // Rascunho em texto: apagar o campo para digitar não pode virar 0 na tela.
-  const [draft, setDraft] = useState<string | null>(null);
-
-  // Valor de outra aba troca o rascunho; o da própria digitação ("10.") fica.
-  useEffect(() => {
-    setDraft((current) => (current !== null && Number(current) === value ? current : null));
-  }, [value]);
-
-  return (
-    <label className="flex items-center gap-2 text-xs text-ink-muted">
-      <span className="shrink-0">Dinheiro (US$)</span>
-      <input
-        type="number"
-        step="0.01"
-        className="field min-h-11 min-w-0 flex-1 px-2 py-1 text-sm desk:min-h-8"
-        value={draft ?? value}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          const typed = Number(e.target.value);
-          if (e.target.value.trim() && Number.isFinite(typed)) {
-            onChange(Math.round(typed * 100) / 100);
-          }
-        }}
-        onBlur={() => setDraft(null)}
-      />
-      <span className={'shrink-0 ' + (value < 0 ? 'text-crimson-soft' : 'text-parchment')}>
-        {usd.format(value)}
-      </span>
-    </label>
-  );
+export interface BackpackPartyActions {
+  send: (index: number, qty: number) => Promise<boolean>;
+  deposit: (amount: number, reason: string | null) => Promise<boolean>;
+  withdraw: (amount: number, reason: string | null) => Promise<boolean>;
 }
 
 /** Só o rápido em sessão: editar um item por inteiro continua na ficha. */
@@ -52,14 +20,25 @@ export function QuickBackpack({
   backpack,
   attributes,
   onChange,
+  onMoneyDelta,
+  loadMoneyHistory,
+  party,
+  busy = false,
 }: {
   backpack: BackpackValues;
   attributes: Attributes;
   onChange: (patch: Partial<BackpackValues>) => void;
+  onMoneyDelta: (delta: number, reason: string | null) => Promise<boolean>;
+  loadMoneyHistory: () => Promise<MoneyLogEntry[] | null>;
+  /** Sem isto (espectador, fora da mesa), não aparece nada de party. */
+  party?: BackpackPartyActions;
+  busy?: boolean;
 }) {
   const [name, setName] = useState('');
-  const [weight, setWeight] = useState('');
+  const [weight, setWeight] = useState<number | null>(null);
+  const [weightKey, setWeightKey] = useState(0);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [sendIndex, setSendIndex] = useState<number | null>(null);
 
   const { inventory, money } = backpack;
   const total = getInventoryWeight(inventory);
@@ -70,18 +49,31 @@ export function QuickBackpack({
     const trimmed = name.trim();
     if (!trimmed) return;
     onChange({
-      inventory: [
-        ...inventory,
-        {
-          name: trimmed,
-          description: '',
-          weight: Math.max(0, Math.trunc(Number(weight) || 0)),
-        },
-      ],
+      inventory: [...inventory, { name: trimmed, description: '', weight: weight ?? 0 }],
     });
     setName('');
-    setWeight('');
+    setWeight(null);
+    setWeightKey((k) => k + 1);
   }
+
+  async function send(index: number, qty: number) {
+    if (!party) return;
+    if (await party.send(index, qty)) {
+      setSendIndex(null);
+      setOpenIndex(null);
+    }
+  }
+
+  const moneyActions: MoneyAction[] = [
+    { label: '− Gastar', sign: -1, run: (amount, reason) => onMoneyDelta(-amount, reason) },
+    { label: '+ Receber', sign: 1, run: (amount, reason) => onMoneyDelta(amount, reason) },
+    ...(party
+      ? [
+          { label: 'Depositar no caixa', sign: -1 as const, run: party.deposit },
+          { label: 'Sacar do caixa', sign: 1 as const, run: party.withdraw },
+        ]
+      : []),
+  ];
 
   return (
     <details className="rounded-md border border-ink-border">
@@ -95,44 +87,83 @@ export function QuickBackpack({
         {total > limit && (
           <p className="text-xs text-crimson-soft">Acima do limite de carga (FOR/2).</p>
         )}
-        <MoneyRow value={money} onChange={(next) => onChange({ money: next })} />
+        <MoneyControl
+          compact
+          value={money}
+          onSet={(next) => onChange({ money: next })}
+          onDelta={onMoneyDelta}
+          actions={moneyActions}
+          loadHistory={loadMoneyHistory}
+          disabled={busy}
+        />
 
         {inventory.length === 0 ? (
           <p className="text-xs text-ink-muted">Mochila vazia. Adicione um item abaixo.</p>
         ) : (
           <ul className="space-y-1">
-            {inventory.map((item, index) => (
-              <li key={index} className="rounded-md border border-ink-border/60">
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-expanded={openIndex === index}
-                    className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 px-2 text-left text-sm text-parchment desk:min-h-8"
-                    onClick={() => setOpenIndex(openIndex === index ? null : index)}
-                  >
-                    <span className="truncate">{item.name}</span>
-                    <span className="shrink-0 text-xs text-ink-muted">{item.weight}</span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remover ${item.name}`}
-                    title={`Remover ${item.name}`}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center text-ink-muted hover:text-crimson-soft desk:h-8 desk:w-8"
-                    onClick={() => {
-                      setOpenIndex(null);
-                      onChange({ inventory: inventory.filter((_, i) => i !== index) });
-                    }}
-                  >
-                    <Trash2 size={14} aria-hidden />
-                  </button>
-                </div>
-                {openIndex === index && (
-                  <p className="whitespace-pre-wrap break-words px-2 pb-2 text-xs text-ink-muted">
-                    {item.description || 'Sem descrição. Dá para escrever uma na ficha.'}
-                  </p>
-                )}
-              </li>
-            ))}
+            {inventory.map((item, index) => {
+              const qty = itemQty(item);
+              return (
+                <li key={index} className="rounded-md border border-ink-border/60">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      aria-expanded={openIndex === index}
+                      className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 px-2 text-left text-sm text-parchment desk:min-h-8"
+                      onClick={() => setOpenIndex(openIndex === index ? null : index)}
+                    >
+                      <span className="truncate">
+                        {item.name}
+                        {qty > 1 && <span className="text-ink-muted"> ×{qty}</span>}
+                      </span>
+                      <WeightBadge weight={item.weight} className="shrink-0 text-xs" />
+                    </button>
+                    {party && (
+                      <button
+                        type="button"
+                        aria-label={`Mandar ${item.name} pra party`}
+                        title="Mandar pra party"
+                        disabled={busy}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center text-ink-muted hover:text-parchment desk:h-8 desk:w-8"
+                        onClick={() => {
+                          if (qty > 1) setSendIndex(sendIndex === index ? null : index);
+                          else void send(index, 1);
+                        }}
+                      >
+                        <Users size={14} aria-hidden />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`Remover ${item.name}`}
+                      title={`Remover ${item.name}`}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center text-ink-muted hover:text-crimson-soft desk:h-8 desk:w-8"
+                      onClick={() => {
+                        setOpenIndex(null);
+                        setSendIndex(null);
+                        onChange({ inventory: inventory.filter((_, i) => i !== index) });
+                      }}
+                    >
+                      <Trash2 size={14} aria-hidden />
+                    </button>
+                  </div>
+                  {sendIndex === index && (
+                    <QtyPrompt
+                      max={qty}
+                      busy={busy}
+                      confirmLabel="Mandar pra party"
+                      onConfirm={(n) => void send(index, n)}
+                      onCancel={() => setSendIndex(null)}
+                    />
+                  )}
+                  {openIndex === index && (
+                    <p className="whitespace-pre-wrap break-words px-2 pb-2 text-xs text-ink-muted">
+                      {item.description || 'Sem descrição. Dá para escrever uma na ficha.'}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -144,15 +175,12 @@ export function QuickBackpack({
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <input
-            type="number"
-            min={0}
-            step={1}
+          <WeightInput
+            key={weightKey}
             className="field min-h-11 w-16 shrink-0 px-1 py-1 text-center text-sm desk:min-h-8"
             placeholder="Peso"
-            aria-label="Peso do item"
             value={weight}
-            onChange={(e) => setWeight(e.target.value)}
+            onChange={setWeight}
           />
           <button
             type="submit"

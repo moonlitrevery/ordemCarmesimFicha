@@ -451,3 +451,75 @@ Painel só da mestra em `/vm`: grupos de personagens em cards, atualizando em te
 - `can_access_table_topic` passa a aceitar `nevoa:{uuid}` (membro ou mestra) e a nova `can_write_table_topic` (`nevoa:` só a mestra; o resto igual à leitura). `vtt_channel_write` passa a usar a nova função. Nenhuma política de tabela mudou.
 - Sem a migração, a névoa funciona na mestra (a coluna e as permissões já existiam), mas os jogadores não recebem `fog:patch` ao vivo, porque o Realtime não conhece o tópico `nevoa:`. Eles só veem a névoa ao recarregar ou trocar de página.
 - Testes em `supabase/rls.test.ts` ("névoa (migração 024)"): quem grava e quem lê, formato, duplicar, canal e rodar de novo sobre o schema pronto.
+
+## 16. Dinheiro, espelhar e inventário da party (Fase 14)
+
+### Campo de dinheiro (`components/money/MoneyControl.tsx`, na ficha e na Ficha rápida)
+
+- Input de **texto** com `inputMode="decimal"` (o `type="number"` não aceitava vírgula). Parse em `src/lib/money.ts`, funções puras com testes.
+- **Vírgula ou ponto:** o último separador é decimal se tiver 1 ou 2 dígitos depois; com exatamente 3, é de milhar. `1.759` = 1759, `1,5` = 1,5, `1.759,99` = `1,759.99` = 1759,99. Os outros separadores só valem como milhar, em grupos de 3; o resto é inválido (`1.7599`, `1.75.9`, `abc`).
+- **Setas** (teclado): US$ 1, com **Shift** US$ 10. Não descem abaixo de zero.
+- **`+50` / `-30` + Enter** soma/subtrai do valor atual. Passa pela RPC e entra no histórico. Se a conta der negativo, aparece um aviso discreto e nada é gravado.
+- **Dívida de propósito:** `=-30` grava −30. Número sem sinal troca o valor (sem histórico, como antes).
+- **"Movimentar"** (ícone ±) abre um popover com Quantia, Motivo (opcional, 80 caracteres) e **− Gastar / + Receber**. Aplica na hora e fecha. Na Ficha rápida, dentro da Mesa, o popover tem também **Depositar no caixa / Sacar do caixa**.
+- **"Ver histórico"** embaixo do campo: as últimas 20 movimentações (data, ±, valor, motivo, quem). Só o que passou pela RPC entra: Gastar/Receber, `+N`/`-N`, depósito e saque. As setas e o valor digitado direto não entram.
+
+### Mochila: quantidade e peso negativo
+
+- `InventoryItem.qty` é opcional; item antigo conta como 1. **O peso é por unidade** e a carga é `Σ peso × qtd`.
+- **O peso aceita negativo e decimal**, com vírgula ou ponto (`WeightInput`). Usa teclado de texto, porque o decimal do iPhone não tem o sinal de menos. Exemplo: mochila militar −2.
+- **A carga exibida nunca fica abaixo de 0** (`getInventoryWeight`). Peso negativo aparece em **verde** (`WeightBadge`, `−2`).
+
+### Espelhar
+
+- No lucide 1.x, `FlipHorizontal2` é apelido de `triangles-centerline-dashed-horizontal`: linha horizontal com triângulos em cima e embaixo, ou seja, o desenho do *vertical*. Os ícones foram trocados entre si.
+- **A ação estava certa** e não mudou: horizontal = `flipX` (`scale.x = −1`), vertical = `flipY`.
+
+### Inventário da party (`components/vtt/PartyPanel.tsx`)
+
+- **Por mesa.** Fica na aba Ficha rápida, em duas subabas no topo: **Minha ficha** e **Party** (`UI_KEYS.sheetTab`). Fora da Mesa não existe.
+- **Itens:** nome, quantidade, peso (opcional, só informativo, não conta pra carga de ninguém), observação (200 caracteres) e quem adicionou (`added_by_name`, posto pelo trigger: o cliente não escolhe).
+  - Ações: adicionar, editar inline, −/+ quantidade, remover (o primeiro toque vira "Remover mesmo").
+  - Busca a partir de 16 itens.
+- **Caixa (US$):** o mesmo `MoneyControl`, sem campo editável. Gastar/Receber, e com uma ficha escolhida "Sacar pra X" / "Depositar de X". Histórico com quem mexeu e de qual ficha.
+- **Mover:**
+  - Na mochila, cada item ganha o botão "Mandar pra party" (ícone de grupo).
+  - Na party, cada item ganha "Pegar pra mim", que vai pra ficha escolhida na Ficha rápida.
+  - Com quantidade maior que 1, aparece "Quantos?" inline (`QtyPrompt`, padrão: todos).
+  - Item igual (nome sem diferenciar maiúsculas, peso e observação) soma na mesma linha, em vez de duplicar.
+- **Quem pode:**
+  - Ver: mestra e todo membro.
+  - Mexer: mestra e jogadores (`table_upload_role`). Espectador não mexe, e na interface nem tem a aba Ficha rápida.
+  - Quem não é da mesa não vê nada.
+- **Tempo real:** `postgres_changes` em `party_items` (INSERT/UPDATE filtrados por `table_id`; DELETE sem filtro, só pelo id) e `party_cash`. Ao (re)conectar, relê tudo.
+
+### Corrida com o save automático
+
+- Mover dinheiro ou itens é RPC `security definer`, numa transação só, que devolve `{inventory, money, backpack_rev}`.
+- Antes da RPC, o cliente **grava o que está pendente**. Depois, aplica o retorno como valor local **e** salvo.
+- **`characters.backpack_rev`:** um trigger sobe a versão a cada mudança de `inventory`/`money`, venha de onde vier, e ignora o valor que o cliente manda.
+  - O save automático (ficha e Ficha rápida) grava a mochila com `.eq('backpack_rev', <a que conhece>)` (`lib/character-save.ts`). Se uma RPC, outra aba ou outra pessoa mexeu antes, o update não pega linha: o cliente relê a mochila, avisa e salva o resto sem ela. Assim, dinheiro antigo não volta e item enviado pra party não reaparece na mochila.
+  - Ao receber evento remoto, `nextBackpackRev` só adota a versão nova se o remoto não mexeu no campo com edição local pendente.
+- **Um save por vez:** os saves da mesma ficha entram numa fila, pra dois em paralelo não usarem a mesma versão.
+
+### Foto do personagem
+
+- **Não havia limite de tamanho** em lugar nenhum. O que barrava links do Drive, Discord e Pinterest era o regex `VALID_IMAGE_URL`, que exigia extensão de imagem no fim.
+- Agora vale `isValidImageUrl`: `http(s)://` e até **2048** caracteres, sem exigir extensão. Link que não for imagem cai no placeholder pelo `onError` do `<img>`.
+- `CharacterImage` usa `<img>` comum (não `next/image`), então não há `remotePatterns` barrando domínio. NPC não tem campo de imagem, e o token usa asset enviado, não URL.
+
+### Banco (migração 025)
+
+- `characters`: check `char_length(image_url) <= 2048`, coluna `backpack_rev` e trigger `bump_backpack_rev`.
+- **Tabelas:** `character_money_log`, `party_items`, `party_cash` (`money >= 0`) e `party_money_log`.
+  - Os dois históricos guardam só as últimas 20 movimentações (a RPC apaga as mais antigas).
+  - RLS:
+    - histórico da ficha: dono ou mestra (`(select auth.uid())`);
+    - party: `is_table_gm` / `is_table_member` pra ler e `table_upload_role` pra escrever.
+  - Caixa e históricos só mudam pelas RPCs: `select` é a única permissão do cliente. Em `party_items`, insert e update só nas colunas editáveis.
+- **RPCs:** `move_character_money`, `party_cash_move` (Gastar/Receber; com ficha, Depositar/Sacar), `party_send_item` (confere índice e nome, que podem ter mudado) e `party_take_item`.
+  - Todas travam a ficha antes da linha da party, então nunca esperam uma pela outra em ciclo.
+  - Os erros chegam como texto (`saldo_insuficiente`, `caixa_insuficiente`, `item_mudou`, …) e viram mensagem em português em `callMoneyRpc`.
+- As três tabelas da party entram na publication do Realtime.
+- **Sem a migração, a ficha não salva**, porque o save pede `backpack_rev`. Aplicar antes de subir o app.
+- Testes em `supabase/rls.test.ts` ("dinheiro e party (migração 025)"): versão e save com versão velha, saldo e histórico, permissões (jogador, mestra, espectador, de fora), mover com quantidade parcial, caixa, URL longa e rodar de novo.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeDerivedMaxes, getMaxHp } from '@/lib/calculations';
+import { computeDerivedMaxes, getInventoryWeight, getMaxHp } from '@/lib/calculations';
 import { DEFAULT_ATTRIBUTES } from '@/types/database';
 
 /** HP = round(10 + floor(CON/2) + nível × (0.6 + 0.4 × CON)) */
@@ -42,5 +42,21 @@ describe('computeDerivedMaxes', () => {
   it('usa getMaxHp como fonte única do HP máximo', () => {
     const attributes = { ...DEFAULT_ATTRIBUTES, CON: 15 };
     expect(computeDerivedMaxes(10, attributes).hpMax).toBe(getMaxHp(10, 15));
+  });
+});
+
+describe('getInventoryWeight', () => {
+  it('peso × quantidade, e item de peso negativo desconta', () => {
+    expect(
+      getInventoryWeight([
+        { weight: 1.5, qty: 2 },
+        { weight: 4 },
+        { weight: -2 },
+      ])
+    ).toBe(5);
+  });
+
+  it('nunca fica abaixo de 0', () => {
+    expect(getInventoryWeight([{ weight: -2 }, { weight: 1 }])).toBe(0);
   });
 });

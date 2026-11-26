@@ -3,8 +3,10 @@ import {
   backpackToSave,
   mergeRemoteBackpack,
   mergeRemoteResources,
+  nextBackpackRev,
   normalizeBackpack,
   resourcesToSave,
+  serverBackpack,
 } from './resource-sync';
 
 const base = { hp_current: 20, mana_current: 10, sanity_current: 5 };
@@ -90,5 +92,47 @@ describe('mochila', () => {
     const merged = mergeRemoteBackpack(local, pack, { inventory: [rope], money: 50 });
     expect(merged.local).toEqual({ inventory: [rope], money: 99 });
     expect(backpackToSave(merged.local, merged.lastSaved)).toEqual({ money: 99 });
+  });
+});
+
+describe('versão da mochila', () => {
+  const corda = { name: 'Corda', description: '', weight: 1, qty: 3 };
+  const saved = { inventory: [corda], money: 100 };
+
+  it('sem mudança local, adota a versão remota', () => {
+    const remote = { inventory: [], money: 100 };
+    expect(nextBackpackRev(saved, saved, remote, 4, 5)).toBe(5);
+  });
+
+  it('item editado aqui e mandado pra party lá: fica com a velha, o save conflita', () => {
+    const local = { inventory: [{ ...corda, name: 'Corda longa' }], money: 100 };
+    const remote = { inventory: [], money: 100 };
+    expect(nextBackpackRev(local, saved, remote, 4, 5)).toBe(4);
+  });
+
+  it('dinheiro mudado aqui e por RPC lá: fica com a velha', () => {
+    const local = { ...saved, money: 90 };
+    const remote = { ...saved, money: 150 };
+    expect(nextBackpackRev(local, saved, remote, 4, 5)).toBe(4);
+  });
+
+  it('campos diferentes não conflitam', () => {
+    const local = { ...saved, money: 90 };
+    const remote = { inventory: [], money: 100 };
+    expect(nextBackpackRev(local, saved, remote, 4, 5)).toBe(5);
+  });
+
+  it('quantidade conta como mudança da lista', () => {
+    const local = { inventory: [{ ...corda, qty: 2 }], money: 100 };
+    expect(backpackToSave(local, saved)).toEqual({ inventory: local.inventory });
+    expect(backpackToSave({ inventory: [{ ...corda, qty: undefined }], money: 100 }, { inventory: [{ ...corda, qty: 1 }], money: 100 })).toEqual({});
+  });
+
+  it('lê o retorno das RPCs', () => {
+    expect(serverBackpack({ inventory: [corda], money: '12.50', backpack_rev: 7 })).toEqual({
+      backpack: { inventory: [corda], money: 12.5 },
+      rev: 7,
+    });
+    expect(serverBackpack({ cash: 10, inventory: null, money: null, backpack_rev: null })).toBeNull();
   });
 });
