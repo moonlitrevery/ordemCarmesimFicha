@@ -184,6 +184,90 @@ body {
     }
   }
 
+  /*
+   * Símbolo se desenhando (Fase 15, item 6): `pathLength="1"` nas formas, e o
+   * `stroke-dashoffset` vai de 1 a 0. Depois o glow acende por `opacity` de uma
+   * cópia com o filtro fixo. `symbol-wait` segura tudo escondido até o gatilho.
+   */
+  .symbol-wait .symbol-part,
+  .symbol-wait .symbol-fade,
+  .symbol-wait .symbol-glow-stay,
+  .symbol-wait .symbol-glow-flash,
+  .symbol-draw .symbol-glow-flash {
+    opacity: 0;
+  }
+
+  .symbol-draw .symbol-part {
+    stroke-dasharray: 1;
+    animation: symbol-draw 900ms var(--ease-enter) both;
+    animation-delay: calc(min(var(--i), 6) * 70ms);
+  }
+
+  .symbol-draw .symbol-fade {
+    animation: symbol-fade var(--dur-slow) var(--ease-enter) both;
+    animation-delay: calc(min(var(--i), 6) * 70ms + 450ms);
+  }
+
+  .symbol-draw .symbol-glow-stay {
+    animation: symbol-fade var(--dur-slow) var(--ease-enter) 1000ms both;
+  }
+
+  .symbol-draw .symbol-glow-flash {
+    animation: symbol-glow-flash 900ms var(--ease-enter) 950ms both;
+  }
+
+  @keyframes symbol-draw {
+    /* Opacidade 0 antes de começar: a ponta redonda do traço não vira um ponto. */
+    from {
+      stroke-dashoffset: 1;
+      opacity: 0;
+    }
+    1% {
+      opacity: 1;
+    }
+    to {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+  }
+
+  @keyframes symbol-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes symbol-glow-flash {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    40% {
+      opacity: 0.9;
+    }
+  }
+
+  /* Reduzir movimento: o símbolo aparece pronto, com o glow que já teria. */
+  @media (prefers-reduced-motion: reduce) {
+    .symbol-wait .symbol-part,
+    .symbol-wait .symbol-fade,
+    .symbol-wait .symbol-glow-stay,
+    .symbol-draw .symbol-part,
+    .symbol-draw .symbol-fade,
+    .symbol-draw .symbol-glow-stay {
+      animation: none;
+      opacity: 1;
+      stroke-dasharray: none;
+    }
+
+    .symbol-draw .symbol-glow-flash {
+      animation: none;
+    }
+  }
+
   @keyframes fragment-shimmer {
     from {
       transform: translateX(-30%);

@@ -61,3 +61,35 @@ describe('ElementSymbol', () => {
     }
   });
 });
+
+describe('ElementSymbol > desenho do traço (Fase 15)', () => {
+  const draw = (element: ElementType, glow = false) =>
+    renderToStaticMarkup(createElement(ElementSymbol, { element, draw: 'go', glow }));
+
+  it('traço contínuo ganha pathLength; tracejado e ponto cheio só aparecem', () => {
+    // Só o SVG do traço: a camada do glow, depois dele, repete o corpo sem preparo.
+    const tags = (html: string) => html.split('</svg>')[0].match(/<(circle|line|polygon|polyline|path)[^>]*>/g) ?? [];
+    const enchant = tags(draw('encantamento'));
+    const dashed = enchant.filter((tag) => tag.includes('stroke-dasharray'));
+    expect(dashed.length).toBe(1);
+    expect(dashed[0]).toContain('class="symbol-fade"');
+    expect(dashed[0]).not.toContain('pathLength');
+    const solid = enchant.filter((tag) => !tag.includes('stroke-dasharray'));
+    expect(solid.every((tag) => tag.includes('class="symbol-part"') && tag.includes('pathLength="1"'))).toBe(true);
+    const dot = tags(draw('luz')).find((tag) => tag.includes('fill="currentColor"'));
+    expect(dot).toContain('class="symbol-fade"');
+  });
+
+  it('sem `draw`, nada muda (o mesmo SVG dos arquivos de public/simbolos)', () => {
+    const plain = renderToStaticMarkup(createElement(ElementSymbol, { element: 'fogo' }));
+    expect(plain).not.toContain('pathLength');
+    expect(plain).not.toContain('symbol-');
+  });
+
+  it('o glow sai do traço e vai para a camada que acende depois', () => {
+    const html = draw('fogo', true);
+    expect(html).toContain('symbol-glow-stay');
+    expect(html.match(/drop-shadow/g)?.length).toBe(2);
+    expect(draw('fogo')).toContain('symbol-glow-flash');
+  });
+});
