@@ -44,6 +44,7 @@ import {
   skillRollLabel,
   sortSkills,
 } from '@/lib/vtt/quick-sheet';
+import { trackAction } from '@/lib/vtt/action-toasts';
 import { useVttStore } from '@/lib/vtt/store';
 import {
   ATTRIBUTE_KEYS,
@@ -64,6 +65,14 @@ const SHEET_TABS = ['mine', 'party'] as const;
 const parseSheetTab = oneOf(SHEET_TABS);
 
 const SAVE_DEBOUNCE_MS = 400;
+
+/** Toast de cada movimento da mochila/party (Fase 15). */
+const RPC_TOASTS: Record<MoneyRpc, { pending: string; success: string }> = {
+  move_character_money: { pending: 'Movimentando o dinheiro…', success: 'Dinheiro atualizado' },
+  party_cash_move: { pending: 'Movendo o caixa…', success: 'Caixa atualizado' },
+  party_send_item: { pending: 'Mandando pra party…', success: 'Item na party' },
+  party_take_item: { pending: 'Pegando da party…', success: 'Item na sua mochila' },
+};
 
 /** Resultado de um save da Ficha rápida, para o indicador. */
 type SendOutcome = 'noop' | 'saved' | 'reloaded' | 'error';
@@ -405,7 +414,12 @@ export function QuickSheet() {
       setBusy(true);
       try {
         await flush(id);
-        const result = await callMoneyRpc(createClient(), fn, args);
+        const result = await trackAction(
+          () => callMoneyRpc(createClient(), fn, args),
+          RPC_TOASTS[fn],
+          // Recusa (saldo, item mudou): quem chamou mostra a mensagem.
+          (r) => r.ok
+        );
         if (result.ok && result.backpack) applyServerBackpack(id, result.backpack);
         return result;
       } finally {

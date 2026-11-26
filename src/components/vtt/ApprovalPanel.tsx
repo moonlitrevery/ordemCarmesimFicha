@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ASSET_KIND_LABELS } from '@/lib/vtt/assets/rules';
 import { deleteAsset } from '@/lib/vtt/assets/upload';
+import { trackAction } from '@/lib/vtt/action-toasts';
 import { useVttStore, type PendingAsset } from '@/lib/vtt/store';
 import { AssetThumb } from './AssetThumb';
 import { PendingDocumentRow } from './docs/DocumentsPanel';
@@ -22,7 +23,11 @@ function PendingRow({
     setError(null);
     try {
       // A RPC também cria os objetos que o jogador soltou no mapa.
-      await useVttStore.getState().sync?.approveAsset(asset.id);
+      await trackAction(async () => useVttStore.getState().sync?.approveAsset(asset.id), {
+        pending: `Aprovando ${asset.name}…`,
+        success: 'Aprovado',
+        error: null,
+      });
       onResolved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao aprovar.');
@@ -34,7 +39,11 @@ function PendingRow({
     setBusy(true);
     setError(null);
     try {
-      await deleteAsset(asset.id);
+      await trackAction(() => deleteAsset(asset.id), {
+        pending: `Recusando ${asset.name}…`,
+        success: 'Recusado',
+        error: null,
+      });
       useVttStore.getState().sync?.notifyAssetResolved();
       onResolved(false);
     } catch (err) {

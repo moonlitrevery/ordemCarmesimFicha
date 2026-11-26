@@ -20,6 +20,8 @@ import type { PendingAsset } from '@/lib/vtt/store';
 import type { TableSnapshot } from '@/lib/vtt/types';
 import { isTypingTarget } from '@/lib/vtt/ui-prefs';
 import { MotionProvider } from '@/components/ui/MotionProvider';
+import { ActionToasts } from '@/components/fx/ActionToasts';
+import { trackAction } from '@/lib/vtt/action-toasts';
 import { CalibrationGuide } from './CalibrationGuide';
 import { CaptionModal } from './CaptionModal';
 import { MapToolbar } from './MapToolbar';
@@ -63,7 +65,6 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   const docViewerOpen = useVttStore((s) => s.docViewer !== null);
   const role = useVttStore((s) => s.me?.role) ?? initial.me.role;
 
-  const toast = useVttStore((s) => s.toast);
   const viewedSceneId = useVttStore((s) => s.viewedSceneId);
   const pagesOpen = useVttStore((s) => s.pagesOpen);
   const conditionTip = useVttStore((s) => s.conditionTip);
@@ -274,10 +275,14 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
   async function toggleSession() {
     const next = !sessionOpen;
     setSessionBusy(true);
-    const { error } = await createClient()
-      .from('tables')
-      .update({ session_open: next })
-      .eq('id', tableId);
+    const { error } = await trackAction(
+      async () => createClient().from('tables').update({ session_open: next }).eq('id', tableId),
+      {
+        pending: next ? 'Abrindo a sessão…' : 'Encerrando a sessão…',
+        success: next ? 'Sessão aberta' : 'Sessão encerrada',
+      },
+      (result) => !result.error
+    );
     setSessionBusy(false);
     if (error) {
       useVttStore
@@ -361,14 +366,7 @@ export function VttShell({ initial }: { initial: TableSnapshot }) {
 
       {isGm && pagesOpen && <PagesOverlay />}
 
-      {toast && (
-        <p
-          role="status"
-          className="pointer-events-none absolute bottom-16 left-[calc((100%_-_var(--vtt-right,0px))/2)] z-40 max-w-[calc(100vw-1rem)] -translate-x-1/2 rounded-md border border-ink-border bg-ink-raised px-3 py-2 text-center text-xs text-parchment desk:bottom-4"
-        >
-          {toast}
-        </p>
-      )}
+      <ActionToasts />
 
       {lightModePrompt && (
         <div
